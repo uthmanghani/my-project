@@ -781,40 +781,50 @@
     }
     /* Collapsible Sidebar */
 .sidebar.collapsed {
-  width: 70px;
+  width: 64px;
   transition: width 0.3s ease;
 }
 .sidebar.collapsed .sidebar-company,
 .sidebar.collapsed .nav-item span,
 .sidebar.collapsed .nav-section-label,
-.sidebar.collapsed .sidebar-logo .logo-text span,
 .sidebar.collapsed .sidebar-logo .logo-text {
   display: none;
+}
+.sidebar.collapsed .sidebar-logo {
+  justify-content: center;
+  padding: 0 12px;
 }
 .sidebar.collapsed .sidebar-logo .logo-icon {
   margin: 0 auto;
 }
 .sidebar.collapsed .nav-item {
   justify-content: center;
-  padding: 9px 0;
+  padding: 10px 0;
+  position: relative;
 }
 .sidebar.collapsed .nav-item i {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
+  width: auto;
 }
-.sidebar.collapsed .sidebar-logo {
-  justify-content: center;
-  padding: 0;
+/* Tooltip on hover when collapsed */
+.sidebar.collapsed .nav-item::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 70px;
+  background: #1e293b;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 999;
 }
-/* For mobile: prevent collapse when sidebar is hidden */
-@media (max-width: 768px) {
-  .sidebar.collapsed {
-    width: var(--sidebar-w);
-    left: -260px;
-  }
-  .sidebar.collapsed.sidebar-open {
-    left: 0;
-  }
+.sidebar.collapsed .nav-item:hover::after {
+  opacity: 1;
 }
   </style>
   </head>
@@ -1025,42 +1035,42 @@
   <div class="nav-scroll">
     <div class="nav-section">
       <div class="nav-section-label">Overview</div>
-      <div class="nav-item active" data-page="dashboard"><i class="fas fa-th-large"></i> Dashboard</div>
-      <div class="nav-item" data-page="reports"><i class="fas fa-chart-bar"></i> Reports</div>
+      <div class="nav-item active" data-page="dashboard" data-label="Dashboard"><i class="fas fa-th-large"></i> <span>Dashboard</span></div>
+      <div class="nav-item" data-page="reports" data-label="Reports"><i class="fas fa-chart-bar"></i> <span>Reports</span></div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Sales</div>
-      <div class="nav-item" data-page="customers"><i class="fas fa-users"></i> Customers</div>
-      <div class="nav-item" data-page="invoices"><i class="fas fa-file-invoice-dollar"></i> Invoices</div>
+      <div class="nav-item" data-page="customers" data-label="Customers"><i class="fas fa-users"></i> <span>Customers</span></div>
+      <div class="nav-item" data-page="invoices" data-label="Invoices"><i class="fas fa-file-invoice-dollar"></i> <span>Invoices</span></div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Purchasing</div>
-      <div class="nav-item" data-page="vendors"><i class="fas fa-truck"></i> Vendors</div>
-      <div class="nav-item" data-page="bills"><i class="fas fa-file-invoice"></i> Bills</div>
+      <div class="nav-item" data-page="vendors" data-label="Vendors"><i class="fas fa-truck"></i> <span>Vendors</span></div>
+      <div class="nav-item" data-page="bills" data-label="Bills"><i class="fas fa-file-invoice"></i> <span>Bills</span></div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Finance</div>
-      <div class="nav-item" data-page="accounting"><i class="fas fa-calculator"></i> Chart of Accounts</div>
-      <div class="nav-item" data-page="journal"><i class="fas fa-book"></i> Journal Entries</div>
-      <div class="nav-item" data-page="openingbalances"><i class="fas fa-balance-scale"></i> Opening Balances</div>
-      <div class="nav-item" data-page="banking"><i class="fas fa-university"></i> Banking</div>
-      <div class="nav-item" data-page="transactions"><i class="fas fa-exchange-alt"></i> Transactions</div>
-      <div class="nav-item" data-page="budgets"><i class="fas fa-chart-pie"></i> Budgets</div>
+      <div class="nav-item" data-page="accounting" data-label="Chart of Accounts"><i class="fas fa-calculator"></i> <span>Chart of Accounts</span></div>
+      <div class="nav-item" data-page="journal" data-label="Journal Entries"><i class="fas fa-book"></i> <span>Journal Entries</span></div>
+      <div class="nav-item" data-page="openingbalances" data-label="Opening Balances"><i class="fas fa-balance-scale"></i> <span>Opening Balances</span></div>
+      <div class="nav-item" data-page="banking" data-label="Banking"><i class="fas fa-university"></i> <span>Banking</span></div>
+      <div class="nav-item" data-page="transactions" data-label="Transactions"><i class="fas fa-exchange-alt"></i> <span>Transactions</span></div>
+      <div class="nav-item" data-page="budgets" data-label="Budgets"><i class="fas fa-chart-pie"></i> <span>Budgets</span></div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Operations</div>
-      <div class="nav-item" data-page="products"><i class="fas fa-boxes"></i> Products</div>
-      <div class="nav-item" data-page="employees"><i class="fas fa-user-tie"></i> Payroll</div>
-      <div class="nav-item" data-page="assets"><i class="fas fa-building"></i> Assets</div>
+      <div class="nav-item" data-page="products" data-label="Products"><i class="fas fa-boxes"></i> <span>Products</span></div>
+      <div class="nav-item" data-page="employees" data-label="Payroll"><i class="fas fa-user-tie"></i> <span>Payroll</span></div>
+      <div class="nav-item" data-page="assets" data-label="Assets"><i class="fas fa-building"></i> <span>Assets</span></div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Compliance</div>
-      <div class="nav-item" data-page="audittrail"><i class="fas fa-history"></i> Audit Trail</div>
+      <div class="nav-item" data-page="audittrail" data-label="Audit Trail"><i class="fas fa-history"></i> <span>Audit Trail</span></div>
     </div>
   </div>
   <div class="sidebar-bottom">
-    <div class="nav-item" data-page="settings"><i class="fas fa-cog"></i> Settings</div>
-    <div class="nav-item" data-page="help"><i class="fas fa-question-circle"></i> Help</div>
+    <div class="nav-item" data-page="settings" data-label="Settings"><i class="fas fa-cog"></i> <span>Settings</span></div>
+    <div class="nav-item" data-page="help" data-label="Help"><i class="fas fa-question-circle"></i> <span>Help</span></div>
     <div class="nav-item" id="collapseSidebarBtn" onclick="toggleSidebarCollapse()">
   <i class="fas fa-chevron-left"></i> <span>Collapse</span>
 </div>
