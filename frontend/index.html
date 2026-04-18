@@ -1071,10 +1071,9 @@
   <div class="sidebar-bottom">
     <div class="nav-item" data-page="settings" data-label="Settings"><i class="fas fa-cog"></i> <span>Settings</span></div>
     <div class="nav-item" data-page="help" data-label="Help"><i class="fas fa-question-circle"></i> <span>Help</span></div>
-    <div class="nav-item" id="collapseSidebarBtn" onclick="toggleSidebarCollapse()">
-  <i class="fas fa-chevron-left"></i> <span>Collapse</span>
-</div>
-<div class="nav-item" id="darkModeToggle" onclick="toggleDark()"><i class="fas fa-moon"></i> <span id="darkLabel">Dark Mode</span></div>
+    <div class="nav-item" id="collapseSidebarBtn" data-label="Expand" onclick="toggleSidebarCollapse()"><i class="fas fa-chevron-left"></i> <span>Collapse</span></div>
+    <div class="nav-item" id="darkModeToggle" data-label="Dark Mode" onclick="toggleDark()"><i class="fas fa-moon"></i> <span id="darkLabel">Dark Mode</span></div>
+    <div class="nav-item" id="logoutBtn" data-label="Sign Out" onclick="obSignOut()" style="display:none;"><i class="fas fa-right-from-bracket" style="color:#ef4444;"></i> <span style="color:#ef4444;">Sign Out</span></div>
   </div>
 </div>
 
@@ -1433,15 +1432,8 @@ function obUpdateSidebarUser(user, company) {
   const initials = ((user.firstName||'')[0]||'A').toUpperCase() + ((user.lastName||'')[0]||'T').toUpperCase();
   const av = document.getElementById('upgradeProBtn');
   if (av) av.textContent = initials;
-  const sbBottom = document.querySelector('.sidebar-bottom');
-  if (sbBottom && !document.getElementById('logoutBtn')) {
-    const logoutItem = document.createElement('div');
-    logoutItem.className = 'nav-item';
-    logoutItem.id = 'logoutBtn';
-    logoutItem.innerHTML = '<i class="fas fa-right-from-bracket" style="color:#ef4444;"></i> <span style="color:#ef4444;">Sign Out</span>';
-    logoutItem.onclick = obSignOut;
-    sbBottom.appendChild(logoutItem);
-  }
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) logoutBtn.style.display = 'flex';
 }
 
 function obForgotPassword() {
