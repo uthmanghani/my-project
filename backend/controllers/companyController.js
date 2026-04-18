@@ -6,7 +6,27 @@ exports.getSettings = async (req, res) => {
   try {
     const company = await Company.findById(req.user.companyId);
     if (!company) return res.status(404).json({ error: 'Company not found' });
-    res.json(company.settings);
+
+    res.json({
+      // Top-level fields — mapped to what frontend expects
+      companyName:         company.name,
+      companyLegalName:    company.legalName      || company.name,
+      companyTaxId:        company.tin,
+      companyPhone:        company.phone,
+      companyEmail:        company.email,
+      companyAddress:      company.address,
+      rcNumber:            company.rcNumber,
+      industry:            company.industry,
+
+      // Settings sub-object
+      invoicePrefix:       company.settings?.invoicePrefix       || 'INV-',
+      nextInvoiceNumber:   company.settings?.nextInvoiceNumber   || 1,
+      defaultDueDays:      company.settings?.defaultDueDays      || 30,
+      defaultVatRate:      company.settings?.defaultVatRate       || 7.5,
+      defaultInvoiceNotes: company.settings?.defaultInvoiceNotes || 'Thank you for your business.',
+      currency:            company.settings?.currency             || '₦',
+      darkMode:            company.settings?.darkMode             || false,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
