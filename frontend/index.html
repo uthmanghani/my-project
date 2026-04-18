@@ -1173,11 +1173,17 @@ async function loadAllData() {
   if (!authToken) return;
   try {
     const [acc, je, cust, inv, vend, bill, prod, emp, ast, set] = await Promise.all([
-      apiFetch('/accounts'), apiFetch('/journals'), apiFetch('/customers'),
-      apiFetch('/invoices'), apiFetch('/vendors'), apiFetch('/bills'),
-      apiFetch('/products'), apiFetch('/employees'), apiFetch('/assets'),
-      apiFetch('/audit'), apiFetch('/company/settings')
-    ]);
+  apiFetch('/accounts').catch(() => []),
+  apiFetch('/journals').catch(() => []),
+  apiFetch('/customers').catch(() => []),
+  apiFetch('/invoices').catch(() => []),
+  apiFetch('/vendors').catch(() => []),
+  apiFetch('/bills').catch(() => []),
+  apiFetch('/products').catch(() => []),
+  apiFetch('/employees').catch(() => []),
+  apiFetch('/assets').catch(() => []),
+  apiFetch('/company/settings').catch(() => ({}))
+]);
     accounts = acc; journalEntries = je; customers = cust; invoices = inv;
     vendors = vend; bills = bill; products = prod; employees = emp;
     assets = ast; settings = set;
