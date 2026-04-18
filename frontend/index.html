@@ -5715,6 +5715,9 @@ function showKeyboardHelp() {
       await loadAllData();
       recalcBalances();
       document.getElementById('onboardingRoot').classList.add('hidden');
+      // Always show Sign Out when logged in
+      const logoutBtn = document.getElementById('logoutBtn');
+      if (logoutBtn) logoutBtn.style.display = 'flex';
       // Restore company name and user display
       if (settings.companyName) applySettings();
       if (settings.darkMode) {
