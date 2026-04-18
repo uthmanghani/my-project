@@ -779,6 +779,43 @@
       .sidebar-overlay.overlay-visible { display: block; }
       .hamburger-btn { display: flex; margin-right: 8px; }
     }
+    /* Collapsible Sidebar */
+.sidebar.collapsed {
+  width: 70px;
+  transition: width 0.3s ease;
+}
+.sidebar.collapsed .sidebar-company,
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .nav-section-label,
+.sidebar.collapsed .sidebar-logo .logo-text span,
+.sidebar.collapsed .sidebar-logo .logo-text {
+  display: none;
+}
+.sidebar.collapsed .sidebar-logo .logo-icon {
+  margin: 0 auto;
+}
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 9px 0;
+}
+.sidebar.collapsed .nav-item i {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.sidebar.collapsed .sidebar-logo {
+  justify-content: center;
+  padding: 0;
+}
+/* For mobile: prevent collapse when sidebar is hidden */
+@media (max-width: 768px) {
+  .sidebar.collapsed {
+    width: var(--sidebar-w);
+    left: -260px;
+  }
+  .sidebar.collapsed.sidebar-open {
+    left: 0;
+  }
+}
   </style>
   </head>
 <body>
@@ -1024,7 +1061,10 @@
   <div class="sidebar-bottom">
     <div class="nav-item" data-page="settings"><i class="fas fa-cog"></i> Settings</div>
     <div class="nav-item" data-page="help"><i class="fas fa-question-circle"></i> Help</div>
-    <div class="nav-item" id="darkModeToggle"><i class="fas fa-moon"></i> <span id="darkLabel">Dark Mode</span></div>
+    <div class="nav-item" id="collapseSidebarBtn" onclick="toggleSidebarCollapse()">
+  <i class="fas fa-chevron-left"></i> <span>Collapse</span>
+</div>
+<div class="nav-item" id="darkModeToggle" onclick="toggleDark()"><i class="fas fa-moon"></i> <span id="darkLabel">Dark Mode</span></div>
   </div>
 </div>
 
@@ -1136,7 +1176,7 @@ async function loadAllData() {
       apiFetch('/accounts'), apiFetch('/journals'), apiFetch('/customers'),
       apiFetch('/invoices'), apiFetch('/vendors'), apiFetch('/bills'),
       apiFetch('/products'), apiFetch('/employees'), apiFetch('/assets'),
-      apiFetch('/company/settings')
+      apiFetch('/audit'), apiFetch('/company/settings')
     ]);
     accounts = acc; journalEntries = je; customers = cust; invoices = inv;
     vendors = vend; bills = bill; products = prod; employees = emp;
@@ -5535,6 +5575,32 @@ window.toggleDark = async function() {
   } catch (e) {}
   renderSettingsView();
 };
+// Toggle sidebar collapse / expand
+function toggleSidebarCollapse() {
+  const sidebar = document.querySelector('.sidebar');
+  sidebar.classList.toggle('collapsed');
+  const btnIcon = document.querySelector('#collapseSidebarBtn i');
+  if (sidebar.classList.contains('collapsed')) {
+    btnIcon.className = 'fas fa-chevron-right';
+    localStorage.setItem('sidebarCollapsed', 'true');
+  } else {
+    btnIcon.className = 'fas fa-chevron-left';
+    localStorage.setItem('sidebarCollapsed', 'false');
+  }
+}
+
+// Restore collapsed state on page load
+(function restoreSidebarState() {
+  const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+  if (collapsed) {
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar) {
+      sidebar.classList.add('collapsed');
+      const btnIcon = document.querySelector('#collapseSidebarBtn i');
+      if (btnIcon) btnIcon.className = 'fas fa-chevron-right';
+    }
+  }
+})();
 
 // ════════════════════════════════════════════════════════════
 // ─── GLOBAL SEARCH ───────────────────────────────────────────
