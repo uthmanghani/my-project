@@ -32,3 +32,28 @@ exports.sendInvoiceEmail = async ({ to, customerName, invoiceNumber, amount, due
       </div>`
   });
 };
+exports.sendPasswordResetEmail = async ({ to, token, firstName }) => {
+  const resetUrl = `https://accountrack.onrender.com?resetToken=${token}`;
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject: 'AccounTrack Password Reset Request',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:#0a4f45;padding:24px;text-align:center;">
+          <h1 style="color:white;margin:0;font-size:22px;">AccounTrack™ Pro</h1>
+        </div>
+        <div style="padding:32px;background:#f9f9f9;">
+          <p>Hello ${firstName},</p>
+          <p>You requested a password reset. Click the button below to set a new password.</p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${resetUrl}" style="background:#0a4f45;color:white;padding:14px 28px;
+               border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;">
+              Reset My Password
+            </a>
+          </div>
+          <p style="color:#999;font-size:13px;">This link expires in 1 hour. If you did not request this, ignore this email.</p>
+        </div>
+      </div>`
+  });
+};

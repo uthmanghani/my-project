@@ -37,9 +37,20 @@ exports.updateSettings = async (req, res) => {
   try {
     const company = await Company.findById(req.user.companyId);
     if (!company) return res.status(404).json({ error: 'Company not found' });
-    company.settings = { ...company.settings, ...req.body };
+    // Update top-level company fields
+    if (req.body.companyName) company.name = req.body.companyName;
+    if (req.body.companyLegalName) company.legalName = req.body.companyLegalName;
+    if (req.body.companyTaxId) company.tin = req.body.companyTaxId;
+    if (req.body.companyPhone) company.phone = req.body.companyPhone;
+    if (req.body.companyEmail) company.email = req.body.companyEmail;
+    if (req.body.companyAddress) company.address = req.body.companyAddress;
+    // Update settings sub-object
+    const settingsFields = ['invoicePrefix','nextInvoiceNumber','defaultDueDays',
+      'defaultVatRate','defaultInvoiceNotes','currency','darkMode'];
+    settingsFields.forEach(f => { if (req.body[f] !== undefined) company.settings[f] = req.body[f]; });
+    company.markModified('settings');
     await company.save();
-    res.json(company.settings);
+    res.json({ message: 'Settings saved successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

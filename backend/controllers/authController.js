@@ -5,6 +5,7 @@ const INDUSTRIES = require('../utils/industryData');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 exports.register = async (req, res) => {
   const errors = validationResult(req);
@@ -152,7 +153,43 @@ exports.getUsers = async (req, res) => {
   }
 };
 
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: 'No account found with that email' });
+    const token = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+    const { sendPasswordResetEmail } = require('../utils/emailService');
+    await sendPasswordResetEmail({ to: email, token, firstName: user.firstName });
+    res.json({ message: 'Password reset email sent' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+ 
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+    res.json({ message: 'Password reset successfully. You can now log in.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+ 
 exports.removeUser = async (req, res) => {
+
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can remove users' });
