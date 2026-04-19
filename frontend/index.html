@@ -1175,6 +1175,24 @@ const PAGE_LABELS = {
   budgets:'Budgets', products:'Products & Inventory', employees:'Payroll',
   settings:'Settings', help:'Help', assets:'Asset Register', audittrail:'Audit Trail',
 };
+
+window._dashPeriod = 'This Month';
+function setDashPeriod(p) {
+  window._dashPeriod = p;
+  renderDashboard();
+}
+ 
+function getDashDates() {
+  const now = new Date();
+  const p = window._dashPeriod || 'This Month';
+  let start, end = now.toISOString().split('T')[0];
+  if (p === 'This Month') { start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]; }
+  else if (p === 'Last Month') { const d = new Date(now.getFullYear(), now.getMonth()-1, 1); start = d.toISOString().split('T')[0]; end = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]; }
+  else if (p === 'This Quarter') { const q = Math.floor(now.getMonth()/3); start = new Date(now.getFullYear(), q*3, 1).toISOString().split('T')[0]; }
+  else { start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; }
+  return { start, end };
+}
+
 // PAGE_RENDERS is populated after all render functions are defined (see bottom of script)
 
 // ─── LOAD ALL DATA FROM BACKEND ──────────────────────────────────────
@@ -1209,8 +1227,34 @@ async function loadAllData() {
     customerPayments = custPay; vendorPayments = vendPay; openingBalances = obData;
 
     applySettings();
+    checkOverdueInvoices();
   } catch (err) {
     console.error('Failed to load data', err);
+  }
+}
+ 
+function checkOverdueInvoices() {
+  const today = new Date().toISOString().split('T')[0];
+  const overdue = invoices.filter(inv =>
+    inv.status !== 'paid' && inv.dueDate && inv.dueDate < today
+  );
+  const bell = document.getElementById('notifBell');
+  if (bell) {
+    const existing = bell.querySelector('.notif-count');
+    if (existing) existing.remove();
+    if (overdue.length > 0) {
+      const dot = document.createElement('span');
+      dot.className = 'notif-count';
+      dot.textContent = overdue.length;
+      dot.style.cssText = 'position:absolute;top:-4px;right:-4px;background:#dc2626;color:white;border-radius:50%;width:16px;height:16px;font-size:0.6rem;display:flex;align-items:center;justify-content:center;font-weight:700;';
+      bell.style.position = 'relative';
+      bell.appendChild(dot);
+    }
+  }
+  if (overdue.length > 0) {
+    setTimeout(() => {
+      showToast(`${overdue.length} invoice${overdue.length>1?'s are':' is'} overdue — check Invoices`, 'danger');
+    }, 2000);
   }
 }
 
@@ -1809,6 +1853,24 @@ window.saveDrawings = async function() {
 };
 
 function renderDashboard() {
+  const dashView = document.getElementById('dashboardView');
+  const filterBar = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <span style="font-size:0.78rem;color:var(--text-3);font-weight:600;">PERIOD:</span>
+      ${['This Month','Last Month','This Quarter','This Year'].map(p=>
+        `<button onclick="setDashPeriod('${p}')" class="btn btn-sm ${(window._dashPeriod||'This Month')===p?'btn-primary':'btn-secondary'}">${p}</button>`
+      ).join('')}
+    </div>`;
+  const existing = document.getElementById('dashFilterBar');
+  if (!existing) {
+    const container = document.createElement('div');
+    container.id = 'dashFilterBar';
+    container.innerHTML = filterBar;
+    dashView.insertBefore(container, dashView.firstChild);
+  } else {
+    existing.innerHTML = filterBar;
+  }
+
   const revenue  = accounts.filter(a=>a.type==='Revenue').reduce((s,a)=>s+a.balance,0);
   const expenses = accounts.filter(a=>a.type==='Expense').reduce((s,a)=>s+a.balance,0);
   const netIncome = revenue - expenses;
@@ -2056,7 +2118,8 @@ function renderCustomersView() {
       <div class="page-title"><h2>Customers</h2><p>${customers.length} customer${customers.length!==1?'s':''} on record</p></div>
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="exportCustomersCSV()"><i class="fas fa-file-csv"></i> Export CSV</button>
-        <button class="btn btn-primary" onclick="openCustomerModal()"><i class="fas fa-plus"></i> Add Customer</button>
+        '<button class="btn btn-secondary btn-sm" onclick="importCustomersCSV()"><i class="fas fa-file-csv"></i> Import CSV</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="showAddCustomer()"><i class="fas fa-plus"></i> Add Customer</button>'
         <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="fas fa-file-invoice-dollar"></i> Create Invoice</button>
         <button class="btn btn-secondary" onclick="showARAgingPanel()"><i class="fas fa-clock"></i> AR Aging Report</button>
       </div>
@@ -2224,6 +2287,24 @@ window.openInvoiceModal = (presetCustomerId) => {
       <div class="form-group"><label class="form-label required">Customer</label><select class="form-control" id="invCustomer">${custOpts}</select></div>
       <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-control" id="invDate" value="${today()}"></div>
       <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-control" id="invDueDate" value="${futureDate(settings.defaultDueDays)}"></div>
+      <div class="form-group" style="margin-top:8px;">
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+    <input type="checkbox" id="invRecurring" onchange="toggleRecurring()">
+    <span style="font-size:0.82rem;font-weight:600;">Make this a recurring invoice</span>
+  </label>
+</div>
+<div id="recurringOptions" style="display:none;margin-top:8px;">
+  <div class="form-row cols-2">
+    <div class="form-group"><label class="form-label">Frequency</label>
+      <select class="form-control" id="invFrequency">
+        <option value="monthly">Monthly</option>
+        <option value="quarterly">Quarterly</option>
+        <option value="weekly">Weekly</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">End Date (optional)</label>
+      <input type="date" class="form-control" id="invRecurEnd"></div>
+  </div>
+</div>
     </div>
     <div class="section-label">Line Items</div>
     <div class="line-items-header" style="grid-template-columns:2fr 60px 100px 100px 70px 36px;"><span>Product / Description</span><span>Qty</span><span>Unit Price</span><span>Amount</span><span>VAT?</span><span></span></div>
@@ -2567,7 +2648,49 @@ window.viewInvoice = (id) => {
   );
 };
 // ════ INVOICE PRINT ════════════════════════════════════
-window.printInvoice = function(invoiceId) {
+window.sendInvoiceEmail = async function(id) {
+  const inv = invoices.find(i => i._id === id);
+  if (!inv) return;
+  if (!confirm(`Send invoice ${inv.number} to customer by email?`)) return;
+  try {
+    await apiFetch(`/invoices/${id}/send-email`, { method:'POST' });
+    showToast('Invoice emailed to customer successfully!', 'success');
+  } catch(err) { showToast(err.message || 'Email failed', 'danger'); }
+};
+ 
+window.issueCreditNote = async function(id) {
+  const inv = invoices.find(i => i._id === id);
+  if (!inv) return;
+  showModal('Issue Credit Note', `
+    <p style="color:var(--text-2);font-size:0.82rem;">Invoice: <strong>${inv.number}</strong> — Total: <strong>${fmt(inv.total)}</strong></p>
+    <div class="form-group"><label class="form-label required">Credit Amount</label>
+      <input class="form-control" type="number" id="cnAmt" value="${inv.total}" max="${inv.total}"></div>
+    <div class="form-group"><label class="form-label required">Reason</label>
+      <input class="form-control" id="cnReason" placeholder="e.g. Returned goods, billing error"></div>`,
+    `<button class="btn btn-danger" onclick="submitCreditNote('${id}')"><i class="fas fa-file-minus"></i> Issue Credit Note</button>`
+  );
+};
+ 
+async function submitCreditNote(id) {
+  const amount = parseFloat(document.getElementById('cnAmt').value);
+  const reason = document.getElementById('cnReason').value;
+  if (!reason) { showToast('Please enter a reason', 'danger'); return; }
+  try {
+    await apiFetch(`/invoices/${id}/credit-note`, { method:'POST', body: JSON.stringify({ amount, reason }) });
+    await loadAllData(); closeTopModal();
+    showToast('Credit note issued successfully', 'success');
+    navigateTo('invoices');
+  } catch(err) { showToast(err.message, 'danger'); }
+}
+ 
+function toggleRecurring() {
+  const cb = document.getElementById('invRecurring');
+  document.getElementById('recurringOptions').style.display = cb && cb.checked ? 'block' : 'none';
+}
+ 
+window.printInvoice = function(id) {
+
+
   var inv = invoices.find(function(i) { return i.id === invoiceId; });
   if (!inv) { alert("Invoice not found."); return; }
  
@@ -3847,6 +3970,15 @@ window.saveBankTx = (bankId) => {
   showToast('Bank transaction recorded and posted to ledger. (Edit journal to re-allocate from Suspense.)', 'success');
 };
 
+window.reconcileTx = async function(id) {
+  try {
+    await apiFetch(`/banktransactions/${id}/reconcile`, { method:'PATCH' });
+    await loadAllData();
+    showToast('Transaction reconciliation status updated', 'success');
+    navigateTo('banking');
+  } catch(err) { showToast(err.message, 'danger'); }
+};
+
 // ════════════════════════════════════════════
 // ─── TRANSACTIONS ───
 // ════════════════════════════════════════════
@@ -4445,7 +4577,15 @@ function renderSettingsView() {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div class="card">
-        <div class="card-header"><span class="card-title"><i class="fas fa-building" style="margin-right:8px;color:var(--brand);"></i>Company Profile</span></div>
+        <div class="card" style="margin-bottom:16px;grid-column:1/-1;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <span class="card-title"><i class="fas fa-users" style="color:var(--brand);margin-right:8px;"></i>Team Members</span>
+    <button class="btn btn-primary btn-sm" onclick="showInviteUser()"><i class="fas fa-user-plus"></i> Invite User</button>
+  </div>
+  <div class="card-body" id="teamMembersList"><div style="color:var(--text-3);font-size:0.82rem;">Loading team...</div></div>
+</div>
+<div class="card-header"><span class="card-title"><i class="fas fa-building" style="margin-right:8px;color:var(--brand);"></i>Company Profile</span></div>
+
         <div class="card-body">
           <div class="form-row cols-1"><div class="form-group"><label class="form-label required">Company Name</label><input class="form-control" id="sCo" value="${settings.companyName}"></div></div>
           <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Legal Name</label><input class="form-control" id="sLegal" value="${settings.companyLegalName}"></div>
@@ -4817,6 +4957,68 @@ function showToast(msg, type='info') {
   document.body.appendChild(t);
   setTimeout(()=>t.remove(), 3000);
 }
+
+// ─── TEAM MANAGEMENT ─────────────────────────────────────────
+async function loadTeamMembers() {
+  try {
+    const users = await apiFetch('/auth/users');
+    const list = document.getElementById('teamMembersList');
+    if (!list) return;
+    list.innerHTML = users.map(u => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--brand);color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">${(u.firstName||'?')[0]}${(u.lastName||'')[0]}</div>
+          <div>
+            <div style="font-size:0.82rem;font-weight:600;">${u.firstName} ${u.lastName}</div>
+            <div style="font-size:0.72rem;color:var(--text-3);">${u.email}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="badge ${u.role==='admin'?'badge-success':u.role==='accountant'?'badge-info':'badge-neutral'}">${u.role}</span>
+          ${u._id !== currentUserId ? `<button onclick="removeTeamMember('${u._id}')" class="btn btn-danger btn-sm btn-icon"><i class="fas fa-trash"></i></button>` : ''}
+        </div>
+      </div>`).join('');
+  } catch(e) {}
+}
+ 
+async function showInviteUser() {
+  showModal('Invite Team Member', `
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label required">First Name</label><input class="form-control" id="invFn"></div>
+      <div class="form-group"><label class="form-label required">Last Name</label><input class="form-control" id="invLn"></div>
+    </div>
+    <div class="form-group"><label class="form-label required">Email</label><input class="form-control" type="email" id="invEm"></div>
+    <div class="form-group"><label class="form-label required">Password</label><input class="form-control" type="password" id="invPw"></div>
+    <div class="form-group"><label class="form-label required">Role</label>
+      <select class="form-control" id="invRole">
+        <option value="accountant">Accountant — can create and edit records</option>
+        <option value="viewer">Viewer — read only access</option>
+        <option value="admin">Admin — full access</option>
+      </select>
+    </div>`,
+    `<button class="btn btn-primary" onclick="submitInvite()"><i class="fas fa-paper-plane"></i> Send Invite</button>`
+  );
+}
+ 
+async function submitInvite() {
+  const data = { firstName: document.getElementById('invFn').value, lastName: document.getElementById('invLn').value,
+    email: document.getElementById('invEm').value, password: document.getElementById('invPw').value,
+    role: document.getElementById('invRole').value };
+  try {
+    await apiFetch('/auth/invite', { method:'POST', body: JSON.stringify(data) });
+    closeTopModal(); showToast('User invited successfully!', 'success');
+    loadTeamMembers();
+  } catch(err) { showToast(err.message, 'danger'); }
+}
+ 
+async function removeTeamMember(id) {
+  if (!confirm('Remove this user from your workspace?')) return;
+  try {
+    await apiFetch(`/auth/users/${id}`, { method:'DELETE' });
+    showToast('User removed', 'success'); loadTeamMembers();
+  } catch(err) { showToast(err.message, 'danger'); }
+}
+ 
 
 // ════════════════════════════════════════════
 // ─── DARK MODE TOGGLE ───
@@ -5640,7 +5842,32 @@ window.postDepreciation = async function(id) {
 };
 
 // ─── DATA BACKUP / RESTORE ───────────────────────────────────────────
+window.importCustomersCSV = function() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.csv';
+  input.onchange = async function(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const text = await file.text();
+    const lines = text.trim().split('\n');
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const rows = lines.slice(1).map(line => {
+      const vals = line.split(',');
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = (vals[i]||'').trim());
+      return { name: obj.name||obj['customer name'], email: obj.email, phone: obj.phone, address: obj.address };
+    }).filter(r => r.name);
+    try {
+      const result = await apiFetch('/customers/bulk-import', { method:'POST', body: JSON.stringify({ rows }) });
+      await loadAllData();
+      showToast(result.message, 'success');
+      navigateTo('customers');
+    } catch(err) { showToast(err.message, 'danger'); }
+  };
+  input.click();
+};
+ 
 window.exportData = async function() {
+
   try {
     const data = await apiFetch('/export');
     const a = Object.assign(document.createElement('a'), {
