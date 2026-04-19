@@ -1331,7 +1331,16 @@ async function obSignIn() {
     localStorage.setItem('at_token', authToken);
     // Save user profile for Settings page
     localStorage.setItem('at_user_profile', JSON.stringify(data.user));
-    await loadAllData();
+    // Also fetch and save company profile
+    try {
+  const companyProfile = await apiFetch('/company/profile');
+  localStorage.setItem('at_company_profile', JSON.stringify(companyProfile));
+  // Store industry name (extracted from company profile or settings)
+  if (companyProfile.industry) {
+    localStorage.setItem('at_industry', companyProfile.industry);
+  }
+  } catch (e) { console.warn('Could not fetch company profile', e); }
+  await loadAllData();
     document.getElementById('onboardingRoot').classList.add('hidden');
     obUpdateSidebarUser({ firstName: data.firstName || '', lastName: data.lastName || '', email }, { companyName: settings.companyName });
     navigateTo('dashboard');
@@ -1414,9 +1423,15 @@ async function obFinishSetup() {
     const data = await res.json();
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
-    // Save company profile for Settings page
-    localStorage.setItem('at_company_profile', JSON.stringify(company));
+    // Store user profile
+    localStorage.setItem('at_user_profile', JSON.stringify(admin));
+    // Store industry
+    localStorage.setItem('at_industry', industry);
+    // Fetch and store full company profile
+    const companyProfile = await apiFetch('/company/profile');
+    localStorage.setItem('at_company_profile', JSON.stringify(companyProfile));
     await loadAllData();
+    
     document.getElementById('onboardingRoot').classList.add('hidden');
     obUpdateSidebarUser(admin, company);
     navigateTo('dashboard');
@@ -5446,6 +5461,9 @@ window.saveSettings = async function() {
   };
   try {
     await apiFetch('/company/settings', { method:'PUT', body:JSON.stringify(data) });
+    // Refresh company profile in localStorage
+    const updatedProfile = await apiFetch('/company/profile');
+    localStorage.setItem('at_company_profile', JSON.stringify(updatedProfile));
     await loadAllData();
     applySettings();
     showToast('Settings saved successfully.', 'success');
