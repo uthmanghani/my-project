@@ -9,4 +9,6 @@ router.post('/', authenticateToken, customerController.create);
 router.put('/:id', authenticateToken, customerController.update);
 router.delete('/:id', authenticateToken, customerController.delete);
 
+router.post('/bulk-import', authenticateToken, customerController.bulkImport);
+ 
 module.exports = router;

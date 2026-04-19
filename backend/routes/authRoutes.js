@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { body } = require('express-validator');
-const authController = require('../controllers/authController');
+const { register, login, inviteUser, getUsers, removeUser } = require('../controllers/authController');
+const { authenticateToken } = require('../middleware/auth');
 
 router.post('/register', [
   body('company.companyName').notEmpty().withMessage('Company name required'),
@@ -14,4 +14,8 @@ router.post('/login', [
   body('password').notEmpty().withMessage('Password required')
 ], authController.login);
 
+router.post('/invite', authenticateToken, inviteUser);
+router.get('/users', authenticateToken, getUsers);
+router.delete('/users/:id', authenticateToken, removeUser);
+ 
 module.exports = router;

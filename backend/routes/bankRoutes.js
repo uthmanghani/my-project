@@ -6,6 +6,7 @@ const bankController = require('../controllers/bankController');
 router.get('/accounts', authenticateToken, bankController.getBankAccounts);
 router.post('/accounts', authenticateToken, bankController.createBankAccount);
 router.delete('/accounts/:id', authenticateToken, bankController.deleteBankAccount);
+router.patch('/transactions/:id/reconcile', bankController.reconcileTransaction);
 router.get('/transactions', authenticateToken, bankController.getBankTransactions);
 router.post('/transactions', authenticateToken, bankController.createBankTransaction);
 

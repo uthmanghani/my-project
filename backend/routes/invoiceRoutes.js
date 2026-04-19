@@ -10,4 +10,7 @@ router.put('/:id', authenticateToken, invoiceController.update);
 router.put('/:id/pay', authenticateToken, invoiceController.recordPayment);
 router.delete('/:id', authenticateToken, invoiceController.delete);
 
+router.post('/:id/send-email', authenticateToken, invoiceController.sendEmail);
+router.post('/:id/credit-note', authenticateToken, invoiceController.issueCreditNote);
+ 
 module.exports = router;

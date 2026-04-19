@@ -67,7 +67,23 @@ exports.getBankTransactions = async (req, res) => {
   }
 };
 
+exports.reconcileTransaction = async (req, res) => {
+  try {
+    const tx = await BankTransaction.findOne({
+      companyId: req.user.companyId, _id: req.params.id
+    });
+    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+    tx.reconciled = !tx.reconciled;
+    tx.reconciledAt = tx.reconciled ? new Date() : null;
+    await tx.save();
+    res.json(tx);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+ 
 exports.createBankTransaction = async (req, res) => {
+
   const session = await mongoose.startSession();
   session.startTransaction();
   try {

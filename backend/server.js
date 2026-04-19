@@ -106,6 +106,8 @@ const server = app.listen(PORT, () => {
 
 // ==================== GRACEFUL SHUTDOWN ====================
 const { closeDB } = require('./config/db');
+const { startRecurringJob } = require('./utils/recurringJob');
+startRecurringJob();
 
 process.on('SIGINT', async () => {
   console.log('🔴 Shutting down gracefully...');

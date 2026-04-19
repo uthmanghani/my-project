@@ -46,6 +46,18 @@ exports.update = async (req, res) => {
   }
 };
 
+exports.bulkImport = async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows provided' });
+    const docs = rows.map(r => ({ ...r, companyId: req.user.companyId }));
+    await Customer.insertMany(docs, { ordered: false });
+    res.json({ message: `${docs.length} customers imported` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+ 
 exports.delete = async (req, res) => {
   try {
     const customer = await Customer.findOneAndDelete({

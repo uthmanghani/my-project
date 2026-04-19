@@ -58,10 +58,12 @@ const InvoiceSchema = new mongoose.Schema({
   recurringFreq: { type: String, enum: ['monthly', 'weekly', 'quarterly', 'annually'] },
   recurringNextDate: Date,
   recurringEndDate: Date,
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  createdAt: { type: Date, default: Date.now },
+  isRecurring: { type: Boolean, default: false },
+  recurringFrequency: { type: String, enum: ['weekly','monthly','quarterly'], default: 'monthly' },
+  recurringNextDate: { type: Date },
+  recurringEndDate: { type: Date }
+
 });
 
 InvoiceSchema.pre('save', function(next) {

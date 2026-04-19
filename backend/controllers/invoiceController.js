@@ -193,6 +193,76 @@ exports.recordPayment = async (req, res) => {
   }
 };
 
+exports.sendEmail = async (req, res) => {
+  try {
+    const { sendInvoiceEmail } = require('../utils/emailService');
+    const Customer = require('../models/Customer');
+    const Company = require('../models/Company');
+    const invoice = await Invoice.findOne({ companyId: req.user.companyId, _id: req.params.id })
+      .populate('customerId');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const company = await Company.findById(req.user.companyId);
+    const customer = invoice.customerId;
+    await sendInvoiceEmail({
+      to: customer.email,
+      customerName: customer.name,
+      invoiceNumber: invoice.number,
+      amount: Number(invoice.total).toLocaleString('en-NG', { minimumFractionDigits: 2 }),
+      dueDate: invoice.dueDate,
+      companyName: company.name,
+    });
+    res.json({ message: 'Invoice emailed successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+ 
+exports.issueCreditNote = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const { amount, reason } = req.body;
+    const invoice = await Invoice.findById(req.params.id).session(session);
+    if (!invoice) throw new Error('Invoice not found');
+    if (amount > invoice.total) throw new Error('Credit cannot exceed invoice total');
+ 
+    const arAccount = await Account.findOne({ companyId: req.user.companyId, code: '1100' }).session(session);
+    const revenueAccount = await Account.findOne({ companyId: req.user.companyId, code: '4000' }).session(session);
+    if (!arAccount || !revenueAccount) throw new Error('Required accounts not found');
+ 
+    const journal = new JournalEntry({
+      companyId: req.user.companyId,
+      date: new Date(),
+      description: `Credit Note for ${invoice.number} — ${reason}`,
+      type: 'credit_note',
+      referenceType: 'invoice',
+      referenceId: invoice._id,
+      lines: [
+        { accountCode: revenueAccount.code, amount, type: 'debit' },
+        { accountCode: arAccount.code, amount, type: 'credit' }
+      ]
+    });
+    await journal.save({ session });
+    arAccount.balance -= amount;
+    revenueAccount.balance -= amount;
+    await arAccount.save({ session });
+    await revenueAccount.save({ session });
+ 
+    invoice.creditNoteAmount = (invoice.creditNoteAmount || 0) + amount;
+    invoice.creditNoteReason = reason;
+    if (invoice.creditNoteAmount >= invoice.total) invoice.status = 'credit_note';
+    await invoice.save({ session });
+ 
+    await session.commitTransaction();
+    res.json({ message: 'Credit note issued', creditNoteAmount: invoice.creditNoteAmount });
+  } catch (err) {
+    await session.abortTransaction();
+    res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
+  }
+};
+ 
 exports.delete = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -200,7 +270,8 @@ exports.delete = async (req, res) => {
     const invoice = await Invoice.findOneAndDelete({
       companyId: req.user.companyId,
       _id: req.params.id
-    }).session(session);
+    })
+.session(session);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     await JournalEntry.deleteMany({
       companyId: req.user.companyId,
