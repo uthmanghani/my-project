@@ -107,6 +107,26 @@ exports.inviteUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.getUsers = async (req, res) => {
+  try {
+    const users = await User.find({ companyId: req.user.companyId }).select('-password');
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.removeUser = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove users' });
+    const user = await User.findOneAndDelete({ companyId: req.user.companyId, _id: req.params.id });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'User removed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
  
 exports.getUsers = async (req, res) => {
   try {

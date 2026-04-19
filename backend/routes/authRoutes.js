@@ -14,8 +14,8 @@ router.post('/login', [
   body('password').notEmpty().withMessage('Password required')
 ], authController.login);
 
-router.post('/invite', authenticateToken, inviteUser);
-router.get('/users', authenticateToken, getUsers);
-router.delete('/users/:id', authenticateToken, removeUser);
+router.post('/invite', authenticateToken, authController.inviteUser);
+router.get('/users', authenticateToken, authController.getUsers);
+router.delete('/users/:id', authenticateToken, authController.removeUser);
  
 module.exports = router;
