@@ -4684,16 +4684,56 @@ function renderHelpView() {
     { q:'What is CITA compliance?', a:'Companies Income Tax Act requires companies to file annual tax returns with NRS (Nigeria Revenue Service, formerly FIRS). AccounTrack helps you track income, expenses and compute taxable profit.' },
     { q:'How do I invoice a customer?', a:'Go to Customers, click "Create Invoice", select a customer, add product lines, and click Save & Post. The invoice posts to your AR and Revenue accounts automatically.' },
   ];
+
+  const walkthroughSteps = [
+    { icon:'fa-building', title:'Register your company', desc:'Set up your workspace by entering your RC Number, TIN, address and selecting your industry. Your Chart of Accounts is seeded automatically.', tips:['Enter RC Number and TIN exactly as registered with CAC','Choose your industry carefully — it configures your accounts','Your admin email is your login — keep it accessible'] },
+    { icon:'fa-calculator', title:'Review your Chart of Accounts', desc:'Your accounts are pre-configured for your industry. Add custom accounts if needed and set opening balances if migrating from another system.', tips:['Codes 1xxx = Assets, 2xxx = Liabilities, 3xxx = Equity, 4xxx = Revenue, 5–6xxx = Expenses','Add custom accounts via Chart of Accounts → Add Account','Do not delete system accounts used by invoices and payroll'] },
+    { icon:'fa-balance-scale', title:'Enter opening balances', desc:'If migrating from another system, enter your closing balances so reports start accurately from day one.', tips:['Go to Finance → Opening Balances','Enter balances from your previous accounting software','Leave at zero if starting fresh'] },
+    { icon:'fa-users', title:'Add customers and vendors', desc:'Add the businesses you sell to (Customers) and buy from (Vendors) before creating invoices or bills.', tips:['Go to Customers → Add Customer','Enter their TIN if VAT registered — required for compliance','Repeat the same for Vendors under Purchasing'] },
+    { icon:'fa-file-invoice-dollar', title:'Create your first invoice', desc:'Issue invoices to customers. AccounTrack posts journal entries and updates your receivables automatically.', tips:['Go to Invoices → New Invoice','Select a customer, add line items and set due date','VAT is calculated at 7.5% — toggle per line item'] },
+    { icon:'fa-user-tie', title:'Run payroll', desc:'Add employees and run monthly payroll. PAYE is calculated automatically under NTA 2025 rules.', tips:['Go to Payroll → Add Employee with annual salary','Use Run Batch Payroll to process all staff at once','PAYE and pension are posted to the correct liability accounts'] },
+    { icon:'fa-chart-bar', title:'Review your reports', desc:'Check your financial health in Reports — Profit & Loss, Balance Sheet, Trial Balance, VAT Summary and Cash Flow all update in real time.', tips:['Reports update as you create invoices and bills','Use the Audit Trail to see every action taken','Export data from Settings → Export Data as a JSON backup'] },
+  ];
+
   document.getElementById('helpView').innerHTML = `
-    <div class="page-header"><div class="page-title"><h2>Help & Documentation</h2><p>Quick start, FAQs and support</p></div></div>
+    <div class="page-header"><div class="page-title"><h2>Help & Documentation</h2><p>Quick start, walkthrough and support</p></div></div>
+
+    <!-- WALKTHROUGH -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <span class="card-title"><i class="fas fa-rocket" style="color:var(--brand);margin-right:8px;"></i>Getting Started Walkthrough</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:0.75rem;color:var(--text-3);" id="wtProgress">0 of ${walkthroughSteps.length} done</span>
+          <div style="width:100px;height:6px;background:var(--border);border-radius:3px;"><div id="wtBar" style="height:100%;width:0%;background:var(--brand);border-radius:3px;transition:width 0.3s;"></div></div>
+        </div>
+      </div>
+      <div class="card-body" style="padding:8px 0;">
+        ${walkthroughSteps.map((s,i)=>`
+          <div id="wt-step-${i}" style="border-bottom:1px solid var(--border);">
+            <div onclick="wtToggle(${i})" style="display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+              <div id="wt-dot-${i}" style="width:32px;height:32px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;">
+                <i class="fas ${s.icon}" style="font-size:0.8rem;color:var(--text-3);"></i>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:0.85rem;font-weight:600;color:var(--text-1);">${s.title}</div>
+                <div style="font-size:0.75rem;color:var(--text-3);margin-top:2px;" id="wt-sub-${i}">Click to expand</div>
+              </div>
+              <i class="fas fa-chevron-down" id="wt-chev-${i}" style="color:var(--text-4);font-size:0.75rem;transition:transform 0.2s;"></i>
+            </div>
+            <div id="wt-body-${i}" style="display:none;padding:0 20px 16px 64px;">
+              <p style="font-size:0.8rem;color:var(--text-2);margin:0 0 10px;line-height:1.6;">${s.desc}</p>
+              ${s.tips.map(t=>`<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;font-size:0.78rem;color:var(--text-3);"><span style="color:var(--brand);margin-top:2px;">•</span><span>${t}</span></div>`).join('')}
+              <button onclick="wtMarkDone(${i})" id="wt-btn-${i}" style="margin-top:12px;padding:6px 14px;background:var(--brand);color:white;border:none;border-radius:6px;font-size:0.78rem;cursor:pointer;font-weight:600;">
+                <i class="fas fa-check" style="margin-right:6px;"></i>Mark as done
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
       <div>
-        <div class="card" style="margin-bottom:16px;">
-          <div class="card-header"><span class="card-title"><i class="fas fa-rocket" style="color:var(--brand);margin-right:8px;"></i>Quick Start Guide</span></div>
-          <div class="card-body">
-            ${['Go to Settings → set your company name, address and Tax ID','Add your Customers and Vendors','Create Products with cost and sale prices','Issue Invoices to customers and receive payment','Record Bills from vendors and mark as paid','Add employees and run PAYE-compliant payroll','View Reports: P&L, Balance Sheet and General Ledger'].map((s,i)=>`<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.8rem;"><div style="min-width:20px;height:20px;background:var(--brand);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.68rem;font-weight:700;flex-shrink:0;">${i+1}</div><span style="color:var(--text-2);">${s}</span></div>`).join('')}
-          </div>
-        </div>
         <div class="card">
           <div class="card-header"><span class="card-title"><i class="fas fa-circle-question" style="color:var(--brand);margin-right:8px;"></i>Frequently Asked Questions</span></div>
           <div class="card-body" style="padding:12px 16px;">
@@ -4705,7 +4745,7 @@ function renderHelpView() {
         <div class="card" style="margin-bottom:16px;">
           <div class="card-header"><span class="card-title">Tax Reference</span></div>
           <div class="card-body">
-            ${[['VAT Rate','7.5% (Finance Act)'],['Pension Rate','8% employee + 10% employer'],['CIT Rate (SME)','20% (₦25M–₦100M turnover)'],['CIT Rate (Large)','30% (above ₦100M turnover)'],['Withholding Tax','5–10% depending on transaction'],].map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:0.78rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">${k}</span><span style="font-weight:600;color:var(--text-1);">${v}</span></div>`).join('')}
+            ${[['VAT Rate','7.5% (Finance Act)'],['Pension Rate','8% employee + 10% employer'],['CIT Rate (SME)','20% (₦25M–₦100M turnover)'],['CIT Rate (Large)','30% (above ₦100M turnover)'],['Withholding Tax','5–10% depending on transaction']].map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:0.78rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">${k}</span><span style="font-weight:600;color:var(--text-1);">${v}</span></div>`).join('')}
           </div>
         </div>
         <div class="card">
@@ -4718,6 +4758,52 @@ function renderHelpView() {
         </div>
       </div>
     </div>`;
+
+  // Restore saved progress
+  const saved = JSON.parse(localStorage.getItem('at_walkthrough')||'[]');
+  saved.forEach(i => wtApplyDone(i));
+}
+
+function wtToggle(i) {
+  const body = document.getElementById('wt-body-'+i);
+  const chev = document.getElementById('wt-chev-'+i);
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  chev.style.transform = isOpen ? '' : 'rotate(180deg)';
+}
+
+function wtMarkDone(i) {
+  wtApplyDone(i);
+  const saved = JSON.parse(localStorage.getItem('at_walkthrough')||'[]');
+  if (!saved.includes(i)) { saved.push(i); localStorage.setItem('at_walkthrough', JSON.stringify(saved)); }
+  wtUpdateProgress();
+  // Auto open next step
+  const next = i + 1;
+  if (document.getElementById('wt-body-'+next)) {
+    document.getElementById('wt-body-'+i).style.display = 'none';
+    document.getElementById('wt-chev-'+i).style.transform = '';
+    wtToggle(next);
+  }
+}
+
+function wtApplyDone(i) {
+  const dot = document.getElementById('wt-dot-'+i);
+  const btn = document.getElementById('wt-btn-'+i);
+  const sub = document.getElementById('wt-sub-'+i);
+  if (dot) { dot.style.background='var(--success)'; dot.innerHTML='<i class="fas fa-check" style="font-size:0.75rem;color:white;"></i>'; }
+  if (btn) { btn.style.background='var(--success)'; btn.innerHTML='<i class="fas fa-check" style="margin-right:6px;"></i>Done!'; btn.disabled=true; }
+  if (sub) sub.textContent = 'Completed';
+  wtUpdateProgress();
+}
+
+function wtUpdateProgress() {
+  const saved = JSON.parse(localStorage.getItem('at_walkthrough')||'[]');
+  const total = 7;
+  const pct = Math.round((saved.length / total) * 100);
+  const bar = document.getElementById('wtBar');
+  const prog = document.getElementById('wtProgress');
+  if (bar) bar.style.width = pct + '%';
+  if (prog) prog.textContent = saved.length + ' of ' + total + ' done';
 }
 
 // ════════════════════════════════════════════
