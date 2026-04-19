@@ -1188,6 +1188,11 @@ function applyRBAC() {
 }
 let currentCompanyId = null;
 let currentUserId = null;
+// Restore currentUserId from saved profile on page reload
+(function() {
+  const u = JSON.parse(localStorage.getItem('at_user_profile') || '{}');
+  if (u.id) currentUserId = u.id;
+})();
 
 // ─── CORE API FETCH HELPER ───────────────────────────────────────────
 async function apiFetch(endpoint, options = {}) {
