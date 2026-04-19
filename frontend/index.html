@@ -1135,8 +1135,8 @@
 const API_BASE = 'https://accountrack-backend.onrender.com/api';
 
 let authToken = localStorage.getItem('at_token');
-
 let currentCompanyId = null;
+let currentUserId = null;
 
 // ─── CORE API FETCH HELPER ───────────────────────────────────────────
 async function apiFetch(endpoint, options = {}) {
@@ -1373,6 +1373,7 @@ async function obSignIn() {
     const data = await res.json();
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
+    currentUserId = data.user.id;
     // Save user profile for Settings page
     localStorage.setItem('at_user_profile', JSON.stringify(data.user));
     // Also fetch and save company profile
@@ -1467,6 +1468,7 @@ async function obFinishSetup() {
     const data = await res.json();
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
+    currentUserId = data.user.id;
     // Store user profile
     localStorage.setItem('at_user_profile', JSON.stringify(admin));
     // Store industry
@@ -4959,28 +4961,41 @@ function showToast(msg, type='info') {
 }
 
 // ─── TEAM MANAGEMENT ─────────────────────────────────────────
+// Ensure currentUserId is defined globally (set after login)
 async function loadTeamMembers() {
   try {
     const users = await apiFetch('/auth/users');
     const list = document.getElementById('teamMembersList');
     if (!list) return;
-    list.innerHTML = users.map(u => `
+    if (!users.length) {
+      list.innerHTML = '<div style="color:var(--text-3);font-size:0.82rem;">No team members yet. Invite users above.</div>';
+      return;
+    }
+    list.innerHTML = users.map(u => {
+      // Capitalize role for display
+      const roleDisplay = u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Viewer';
+      const roleClass = u.role === 'admin' ? 'badge-success' : (u.role === 'accountant' ? 'badge-info' : 'badge-neutral');
+      return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:32px;height:32px;border-radius:50%;background:var(--brand);color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">${(u.firstName||'?')[0]}${(u.lastName||'')[0]}</div>
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--brand);color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">${(u.firstName || '?')[0]}${(u.lastName || '')[0]}</div>
           <div>
             <div style="font-size:0.82rem;font-weight:600;">${u.firstName} ${u.lastName}</div>
             <div style="font-size:0.72rem;color:var(--text-3);">${u.email}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span class="badge ${u.role==='admin'?'badge-success':u.role==='accountant'?'badge-info':'badge-neutral'}">${u.role}</span>
-          ${u._id !== currentUserId ? `<button onclick="removeTeamMember('${u._id}')" class="btn btn-danger btn-sm btn-icon"><i class="fas fa-trash"></i></button>` : ''}
+          <span class="badge ${roleClass}">${roleDisplay}</span>
+          ${(currentUserId && u._id !== currentUserId) ? `<button onclick="removeTeamMember('${u._id}')" class="btn btn-danger btn-sm btn-icon"><i class="fas fa-trash"></i></button>` : ''}
         </div>
-      </div>`).join('');
-  } catch(e) {}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error('Failed to load team members', e);
+    document.getElementById('teamMembersList').innerHTML = '<div style="color:var(--danger);">Failed to load team members.</div>';
+  }
 }
- 
+
 async function showInviteUser() {
   showModal('Invite Team Member', `
     <div class="form-row cols-2">
@@ -4999,27 +5014,39 @@ async function showInviteUser() {
     `<button class="btn btn-primary" onclick="submitInvite()"><i class="fas fa-paper-plane"></i> Send Invite</button>`
   );
 }
- 
+
 async function submitInvite() {
-  const data = { firstName: document.getElementById('invFn').value, lastName: document.getElementById('invLn').value,
-    email: document.getElementById('invEm').value, password: document.getElementById('invPw').value,
-    role: document.getElementById('invRole').value };
+  const data = {
+    firstName: document.getElementById('invFn').value.trim(),
+    lastName: document.getElementById('invLn').value.trim(),
+    email: document.getElementById('invEm').value.trim(),
+    password: document.getElementById('invPw').value,
+    role: document.getElementById('invRole').value
+  };
+  if (!data.firstName || !data.lastName || !data.email || !data.password) {
+    showToast('All fields are required', 'danger');
+    return;
+  }
   try {
     await apiFetch('/auth/invite', { method:'POST', body: JSON.stringify(data) });
-    closeTopModal(); showToast('User invited successfully!', 'success');
+    closeTopModal();
+    showToast('User invited successfully!', 'success');
     loadTeamMembers();
-  } catch(err) { showToast(err.message, 'danger'); }
+  } catch(err) {
+    showToast(err.message, 'danger');
+  }
 }
- 
+
 async function removeTeamMember(id) {
-  if (!confirm('Remove this user from your workspace?')) return;
+  if (!confirm('Remove this user from your workspace? This action cannot be undone.')) return;
   try {
     await apiFetch(`/auth/users/${id}`, { method:'DELETE' });
-    showToast('User removed', 'success'); loadTeamMembers();
-  } catch(err) { showToast(err.message, 'danger'); }
+    showToast('User removed successfully', 'success');
+    loadTeamMembers();
+  } catch(err) {
+    showToast(err.message, 'danger');
+  }
 }
- 
-
 // ════════════════════════════════════════════
 // ─── DARK MODE TOGGLE ───
 // ════════════════════════════════════════════
