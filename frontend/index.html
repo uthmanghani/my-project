@@ -1135,6 +1135,57 @@
 const API_BASE = 'https://accountrack-backend.onrender.com/api';
 
 let authToken = localStorage.getItem('at_token');
+
+// ─── ROLE-BASED ACCESS CONTROL ───────────────────────────────
+function getCurrentUser() {
+  return JSON.parse(localStorage.getItem('at_user_profile') || '{}');
+}
+function isAdmin() { return getCurrentUser().role === 'admin' || !getCurrentUser().role; }
+function isAccountant() { const r = getCurrentUser().role; return r === 'admin' || r === 'accountant'; }
+function isViewer() { return getCurrentUser().role === 'viewer'; }
+
+function rbacHide(selector) {
+  document.querySelectorAll(selector).forEach(el => el.style.display = 'none');
+}
+function applyRBAC() {
+  const user = getCurrentUser();
+  const role = user.role || 'admin';
+
+  if (role === 'viewer') {
+    // Hide ALL create/edit/delete buttons for viewers
+    rbacHide('.btn-primary:not(.rbac-allow)');
+    rbacHide('.btn-danger');
+    rbacHide('.btn-success');
+    rbacHide('[onclick*="save"], [onclick*="Save"]');
+    rbacHide('[onclick*="add"], [onclick*="Add"]');
+    rbacHide('[onclick*="create"], [onclick*="Create"]');
+    rbacHide('[onclick*="delete"], [onclick*="Delete"]');
+    rbacHide('[onclick*="remove"], [onclick*="Remove"]');
+    rbacHide('[onclick*="pay"], [onclick*="Pay"]');
+    rbacHide('[onclick*="run"], [onclick*="Run"]');
+    rbacHide('[onclick*="post"], [onclick*="Post"]');
+    rbacHide('#collapseSidebarBtn');
+    showToast('You are logged in as Viewer — read only access', 'info');
+  }
+
+  if (role === 'accountant') {
+    // Accountants can do everything EXCEPT settings and team management
+    rbacHide('[onclick*="showInviteUser"]');
+    rbacHide('[onclick*="removeTeamMember"]');
+    rbacHide('[onclick*="clearData"]');
+    rbacHide('[onclick*="saveSettings"]');
+  }
+
+  // Show role indicator in topbar
+  if (role !== 'admin') {
+    const trial = document.querySelector('.topbar-trial');
+    if (trial) {
+      trial.textContent = role === 'viewer' ? '👁 View Only' : '✏ Accountant';
+      trial.style.background = role === 'viewer' ? '#fee2e2' : '#dbeafe';
+      trial.style.color = role === 'viewer' ? '#991b1b' : '#1e40af';
+    }
+  }
+}
 let currentCompanyId = null;
 let currentUserId = null;
 
@@ -6024,6 +6075,7 @@ async function navigateTo(page) {
     document.querySelector('.sidebar')?.classList.remove('sidebar-open');
     document.getElementById('sidebarOverlay')?.classList.remove('overlay-visible');
   }
+  applyRBAC();
 }
 
 document.querySelectorAll('.nav-item[data-page]').forEach(item => {
@@ -6080,6 +6132,7 @@ function showKeyboardHelp() {
       // Always show Sign Out when logged in
       const logoutBtn = document.getElementById('logoutBtn');
       if (logoutBtn) logoutBtn.style.display = 'flex';
+      applyRBAC();
       // Restore company name and user display
       if (settings.companyName) applySettings();
       if (settings.darkMode) {
