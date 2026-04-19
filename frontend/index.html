@@ -4631,16 +4631,17 @@ function renderSettingsView() {
       <div class="page-title"><h2>Settings</h2><p>Company profile and system preferences</p></div>
       <div class="page-actions"><button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save Settings</button></div>
     </div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <span class="card-title"><i class="fas fa-users" style="color:var(--brand);margin-right:8px;"></i>Team Members</span>
+        <button class="btn btn-primary btn-sm" onclick="showInviteUser()"><i class="fas fa-user-plus"></i> Invite User</button>
+      </div>
+      <div class="card-body" id="teamMembersList"><div style="color:var(--text-3);font-size:0.82rem;">Loading team...</div></div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div class="card">
-        <div class="card" style="margin-bottom:16px;grid-column:1/-1;">
-  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-    <span class="card-title"><i class="fas fa-users" style="color:var(--brand);margin-right:8px;"></i>Team Members</span>
-    <button class="btn btn-primary btn-sm" onclick="showInviteUser()"><i class="fas fa-user-plus"></i> Invite User</button>
-  </div>
-  <div class="card-body" id="teamMembersList"><div style="color:var(--text-3);font-size:0.82rem;">Loading team...</div></div>
-</div>
-<div class="card-header"><span class="card-title"><i class="fas fa-building" style="margin-right:8px;color:var(--brand);"></i>Company Profile</span></div>
+        <div class="card-header"><span class="card-title"><i class="fas fa-building" style="margin-right:8px;color:var(--brand);"></i>Company Profile</span></div>
 
         <div class="card-body">
           <div class="form-row cols-1"><div class="form-group"><label class="form-label required">Company Name</label><input class="form-control" id="sCo" value="${settings.companyName}"></div></div>
@@ -4689,6 +4690,7 @@ function renderSettingsView() {
         </div>
       </div>
     </div>`;
+  loadTeamMembers();
 }
 window.saveSettings = () => {
   settings.companyName         = document.getElementById('sCo')?.value;
