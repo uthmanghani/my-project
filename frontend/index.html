@@ -1426,7 +1426,10 @@ async function obSignIn() {
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
     // Save user profile for Settings page
-    localStorage.setItem('at_user_profile', JSON.stringify(data.user));
+    localStorage.setItem('at_user_profile', JSON.stringify({
+  ...data.user,
+  role: data.user.role || 'admin'
+  }));
     // Also fetch and save company profile
     try {
   const companyProfile = await apiFetch('/company/profile');
@@ -4605,7 +4608,7 @@ function renderSettingsView() {
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Email</span><span style="font-weight:500;">${u.email}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:var(--text-3);">Access Level</span><span class="badge badge-success">Super Admin</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:var(--text-3);">Access Level</span><span class="badge ${u.role==='admin'||!u.role?'badge-success':u.role==='accountant'?'badge-info':'badge-neutral'}">${u.role==='admin'||!u.role?'Super Admin':u.role==='accountant'?'Accountant':'Viewer'}</span></div>
           </div>`:'<div style="color:var(--text-3);">No profile found.</div>';})()}
         </div>
       </div>
