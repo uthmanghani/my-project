@@ -4427,14 +4427,14 @@ function renderSettingsView() {
       <div class="card">
         <div class="card-header"><span class="card-title"><i class="fas fa-building" style="color:var(--brand);margin-right:8px;"></i>Company Registration</span></div>
         <div class="card-body" style="font-size:0.82rem;">
-          ${(()=>{const c=JSON.parse(localStorage.getItem('at_company_profile')||'{}');const ind=localStorage.getItem('at_industry');const indObj=INDUSTRIES.find(i=>i.id===ind);return c.companyName?`
+          ${settings.companyName ? `
           <div style="display:flex;flex-direction:column;gap:7px;">
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">RC Number</span><span style="font-weight:600;">${c.rc||'—'}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">TIN</span><span style="font-weight:600;">${c.tin||'—'}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Phone</span><span style="font-weight:600;">${c.phone||'—'}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Industry</span><span class="badge badge-info">${indObj?indObj.name:'General'}</span></div>
-            <div style="padding:5px 0;color:var(--text-3);font-size:0.75rem;">${c.address||''}</div>
-          </div>`:'<div style="color:var(--text-3);">Set up your company to see details.</div>';})()}
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">RC Number</span><span style="font-weight:600;">${settings.rcNumber||'—'}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">TIN</span><span style="font-weight:600;">${settings.companyTaxId||'—'}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Phone</span><span style="font-weight:600;">${settings.companyPhone||'—'}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Industry</span><span class="badge badge-info">${settings.industry||'General'}</span></div>
+            <div style="padding:5px 0;color:var(--text-3);font-size:0.75rem;">${settings.companyAddress||''}</div>
+          </div>` : '<div style="color:var(--text-3);">Set up your company to see details.</div>'}
         </div>
       </div>
     </div>
