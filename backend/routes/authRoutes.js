@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, inviteUser, getUsers, removeUser } = require('../controllers/authController');
+const { body } = require('express-validator');
 const { authenticateToken } = require('../middleware/auth');
+const authController = require('../controllers/authController');
 
+// Public routes
 router.post('/register', [
   body('company.companyName').notEmpty().withMessage('Company name required'),
   body('admin.email').isEmail().withMessage('Valid email required'),
@@ -14,8 +16,9 @@ router.post('/login', [
   body('password').notEmpty().withMessage('Password required')
 ], authController.login);
 
+// Protected routes (require authentication)
 router.post('/invite', authenticateToken, authController.inviteUser);
 router.get('/users', authenticateToken, authController.getUsers);
 router.delete('/users/:id', authenticateToken, authController.removeUser);
- 
+
 module.exports = router;

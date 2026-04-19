@@ -4,6 +4,7 @@ const Account = require('../models/Account');
 const INDUSTRIES = require('../utils/industryData');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 
 exports.register = async (req, res) => {
   const errors = validationResult(req);
@@ -14,19 +15,16 @@ exports.register = async (req, res) => {
   const { company, industry, admin } = req.body;
 
   try {
-    // Check if company email already exists
     const existingCompany = await Company.findOne({ email: company.email });
     if (existingCompany) {
       return res.status(400).json({ error: 'A company with this email already exists' });
     }
 
-    // Check if admin email already exists
     const existingUser = await User.findOne({ email: admin.email });
     if (existingUser) {
       return res.status(400).json({ error: 'Admin email already registered' });
     }
 
-    // Create company
     const newCompany = new Company({
       name: company.companyName,
       rcNumber: company.rc,
@@ -38,7 +36,6 @@ exports.register = async (req, res) => {
     });
     await newCompany.save();
 
-    // Create admin user
     const newUser = new User({
       companyId: newCompany._id,
       firstName: admin.firstName,
@@ -49,7 +46,6 @@ exports.register = async (req, res) => {
     });
     await newUser.save();
 
-    // Seed chart of accounts from industry template
     const industryObj = INDUSTRIES.find(i => i.id === industry);
     if (!industryObj) {
       throw new Error('Invalid industry selected');
@@ -89,65 +85,6 @@ exports.register = async (req, res) => {
   }
 };
 
-exports.inviteUser = async (req, res) => {
-  try {
-    const { firstName, lastName, email, password, role } = req.body;
-    if (!['admin','accountant','viewer'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. Use admin, accountant or viewer.' });
-    }
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: 'Email already registered' });
-    const newUser = new User({
-      companyId: req.user.companyId,
-      firstName, lastName, email, password, role
-    });
-    await newUser.save();
-    res.status(201).json({ message: 'User invited successfully', user: { id: newUser._id, firstName, lastName, email, role } });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-exports.getUsers = async (req, res) => {
-  try {
-    const users = await User.find({ companyId: req.user.companyId }).select('-password');
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-exports.removeUser = async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove users' });
-    const user = await User.findOneAndDelete({ companyId: req.user.companyId, _id: req.params.id });
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ message: 'User removed' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
- 
-exports.getUsers = async (req, res) => {
-  try {
-    const users = await User.find({ companyId: req.user.companyId }).select('-password');
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
- 
-exports.removeUser = async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admins can remove users' });
-    const user = await User.findOneAndDelete({ companyId: req.user.companyId, _id: req.params.id });
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ message: 'User removed' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
- 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -176,6 +113,54 @@ exports.login = async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.inviteUser = async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, role } = req.body;
+    if (!['admin', 'accountant', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Use admin, accountant or viewer.' });
+    }
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).json({ error: 'Email already registered' });
+    const newUser = new User({
+      companyId: req.user.companyId,
+      firstName,
+      lastName,
+      email,
+      password,
+      role
+    });
+    await newUser.save();
+    res.status(201).json({
+      message: 'User invited successfully',
+      user: { id: newUser._id, firstName, lastName, email, role }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getUsers = async (req, res) => {
+  try {
+    const users = await User.find({ companyId: req.user.companyId }).select('-password');
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.removeUser = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can remove users' });
+    }
+    const user = await User.findOneAndDelete({ companyId: req.user.companyId, _id: req.params.id });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'User removed' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
