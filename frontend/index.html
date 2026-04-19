@@ -1140,7 +1140,7 @@ let authToken = localStorage.getItem('at_token');
 function getCurrentUser() {
   return JSON.parse(localStorage.getItem('at_user_profile') || '{}');
 }
-function isAdmin() { return getCurrentUser().role === 'admin' || !getCurrentUser().role; }
+function isAdmin() { return getCurrentUser().role === 'admin'; }
 function isAccountant() { const r = getCurrentUser().role; return r === 'admin' || r === 'accountant'; }
 function isViewer() { return getCurrentUser().role === 'viewer'; }
 
@@ -1433,7 +1433,7 @@ async function obSignIn() {
     // Save user profile for Settings page
     localStorage.setItem('at_user_profile', JSON.stringify({
   ...data.user,
-  role: data.user.role || 'admin'
+  role: data.user.role
   }));
     // Also fetch and save company profile
     try {
@@ -5047,7 +5047,7 @@ async function loadTeamMembers() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="badge ${roleClass}">${roleDisplay}</span>
-          ${(currentUserId && u._id !== currentUserId) ? `<button onclick="removeTeamMember('${u._id}')" class="btn btn-danger btn-sm btn-icon"><i class="fas fa-trash"></i></button>` : ''}
+          ${(isAdmin() && currentUserId && u._id !== currentUserId) ? `<button onclick="removeTeamMember('${u._id}')" class="btn btn-danger btn-sm btn-icon"><i class="fas fa-trash"></i></button>` : ''}
         </div>
       </div>`;
     }).join('');
