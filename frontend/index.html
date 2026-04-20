@@ -836,24 +836,25 @@
   font-size: 1.1rem;
   width: auto;
 }
-/* Tooltip on hover when collapsed */
-.sidebar.collapsed .nav-item::after {
-  content: attr(data-label);
-  position: absolute;
-  left: 70px;
-  background: #1e293b;
-  color: white;
-  padding: 5px 10px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-  z-index: 999;
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
+  .dash-grid { grid-template-columns: 1fr !important; }
+  .content { padding: 16px 14px; }
+  .topbar { padding: 0 14px; }
+  .topbar-search, .topbar-trial { display: none; }
+  table { font-size: 0.72rem; }
+  thead th, tbody td { padding: 8px; }
+  .modal-box { width: 95vw !important; margin: 10px; }
+  .form-row.cols-2, .form-row.cols-3 { grid-template-columns: 1fr !important; }
+  .card-body { padding: 14px; }
+  .page-header { flex-direction: column; align-items: flex-start; }
+  .page-actions { width: 100%; }
+  .page-actions .btn { width: 100%; justify-content: center; }
 }
-.sidebar.collapsed .nav-item:hover::after {
-  opacity: 1;
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr !important; }
+  html { font-size: 13px; }
+  .kpi-value { font-size: 1.2rem; }
 }
   </style>
   </head>
@@ -1401,12 +1402,62 @@ function obSelectIndustry(id) {
   obData.industry = INDUSTRIES.find(i => i.id === id);
 }
 
-function obSwitchTab(tab) {
+async function obSwitchTab(tab) {
+  if (tab === 'register') {
+    if (!window._inviteToken) {
+      showRequestAccessPage();
+      return;
+    }
+    // Validate the token with the backend
+    const result = await validateInviteToken(window._inviteToken);
+    if (!result.valid) {
+      window._inviteToken = null;
+      showRequestAccessPage(result.error || 'Your invite link is invalid or has expired.');
+      return;
+    }
+    // Pre-fill email if invite was for a specific address
+    if (result.email) {
+      const emailField = document.getElementById('obCompanyEmail');
+      if (emailField) emailField.value = result.email;
+    }
+  }
   obCurrentTab = tab;
   document.querySelectorAll('.ob-tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='signin')||(i===1&&tab==='register')));
   document.getElementById('signinForm').style.display = tab === 'signin' ? 'block' : 'none';
   document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
   document.getElementById('obError0').classList.remove('show');
+}
+ 
+function showRequestAccessPage(message) {
+  const root = document.getElementById('onboardingRoot');
+  if (!root) return;
+  const existing = document.getElementById('requestAccessPage');
+  if (existing) { existing.style.display='flex'; return; }
+  const div = document.createElement('div');
+  div.id = 'requestAccessPage';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(10,79,69,0.97);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  div.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:48px 40px;max-width:440px;width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="width:64px;height:64px;background:#fef3c7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px;">🔒</div>
+      <h2 style="color:#0a4f45;font-size:1.4rem;margin:0 0 10px;">Invite Only</h2>
+      <p style="color:#666;font-size:0.88rem;line-height:1.6;margin:0 0 8px;">AccounTrack™ Pro is currently available by invitation only.</p>
+      ${message ? `<p style="color:#dc2626;font-size:0.82rem;background:#fee2e2;padding:8px 14px;border-radius:8px;margin:8px 0;">${message}</p>` : ''}
+      <p style="color:#888;font-size:0.82rem;margin:0 0 24px;">To request access, contact us directly:</p>
+      <a href="mailto:odunlamiuthman1@gmail.com?subject=AccounTrack Access Request" style="display:inline-block;padding:12px 28px;background:#0a4f45;color:white;border-radius:8px;text-decoration:none;font-weight:700;font-size:0.9rem;margin-bottom:16px;">
+        Request Access
+      </a>
+      <div style="margin-top:8px;">
+        <a href="https://wa.me/2349078429701?text=I would like to request access to AccounTrack Pro" target="_blank" style="display:inline-block;padding:10px 24px;background:#25D366;color:white;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">
+          WhatsApp Us
+        </a>
+      </div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">
+        <button onclick="document.getElementById('requestAccessPage').style.display='none'" style="background:none;border:none;color:#888;font-size:0.8rem;cursor:pointer;">
+          Already have an account? Sign in
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
 }
 
 function obTogglePass(id, el) {
@@ -1559,8 +1610,17 @@ async function obFinishSetup() {
     currentUserId = data.user.id;
     // Store user profile
     localStorage.setItem('at_user_profile', JSON.stringify(admin));
-    // Store industry
     localStorage.setItem('at_industry', industry);
+    if (window._inviteToken) {
+      try {
+        await fetch(`${API_BASE}/invites/consume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: window._inviteToken, companyEmail: company.email })
+        });
+        window._inviteToken = null;
+      } catch(e) { console.warn('Could not consume invite token'); }
+    }
     // Fetch and store full company profile
     const companyProfile = await apiFetch('/company/profile');
     localStorage.setItem('at_company_profile', JSON.stringify(companyProfile));
@@ -1716,6 +1776,54 @@ function showToast(msg, type='info') {
   setTimeout(() => t.remove(), 3000);
 }
 
+// ─── PAGINATION & SEARCH HELPERS ─────────────────────────────────────
+let paginationState = {};
+
+function filterItems(module, items, searchFields) {
+  const searchTerm = (document.getElementById(`${module}Search`)?.value || '').toLowerCase();
+  if (!searchTerm) return items;
+  return items.filter(item => {
+    return searchFields.some(field => {
+      const value = item[field];
+      return value && value.toString().toLowerCase().includes(searchTerm);
+    });
+  });
+}
+
+function paginate(module, items, pageSize = 10) {
+  if (!paginationState[module]) paginationState[module] = { currentPage: 1 };
+  const currentPage = paginationState[module].currentPage;
+  const totalPages = Math.ceil(items.length / pageSize);
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const itemsToShow = items.slice(start, end);
+
+  let controls = '';
+  if (totalPages > 1) {
+    controls = `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px;">
+      <button class="btn btn-sm btn-secondary" onclick="changePage('${module}', ${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>← Previous</button>
+      <span style="padding:6px 12px;">Page ${currentPage} of ${totalPages}</span>
+      <button class="btn btn-sm btn-secondary" onclick="changePage('${module}', ${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next →</button>
+    </div>`;
+  }
+  return { items: itemsToShow, controls };
+}
+
+function changePage(module, newPage) {
+  if (!paginationState[module]) paginationState[module] = {};
+  paginationState[module].currentPage = newPage;
+  if (module === 'invoices') renderInvoicesView();
+  // Add other modules (customers, vendors, etc.) if needed
+}
+
+function searchBar(module, placeholder, renderFunction) {
+  return `<div class="filter-bar" style="margin-bottom:16px;">
+    <i class="fas fa-search" style="color:var(--text-4);"></i>
+    <input type="text" id="${module}Search" placeholder="${placeholder}" oninput="${renderFunction}()" style="width:240px;">
+    <div class="filter-spacer"></div>
+    <span id="${module}Count" style="font-size:0.75rem;color:var(--text-4);"></span>
+  </div>`;
+}
 // ─── NTA 2025 PAYE ───────────────────────────────────────────────────
 function calculatePAYE(annualGross, annualRent = 0) {
   const pension = annualGross * 0.08;
@@ -2158,7 +2266,7 @@ if (recurringDue.length > 0) {
           <div class="mini-bars">${minibarHtml}</div>
         </div>
         <div class="card-body" style="padding:0;">
-          ${invoices.length === 0 ? `<div class="empty-state"><i class="fas fa-file-invoice-dollar"></i><p>No invoices yet. Create your first invoice to see revenue data.</p></div>` : `
+          ${invoices.length === 0 ? `<div class="empty-state"><i class="fas fa-file-invoice-dollar"></i><p><canvas id="revenueChart" style="max-height:220px;"></canvas></p></div>` : `
           <table>
             <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
             <tbody>${invoices.sort((a,b)=>b.date>a.date?1:-1).slice(0,8).map(inv => {
@@ -2316,50 +2424,49 @@ window.deleteCustomer = (id) => { if(confirm('Delete this customer?')){ customer
 // ─── INVOICES ───
 // ════════════════════════════════════════════
 function renderInvoicesView() {
-  const rows = [...invoices].sort((a,b)=>b.date>a.date?1:-1).map(inv => {
-    const c       = customers.find(x => x.id === inv.customerId);
+  // Apply search filter
+  const filteredInv = filterItems('invoices', invoices, ['number', 'status']);
+  // Apply pagination
+  const { items: pagedInv, controls: invControls } = paginate('invoices', filteredInv, 10);
+  // Update count display
+  const countSpan = document.getElementById('invoicesCount');
+  if (countSpan) countSpan.textContent = `${filteredInv.length} invoice${filteredInv.length !== 1 ? 's' : ''}`;
+
+  // Build table rows
+  const rows = pagedInv.map(inv => {
+    const c = customers.find(x => x.id === inv.customerId);
     const balance = inv.balance !== undefined ? inv.balance : inv.total;
     const amtPaid = inv.amountPaid || 0;
-    const overdue = inv.status !== 'paid' && inv.status !== 'partial'
-                    && inv.dueDate < today();
+    const overdue = inv.status !== 'paid' && inv.status !== 'partial' && inv.dueDate < today();
     const displayStatus = overdue ? 'overdue' : inv.status;
-    return '<tr>' +
-      '<td class="td-bold td-mono">' + inv.number + '</td>' +
-      '<td>' + (c?.name||'—') + '</td>' +
-      '<td>' + inv.date + '</td>' +
-      '<td>' + inv.dueDate + '</td>' +
-      '<td class="td-bold">' + fmt(inv.total) + '</td>' +
-      '<td>' + statusBadge(displayStatus) + (b.recurring ? ' <span class="badge badge-info" title="'+b.recurringFreq+'"><i class="fas fa-rotate"></i> Recurring</span>' : '') + '</td>' +
-      '<td style="color:var(--success);font-weight:600;">' + fmt(amtPaid) + '</td>' +
-      '<td class="td-bold" style="color:' +
-        (balance > 0.005 ? 'var(--danger)' : 'var(--success)') + ';">' +
-        fmt(balance) + '</td>' +
-      '<td><div class="table-actions">' +
-        '<div class="action-btn" title="View" onclick="viewInvoice(' + inv.id + ')">' +
-        '<i class="fas fa-eye"></i></div>' +
-        (inv.status !== 'paid'
-          ? '<div class="action-btn" title="Record Payment" ' +
-            'onclick="openCustomerPaymentModal(' + inv.id + ')" ' +
-            'style="color:var(--success);border-color:var(--success);">' +
-            '<i class="fas fa-money-bill-wave"></i></div>'
-          : '') +
-        (overdue
-          ? '<div class="action-btn" title="Send Reminder" ' +
-            'onclick="sendInvoiceReminder(' + inv.id + ')" ' +
-            'style="color:var(--warning);border-color:var(--warning);">' +
-            '<i class="fas fa-bell"></i></div>'
-          : '') +
-        '<div class="action-btn danger" title="Delete" onclick="deleteInvoice(' + inv.id + ')">' +
-        '<i class="fas fa-trash"></i></div>' +
-      '</div></td></tr>';
+    return `
+      <tr>
+        <td class="td-bold td-mono">${inv.number}</td>
+        <td>${c?.name || '—'}</td>
+        <td>${inv.date}</td>
+        <td>${inv.dueDate}</td>
+        <td class="td-bold">${fmt(inv.total)}</td>
+        <td>${statusBadge(displayStatus)}</td>
+        <td style="color:var(--success);font-weight:600;">${fmt(amtPaid)}</td>
+        <td class="td-bold" style="color:${balance > 0.005 ? 'var(--danger)' : 'var(--success)'};">${fmt(balance)}</td>
+        <td>
+          <div class="table-actions">
+            <div class="action-btn" title="View" onclick="viewInvoice(${inv.id})"><i class="fas fa-eye"></i></div>
+            ${inv.status !== 'paid' ? `<div class="action-btn" title="Record Payment" onclick="openCustomerPaymentModal(${inv.id})" style="color:var(--success);border-color:var(--success);"><i class="fas fa-money-bill-wave"></i></div>` : ''}
+            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder(${inv.id})" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}
+            <div class="action-btn danger" title="Delete" onclick="deleteInvoice(${inv.id})"><i class="fas fa-trash"></i></div>
+          </div>
+        </td>
+      </tr>
+    `;
   }).join('');
 
-  // TASK 1: Outstanding = sum of balances (not totals)
   const unpaid = invoices.filter(i => i.status !== 'paid')
     .reduce((s, i) => s + (i.balance !== undefined ? i.balance : i.total), 0);
   const paid = invoices.reduce((s, i) => s + (i.amountPaid || 0), 0);
 
   document.getElementById('invoicesView').innerHTML = `
+    ${searchBar('invoices', 'Search by invoice number or status...', 'renderInvoicesView')}
     <div class="page-header">
       <div class="page-title"><h2>Invoices</h2><p>${invoices.length} total · ${fmt(unpaid)} outstanding</p></div>
       <div class="page-actions">
@@ -2373,11 +2480,13 @@ function renderInvoicesView() {
       <div class="kpi-card amber"><div class="kpi-label">Outstanding</div><div class="kpi-value" style="font-size:1.3rem;">${fmt(unpaid)}</div></div>
     </div>
     <div class="table-wrap">
-      <table>
-        <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due Date</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>${rows||`<tr><td colspan="7"><div class="empty-state" style="padding:32px"><i class="fas fa-file-invoice-dollar"></i><p>No invoices yet.</p></div></td></tr>`}</tbody>
+      <tr>
+        <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Paid</th><th>Balance</th><th>Actions</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-invoice-dollar"></i><p>No invoices yet.</p></div></td></tr>'}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${invControls}
+  `;
 }
 
 window.openInvoiceModal = (presetCustomerId) => {
@@ -2791,7 +2900,46 @@ function toggleRecurring() {
   document.getElementById('recurringOptions').style.display = cb && cb.checked ? 'block' : 'none';
 }
  
+window.generateWHTCertificate = function(billId) {
+  const bill = bills.find(b => b._id === billId);
+  if (!bill || !bill.whtAmount || bill.whtAmount <= 0) {
+    showToast('No WHT applied on this bill', 'info'); return;
+  }
+  const vendor = vendors.find(v => v._id === (bill.vendorId?._id || bill.vendorId));
+  const certNo = 'WHT-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*9000)+1000);
+  const w = window.open('', '_blank', 'width=800,height=700');
+  w.document.write('<!DOCTYPE html><html><head><title>WHT Certificate ' + certNo + '</title>' +
+  '<style>body{font-family:Arial,sans-serif;max-width:720px;margin:40px auto;color:#1a1a1a;font-size:13px;}' +
+  '.hdr{background:#0a4f45;color:white;padding:20px 24px;border-radius:8px 8px 0 0;text-align:center;}' +
+  'table{width:100%;border-collapse:collapse;margin:12px 0;}' +
+  'td,th{padding:9px 12px;border:1px solid #ddd;}' +
+  'th{background:#f5f5f5;font-weight:600;text-align:left;}' +
+  '.amt{background:#fff3cd;font-weight:700;font-size:15px;}' +
+  '.sig{display:flex;justify-content:space-between;margin-top:40px;}' +
+  '.sig-line{border-top:1px solid #333;padding-top:4px;font-size:11px;width:180px;text-align:center;}' +
+  '@media print{button{display:none;}}' +
+  '</style></head><body>' +
+  '<div class="hdr"><h2 style="margin:0;font-size:18px;">WITHHOLDING TAX CERTIFICATE</h2>' +
+  '<div style="font-size:12px;opacity:0.8;margin-top:4px;">Nigeria Revenue Service (NRS) — NTA 2025</div></div>' +
+  '<div style="border:1px solid #ddd;border-top:none;padding:20px;">' +
+  '<table><tr><th>Certificate No.</th><td>' + certNo + '</td><th>Date Issued</th><td>' + new Date().toLocaleDateString('en-NG') + '</td></tr>' +
+  '<tr><th>Withholding Agent</th><td>' + (settings.companyName||'N/A') + '</td><th>Agent TIN</th><td>' + (settings.companyTaxId||'N/A') + '</td></tr>' +
+  '<tr><th>Beneficiary (Vendor)</th><td>' + (vendor?.name||'N/A') + '</td><th>Vendor TIN</th><td>' + (vendor?.tin||'N/A') + '</td></tr>' +
+  '<tr><th>Bill Reference</th><td>' + (bill.number||billId) + '</td><th>Bill Date</th><td>' + (bill.date||'N/A') + '</td></tr>' +
+  '<tr><th>Gross Amount</th><td>&#8358;' + Number(bill.total).toLocaleString('en-NG',{minimumFractionDigits:2}) + '</td>' +
+  '<th>WHT Rate</th><td>' + (bill.whtRate||0) + '%</td></tr>' +
+  '<tr><th colspan="2" class="amt">WHT Amount Deducted</th>' +
+  '<td colspan="2" class="amt">&#8358;' + Number(bill.whtAmount).toLocaleString('en-NG',{minimumFractionDigits:2}) + '</td></tr></table>' +
+  '<p style="color:#666;font-size:12px;margin-top:12px;">This certificate confirms that Withholding Tax has been deducted at source and will be remitted to the Nigeria Revenue Service on behalf of the beneficiary listed above.</p>' +
+  '<div class="sig"><div class="sig-line">Authorized Signatory</div><div class="sig-line">Date</div><div class="sig-line">Company Stamp</div></div>' +
+  '</div><div style="text-align:center;margin-top:20px;font-size:11px;color:#999;">Generated by AccounTrack&#8482; Pro &middot; ' + (settings.companyName||'') + '</div>' +
+  '<div style="text-align:center;margin-top:12px;"><button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">Print Certificate</button></div>' +
+  '</body></html>');
+  w.document.close();
+};
+ 
 window.printInvoice = function(id) {
+
 
 
   var inv = invoices.find(function(i) { return i.id === invoiceId; });
@@ -2874,12 +3022,12 @@ window.printInvoice = function(id) {
     + "  <button onclick='window.print()' style='padding:8px 24px;background:#0a4f45;color:white;border:none;"
     + "border-radius:6px;cursor:pointer;font-size:13px;'>&#128438; Print / Save as PDF</button>"
     + "</div>"
-    + "<div class='footer' style='margin-top:40px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;font-size:11px;color:#666;'>"+
-      "<div><strong>" + (settings.companyName||'') + "</strong><br>TIN: " + (settings.companyTaxId||'N/A') + "<br>" + (settings.companyPhone||'') + "</div>"+
-      "<div style='text-align:center;'><div style='font-size:9px;color:#999;margin-top:4px;'>Generated by AccounTrack&#8482; Pro &middot; NTA 2025 Compliant</div></div>"+
-      "<div style='text-align:right;'>Payment Terms: " + (settings.defaultDueDays||30) + " days<br>"+
-      (settings.defaultInvoiceNotes||'Thank you for your business.') + "</div></div>"
-          + "</body></html>";
+    + "<div class='footer' style='margin-top:32px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;color:#555;'>"
+    + "<div><strong>" + (settings.companyName||'') + "</strong><br>TIN: " + (settings.companyTaxId||'N/A') + "<br>Tel: " + (settings.companyPhone||'') + "</div>"
+    + "<div style='text-align:center;font-size:10px;color:#999;'>Generated by AccounTrack&#8482; Pro<br>NTA 2025 Compliant &middot; " + today() + "</div>"
+    + "<div style='text-align:right;'>Payment Terms: " + (settings.defaultDueDays||30) + " days<br><em>" + (settings.defaultInvoiceNotes||'Thank you for your business.') + "</em></div>"
+    + "</div>"
+    + "</body></html>";
  
   // Open a new browser window with the invoice
   var printWindow = window.open("", "_blank", "width=850,height=1000");
@@ -2938,8 +3086,9 @@ window.exportVendorsCSV = function() {
 // ─── VENDORS ───
 // ════════════════════════════════════════════
 function renderVendorsView() {
-
-  const rows = vendors.map(v => {
+  const filteredVend = filterItems('vendors', vendors, ['name','email','phone']);
+  const { items: pagedVend, controls: vendControls } = paginate('vendors', filteredVend);
+  const rows = pagedVend.map(v => {
     const out = bills.filter(b=>b.vendorId===v.id&&b.status!=='paid').reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
     return `<tr>
       <td class="td-bold">${v.name}</td><td>${v.email||'—'}</td><td>${v.phone||'—'}</td>
@@ -2951,8 +3100,9 @@ function renderVendorsView() {
     </tr>`;
   }).join('');
   document.getElementById('vendorsView').innerHTML = `
+    ${searchBar('vendors', 'Search vendors by name, email or phone...', 'renderVendorsView')}
     <div class="page-header">
-      <div class="page-title"><h2>Vendors</h2><p>${vendors.length} vendor${vendors.length!==1?'s':''}</p></div>
+      <div class="page-title"><h2>Vendors</h2><p>${filteredVend.length} vendor${filteredVend.length!==1?'s':''}</p></div>
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="openVendorModal()"><i class="fas fa-plus"></i> New Vendor</button>
         <button class="btn btn-primary" onclick="openBillModal()"><i class="fas fa-file-invoice"></i> Enter Bill</button>
@@ -2962,7 +3112,7 @@ function renderVendorsView() {
     <div class="table-wrap">
       <table><thead><tr><th>Vendor Name</th><th>Email</th><th>Phone</th><th>Outstanding</th><th>Actions</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="5"><div class="empty-state" style="padding:32px"><i class="fas fa-truck"></i><p>No vendors yet.</p></div></td></tr>`}</tbody></table>
-    </div>
+    ${vendControls}</div>
     <div id="apAgingPanel" style="margin-top:20px;"></div>`;
 }
 window.openVendorModal = () => {
@@ -3092,7 +3242,9 @@ window.showAPAgingPanel = function() {
 // ─── BILLS ───
 // ════════════════════════════════════════════
 function renderBillsView() {
-  const rows = [...bills].sort((a,b)=>b.date>a.date?1:-1).map(b => {
+  const filteredBills = filterItems('bills', [...bills].sort((a,b)=>b.date>a.date?1:-1), ['number','status']);
+  const { items: pagedBills, controls: billControls } = paginate('bills', filteredBills);
+  const rows = pagedBills.map(b => {
     const v       = vendors.find(x => x.id === b.vendorId);
     const balance = b.balance !== undefined ? b.balance : b.total;
     const amtPaid = b.amountPaid || 0;
@@ -3121,20 +3273,22 @@ function renderBillsView() {
           : '') +
         '<div class="action-btn danger" onclick="deleteBill(' + b.id + ')">' +
         '<i class="fas fa-trash"></i></div>' +
+        
       '</div></td></tr>';
   }).join('');
   // TASK 1: Outstanding uses balance (not total)
   const unpaid = bills.filter(b => b.status !== 'paid')
     .reduce((s, b) => s + (b.balance !== undefined ? b.balance : b.total), 0);
   document.getElementById('billsView').innerHTML = `
+    ${searchBar('bills', 'Search bills by number or status...', 'renderBillsView')}
     <div class="page-header">
       <div class="page-title"><h2>Bills</h2><p>${fmt(unpaid)} outstanding</p></div>
-      <div class="page-actions"><button class="btn btn-success" onclick="openBillPaymentSelector()"><i class="fas fa-money-bill-wave"></i> Record Payment</button><button class="btn btn-primary" onclick="openBillModal()"><i class="fas fa-plus"></i> Enter Bill</button></div>
+      <div class="page-actions"><button class="btn btn-success" onclick="openBillPaymentSelector()"><i class="fas fa-money-bill-wave"></i> Record Payment</button><button class="btn btn-primary" onclick="openBillModal()"><i class="fas fa-plus"></i> Enter Bill</button></div>${b.whtAmount > 0 ? `<button class="btn btn-secondary btn-sm" onclick="generateWHTCertificate('${b._id}')" title="WHT Certificate"><i class="fas fa-certificate"></i></button>` : ''}
     </div>
     <div class="table-wrap">
       <table><thead><tr><th>Bill #</th><th>Vendor</th><th>Date</th><th>Due</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="7"><div class="empty-state" style="padding:32px"><i class="fas fa-file-invoice"></i><p>No bills yet.</p></div></td></tr>`}</tbody></table>
-    </div>`;
+    ${billControls}</div>`;
 }
 // ── BILL PAYMENT SELECTOR ────────────────────────────
 window.openBillPaymentSelector = () => {
@@ -4194,7 +4348,8 @@ function runPayroll(periodLabel) {
     lines: lines
   });
   saveAllData();
-  showToast('Payroll for ' + periodLabel + ' saved successfully.', 'success');
+  const levies = calculateLeviesClient(monthlyGross, monthlyGross * 0.7);
+  showToast('Payroll recorded. NSITF: ' + fmt(levies.nsitf) + ' | NHF: ' + fmt(levies.nhf), 'success');
   navigateTo('employees');
 }
 
@@ -4483,7 +4638,9 @@ window.showRpt = (type, btn) => {
 // ─── PRODUCTS ───
 // ════════════════════════════════════════════
 function renderProductsView() {
-  const rows = products.map(p => `<tr>
+  const filteredProd = filterItems('products', products, ['name','sku','category']);
+  const { items: pagedProd, controls: prodControls } = paginate('products', filteredProd);
+  const rows = pagedProd.map(p => `<tr>
     <td class="td-bold">${p.name}</td><td>${p.sku||'—'}</td><td>${p.category||'—'}</td>
     <td>${fmt(p.price)}</td><td>${fmt(p.cost)}</td>
     <td><span class="badge ${p.stock<=5?'badge-danger':p.stock<=20?'badge-warning':'badge-success'}">${p.stock} units</span></td>
@@ -4522,7 +4679,8 @@ function renderProductsView() {
     <div class="table-wrap">
       <table><thead><tr><th>Product Name</th><th>SKU</th><th>Category</th><th>Sale Price</th><th>Cost Price</th><th>Stock</th><th>Inv. Value</th><th>Actions</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="8"><div class="empty-state" style="padding:32px"><i class="fas fa-boxes"></i><p>No products yet.</p></div></td></tr>`}</tbody></table>
-    </div>`;
+    ${prodControls}</div>`;
+  document.getElementById('productsView').prepend(Object.assign(document.createElement('div'), {innerHTML: searchBar('products','Search products by name, SKU or category...','renderProductsView')}));
 }
 window.openProductModal = () => {
   showModal('New Product',`
@@ -4743,43 +4901,6 @@ function renderSettingsView() {
     </div>`;
   loadTeamMembers();
 }
-window.saveSettings = async () => {
-  settings.companyName         = document.getElementById('sCo')?.value;
-  settings.companyLegalName    = document.getElementById('sLegal')?.value;
-  settings.companyTaxId        = document.getElementById('sTin')?.value;
-  settings.companyPhone        = document.getElementById('sPhone')?.value;
-  settings.companyEmail        = document.getElementById('sEmail')?.value;
-  settings.companyAddress      = document.getElementById('sAddr')?.value;
-  settings.invoicePrefix       = document.getElementById('sPrefix')?.value;
-  settings.nextInvoiceNumber   = parseInt(document.getElementById('sNextInv')?.value)||1;
-  settings.defaultDueDays      = parseInt(document.getElementById('sDue')?.value)||30;
-  settings.defaultVatRate      = parseFloat(document.getElementById('sVat')?.value)||7.5;
-  settings.defaultInvoiceNotes = document.getElementById('sNotes')?.value;
-  try {
-    await apiFetch('/company/settings', {
-      method: 'PUT',
-      body: JSON.stringify({
-        invoicePrefix: settings.invoicePrefix,
-        nextInvoiceNumber: settings.nextInvoiceNumber,
-        defaultDueDays: settings.defaultDueDays,
-        defaultVatRate: settings.defaultVatRate,
-        defaultInvoiceNotes: settings.defaultInvoiceNotes,
-        currency: settings.currency,
-        darkMode: settings.darkMode,
-        companyName: settings.companyName,
-        companyLegalName: settings.companyLegalName,
-        companyTaxId: settings.companyTaxId,
-        companyPhone: settings.companyPhone,
-        companyEmail: settings.companyEmail,
-        companyAddress: settings.companyAddress,
-      })
-    });
-    applySettings();
-    showToast('Settings saved successfully.', 'success');
-  } catch(err) {
-    showToast('Failed to save settings: ' + err.message, 'danger');
-  }
-};
 window.exportData = () => {
   const data = {};
   Object.entries(STORAGE_KEYS).forEach(([k,v])=>data[k]=JSON.parse(localStorage.getItem(v)||'null'));
@@ -5035,6 +5156,37 @@ function renderHelpView() {
   saved.forEach(i => wtApplyDone(i));
 }
 
+function renderDashboardChart() {
+  const canvas = document.getElementById('revenueChart');
+  if (!canvas) return;
+  const months = [], revData = [], expData = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    months.push(d.toLocaleString('en-NG', { month: 'short' }) + ' ' + String(yr).slice(2));
+    revData.push(invoices.filter(inv => inv.date && inv.date.startsWith(yr+'-'+mo)).reduce((s,inv)=>s+(inv.total||0),0));
+    expData.push(bills.filter(b => b.date && b.date.startsWith(yr+'-'+mo)).reduce((s,b)=>s+(b.total||0),0));
+  }
+  if (window._dashChart) window._dashChart.destroy();
+  window._dashChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [
+        { label: 'Revenue', data: revData, backgroundColor: '#0a4f4560', borderColor: '#0a4f45', borderWidth: 2, borderRadius: 4 },
+        { label: 'Expenses', data: expData, backgroundColor: '#dc262640', borderColor: '#dc2626', borderWidth: 2, borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top' } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => String.fromCharCode(8358) + Number(v).toLocaleString('en-NG') } } }
+    }
+  });
+}
+ 
 function wtToggle(i) {
   const body = document.getElementById('wt-body-'+i);
   const chev = document.getElementById('wt-chev-'+i);
@@ -6283,8 +6435,8 @@ async function navigateTo(page) {
   if (authToken) await loadAllData();
   recalcBalances();
   PAGE_RENDERS[page]?.();
-  if (window.innerWidth <= 768) {
-    document.querySelector('.sidebar')?.classList.remove('sidebar-open');
+  if (page === 'dashboard') setTimeout(renderDashboardChart, 100);
+  if (window.innerWidth <= 768) {    document.querySelector('.sidebar')?.classList.remove('sidebar-open');
     document.getElementById('sidebarOverlay')?.classList.remove('overlay-visible');
   }
   applyRBAC();
@@ -6332,9 +6484,38 @@ function showKeyboardHelp() {
       </tbody></table>`, '', {width:'380px'});
 }
 
+function calculateLeviesClient(monthlyGross, basicSalary) {
+  const nsitf = parseFloat((monthlyGross * 0.01).toFixed(2));
+  const itf = (monthlyGross * 12) > 50000 ? parseFloat((monthlyGross * 0.01).toFixed(2)) : 0;
+  const nhf = parseFloat(((basicSalary || monthlyGross * 0.7) * 0.025).toFixed(2));
+  return { nsitf, itf, nhf };
+}
 // ════════════════════════════════════════════════════════════
 // ─── INIT ─────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════
+// ─── INVITE TOKEN GATE ───────────────────────────────────────
+(function handleInviteToken() {
+  const params = new URLSearchParams(window.location.search);
+  const invite = params.get('invite');
+  const superkey = params.get('superadmin');
+  if (invite) {
+    window._inviteToken = invite;
+    history.replaceState({}, document.title, '/');
+  }
+  if (superkey) {
+    window._superAdminKey = superkey;
+    history.replaceState({}, document.title, '/');
+  }
+})();
+ 
+async function validateInviteToken(token) {
+  try {
+    const res = await fetch(`${API_BASE}/invites/validate/${token}`);
+    const data = await res.json();
+    return data;
+  } catch(e) { return { valid: false, error: 'Network error' }; }
+}
+ 
 // Handle password reset token in URL
 (function handleResetToken() {
   const params = new URLSearchParams(window.location.search);
@@ -6383,6 +6564,102 @@ async function submitResetPassword(token) {
   } catch(err) { errEl.style.display='block'; errEl.textContent='Reset failed. Try again.'; }
 }
  
+// Super admin panel — only visible with correct key
+(function initSuperAdminPanel() {
+  if (!window._superAdminKey) return;
+  const panel = document.createElement('div');
+  panel.id = 'superAdminPanel';
+  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:99999;display:flex;align-items:center;justify-content:center;overflow-y:auto;';
+  panel.innerHTML = `
+    <div style="background:#1a1a2e;border-radius:16px;padding:32px;width:680px;max-width:95vw;max-height:90vh;overflow-y:auto;color:white;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+        <div>
+          <h2 style="margin:0;color:#f59e0b;font-size:1.3rem;">AccounTrack Super Admin</h2>
+          <div style="font-size:0.75rem;color:#888;margin-top:2px;">Invite Management Panel</div>
+        </div>
+        <button onclick="document.getElementById('superAdminPanel').remove()" style="background:none;border:1px solid #444;color:#888;padding:6px 14px;border-radius:6px;cursor:pointer;">Close</button>
+      </div>
+      <div style="background:#0d1117;border-radius:10px;padding:20px;margin-bottom:20px;">
+        <div style="font-size:0.85rem;color:#f59e0b;font-weight:700;margin-bottom:12px;">Generate New Invite Link</div>
+        <input id="saEmail" placeholder="Client email (optional)" style="width:100%;padding:9px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:white;font-size:0.82rem;margin-bottom:8px;box-sizing:border-box;">
+        <input id="saNote" placeholder="Note e.g. Uthman Consulting Ltd" style="width:100%;padding:9px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:white;font-size:0.82rem;margin-bottom:12px;box-sizing:border-box;">
+        <button onclick="saGenerateInvite()" style="padding:10px 20px;background:#f59e0b;color:#1a1a1a;border:none;border-radius:6px;font-weight:700;cursor:pointer;width:100%;">Generate Invite Link</button>
+        <div id="saNewLink" style="margin-top:12px;display:none;">
+          <div style="font-size:0.75rem;color:#888;margin-bottom:4px;">Share this link (valid 48 hours, single use):</div>
+          <div style="background:#0a4f45;padding:10px 12px;border-radius:6px;font-size:0.78rem;word-break:break-all;color:white;" id="saLinkText"></div>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('saLinkText').textContent);this.textContent='Copied!'" style="margin-top:6px;padding:6px 14px;background:#30363d;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.78rem;">Copy Link</button>
+        </div>
+      </div>
+      <div style="background:#0d1117;border-radius:10px;padding:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div style="font-size:0.85rem;color:#f59e0b;font-weight:700;">All Invite Links</div>
+          <button onclick="saLoadInvites()" style="padding:5px 12px;background:#21262d;color:#888;border:1px solid #30363d;border-radius:6px;cursor:pointer;font-size:0.75rem;">Refresh</button>
+        </div>
+        <div id="saInviteList" style="font-size:0.78rem;color:#888;">Loading...</div>
+      </div>
+    </div>`;
+  document.body.appendChild(panel);
+  saLoadInvites();
+})();
+ 
+async function saGenerateInvite() {
+  const email = document.getElementById('saEmail')?.value;
+  const note = document.getElementById('saNote')?.value;
+  try {
+    const res = await fetch(`${API_BASE}/invites/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-super-admin-key': window._superAdminKey },
+      body: JSON.stringify({ email, note })
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error); return; }
+    document.getElementById('saNewLink').style.display = 'block';
+    document.getElementById('saLinkText').textContent = data.link;
+    document.getElementById('saEmail').value = '';
+    document.getElementById('saNote').value = '';
+    saLoadInvites();
+  } catch(e) { alert('Failed to generate invite'); }
+}
+ 
+async function saLoadInvites() {
+  const el = document.getElementById('saInviteList');
+  if (!el) return;
+  try {
+    const res = await fetch(`${API_BASE}/invites/list`, {
+      headers: { 'x-super-admin-key': window._superAdminKey }
+    });
+    const invites = await res.json();
+    if (!invites.length) { el.innerHTML = '<div style="color:#555;">No invites yet.</div>'; return; }
+    el.innerHTML = invites.map(inv => {
+      const expired = new Date(inv.expiresAt) < new Date();
+      const status = inv.used ? 'Used' : expired ? 'Expired' : 'Active';
+      const color = inv.used ? '#888' : expired ? '#dc2626' : '#16a34a';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #21262d;">
+        <div>
+          <div style="color:white;font-size:0.8rem;">${inv.note || inv.email || 'No label'}</div>
+          <div style="color:#555;font-size:0.72rem;">Expires: ${new Date(inv.expiresAt).toLocaleString('en-NG')} ${inv.usedBy ? '| Used by: '+inv.usedBy : ''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:${color};font-size:0.75rem;font-weight:700;">${status}</span>
+          ${!inv.used && !expired ? `<button onclick="navigator.clipboard.writeText('https://accountrack.onrender.com?invite=${inv.token}')" style="padding:3px 8px;background:#21262d;border:1px solid #30363d;color:#888;border-radius:4px;cursor:pointer;font-size:0.7rem;">Copy</button>` : ''}
+          <button onclick="saRevokeInvite('${inv._id}')" style="padding:3px 8px;background:#3d1515;border:1px solid #dc2626;color:#dc2626;border-radius:4px;cursor:pointer;font-size:0.7rem;">Revoke</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = '<div style="color:#dc2626;">Failed to load invites</div>'; }
+}
+ 
+async function saRevokeInvite(id) {
+  if (!confirm('Revoke this invite? It will no longer work.')) return;
+  try {
+    await fetch(`${API_BASE}/invites/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-super-admin-key': window._superAdminKey }
+    });
+    saLoadInvites();
+  } catch(e) { alert('Failed to revoke invite'); }
+}
+
 (async function init() {
 
   if (authToken) {
