@@ -28,6 +28,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const openingBalanceRoutes = require('./routes/openingBalanceRoutes');
 const exportImportRoutes = require('./routes/exportImportRoutes');
 const payrollRoutes = require('./routes/payrollRoutes');
+const inviteRoutes = require('./routes/inviteRoutes');
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use('/api/openingbalances', authenticateToken, openingBalanceRoutes);
 app.use('/api/export', authenticateToken, exportImportRoutes);
 app.use('/api/import', authenticateToken, exportImportRoutes);
 app.use('/api/payroll', authenticateToken, payrollRoutes);
+app.use('/api/invites', inviteRoutes);
 
 // ==================== HEALTH CHECK ====================
 app.get('/health', (req, res) => {

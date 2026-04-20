@@ -94,9 +94,18 @@ function formatNaira(amount) {
   return '₦' + amount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function calculateLevies(monthlyGross, basicSalary) {
+  const nsitf = parseFloat((monthlyGross * 0.01).toFixed(2));
+  const itf = (monthlyGross * 12) > 50000
+    ? parseFloat((monthlyGross * 0.01).toFixed(2)) : 0;
+  const nhf = parseFloat(((basicSalary || monthlyGross * 0.7) * 0.025).toFixed(2));
+  return { nsitf, itf, nhf, total: nsitf + itf + nhf };
+}
+ 
 module.exports = {
   calculatePAYE,
   calculateVAT,
   calculateWHT,
-  formatNaira
+  formatNaira,
+  calculateLevies
 };
