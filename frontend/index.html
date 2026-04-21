@@ -2480,7 +2480,7 @@ function renderInvoicesView() {
       <div class="kpi-card amber"><div class="kpi-label">Outstanding</div><div class="kpi-value" style="font-size:1.3rem;">${fmt(unpaid)}</div></div>
     </div>
     <div class="table-wrap">
-      <tr>
+      <table>
         <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Paid</th><th>Balance</th><th>Actions</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-invoice-dollar"></i><p>No invoices yet.</p></div></td></tr>'}</tbody>
       </table>
@@ -3263,7 +3263,7 @@ function renderBillsView() {
       '<td class="td-bold" style="color:' +
         (balance > 0.005 ? 'var(--danger)' : 'var(--success)') + ';">' +
         fmt(balance) + '</td>' +
-      '<td>' + statusBadge(displayStatus) + (inv.recurring ? ' <span class="badge badge-info" title="'+inv.recurringFreq+'"><i class="fas fa-rotate"></i> Recurring</span>' : '') + '</td>' +
+      '<td>' + statusBadge(displayStatus) + '</td>' +
       '<td><div class="table-actions">' +
         (b.status !== 'paid'
           ? '<div class="action-btn" title="Pay Bill" ' +
@@ -3283,7 +3283,7 @@ function renderBillsView() {
     ${searchBar('bills', 'Search bills by number or status...', 'renderBillsView')}
     <div class="page-header">
       <div class="page-title"><h2>Bills</h2><p>${fmt(unpaid)} outstanding</p></div>
-      <div class="page-actions"><button class="btn btn-success" onclick="openBillPaymentSelector()"><i class="fas fa-money-bill-wave"></i> Record Payment</button><button class="btn btn-primary" onclick="openBillModal()"><i class="fas fa-plus"></i> Enter Bill</button></div>${b.whtAmount > 0 ? `<button class="btn btn-secondary btn-sm" onclick="generateWHTCertificate('${b._id}')" title="WHT Certificate"><i class="fas fa-certificate"></i></button>` : ''}
+      <div class="page-actions"><button class="btn btn-success" onclick="openBillPaymentSelector()"><i class="fas fa-money-bill-wave"></i> Record Payment</button><button class="btn btn-primary" onclick="openBillModal()"><i class="fas fa-plus"></i> Enter Bill</button></div>
     </div>
     <div class="table-wrap">
       <table><thead><tr><th>Bill #</th><th>Vendor</th><th>Date</th><th>Due</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead>
