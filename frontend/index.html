@@ -1076,6 +1076,7 @@
     <div class="nav-section">
       <div class="nav-section-label">Purchasing</div>
       <div class="nav-item" data-page="vendors" data-label="Vendors"><i class="fas fa-truck"></i> <span>Vendors</span></div>
+      <div class="nav-item" data-page="purchaseorders" data-label="Purchase Orders"><i class="fas fa-clipboard-list"></i> <span>Purchase Orders</span></div>
       <div class="nav-item" data-page="bills" data-label="Bills"><i class="fas fa-file-invoice"></i> <span>Bills</span></div>
     </div>
     <div class="nav-section">
@@ -1133,6 +1134,7 @@
     <div id="customersView"  class="view"></div>
     <div id="invoicesView"   class="view"></div>
     <div id="vendorsView"    class="view"></div>
+    <div id="purchaseordersView" class="view"></div>
     <div id="billsView"      class="view"></div>
     <div id="accountingView" class="view"></div>
     <div id="bankingView"    class="view"></div>
@@ -1165,6 +1167,32 @@
 const API_BASE = 'https://accountrack-backend.onrender.com/api';
 
 let authToken = localStorage.getItem('at_token');
+
+const CURRENCIES = {
+  NGN: { symbol: '₦', name: 'Nigerian Naira' },
+  USD: { symbol: '$', name: 'US Dollar' },
+  GBP: { symbol: '£', name: 'British Pound' },
+  EUR: { symbol: '€', name: 'Euro' },
+  GHS: { symbol: 'GH₵', name: 'Ghanaian Cedi' },
+  KES: { symbol: 'KSh', name: 'Kenyan Shilling' },
+  ZAR: { symbol: 'R', name: 'South African Rand' },
+};
+let exchangeRates = { NGN:1, USD:1580, GBP:2010, EUR:1720, GHS:108, KES:12, ZAR:85 };
+function toNGN(amount, currency='NGN') { return amount * (exchangeRates[currency]||1); }
+function fmtCurrency(amount, currency='NGN') {
+  const cur = CURRENCIES[currency]||CURRENCIES.NGN;
+  return cur.symbol + Number(amount||0).toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+async function fetchLiveRates() {
+  try {
+    const res = await fetch('https://api.exchangerate-api.com/v4/latest/NGN');
+    if (!res.ok) return;
+    const data = await res.json();
+    Object.keys(CURRENCIES).forEach(cur => {
+      if (cur !== 'NGN' && data.rates[cur]) exchangeRates[cur] = 1 / data.rates[cur];
+    });
+  } catch(e) { console.warn('Could not fetch live rates'); }
+}
 
 // ─── ROLE-BASED ACCESS CONTROL ───────────────────────────────
 function getCurrentUser() {
@@ -1249,6 +1277,7 @@ let accounts = [], journalEntries = [], customers = [], invoices = [];
 let vendors = [], bills = [], bankAccounts = [], bankTransactions = [];
 let products = [], inventoryMovements = [], budgets = [], employees = [];
 let customerPayments = [], vendorPayments = [], assets = [], payrollRuns = [], openingBalances = {};
+let purchaseOrders = JSON.parse(localStorage.getItem('at_pos')||'[]');
 let settings = {};
 let currentPage = 'dashboard';
 let allTransactionRows = [];
@@ -1260,6 +1289,7 @@ const PAGE_LABELS = {
   openingbalances:'Opening Balances', banking:'Banking', transactions:'Transactions',
   budgets:'Budgets', products:'Products & Inventory', employees:'Payroll',
   settings:'Settings', help:'Help', assets:'Asset Register', audittrail:'Audit Trail',
+  purchaseorders:'Purchase Orders',
 };
 
 window._dashPeriod = 'This Month';
@@ -2272,7 +2302,7 @@ if (recurringDue.length > 0) {
             <tbody>${invoices.sort((a,b)=>b.date>a.date?1:-1).slice(0,8).map(inv => {
               const c = customers.find(c=>c.id===inv.customerId);
               return `<tr>
-                <td class="td-bold td-mono">${inv.number}</td>
+                <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
                 <td>${c?.name||'—'}</td>
                 <td>${inv.date}</td>
                 <td class="td-bold">${fmt(inv.total)}</td>
@@ -2441,7 +2471,7 @@ function renderInvoicesView() {
     const displayStatus = overdue ? 'overdue' : inv.status;
     return `
       <tr>
-        <td class="td-bold td-mono">${inv.number}</td>
+        <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
         <td>${c?.name || '—'}</td>
         <td>${inv.date}</td>
         <td>${inv.dueDate}</td>
@@ -2498,7 +2528,15 @@ window.openInvoiceModal = (presetCustomerId) => {
     <div class="form-row cols-3">
       <div class="form-group"><label class="form-label required">Customer</label><select class="form-control" id="invCustomer">${custOpts}</select></div>
       <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-control" id="invDate" value="${today()}"></div>
-      <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-control" id="invDueDate" value="${futureDate(settings.defaultDueDays)}"></div>
+      <div class="form-group"><label class="form-label">Currency</label>
+      <select class="form-control" id="invCurrency" onchange="updateInvCurrency()">
+        ${Object.entries(CURRENCIES).map(([k,v])=>'<option value="'+k+'">'+v.symbol+' '+k+' — '+v.name+'</option>').join('')}
+      </select></div>
+    <div id="invRateRow" style="display:none;" class="form-group">
+      <label class="form-label">Exchange Rate (1 <span id="invCurLabel">USD</span> = ? NGN)</label>
+      <input type="number" class="form-control" id="invExRate" step="0.01" placeholder="e.g. 1580">
+    </div>
+    <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-control" id="invDueDate" value="${futureDate(settings.defaultDueDays)}"></div>
       <div class="form-group" style="margin-top:8px;">
   <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
     <input type="checkbox" id="invRecurring" onchange="toggleRecurring()">
@@ -2895,6 +2933,26 @@ async function submitCreditNote(id) {
   } catch(err) { showToast(err.message, 'danger'); }
 }
  
+function updateInvCurrency() {
+  const cur = document.getElementById('invCurrency')?.value || 'NGN';
+  const rateRow = document.getElementById('invRateRow');
+  const label = document.getElementById('invCurLabel');
+  if (rateRow) rateRow.style.display = cur === 'NGN' ? 'none' : 'block';
+  if (label) label.textContent = cur;
+  const rateInput = document.getElementById('invExRate');
+  if (rateInput && cur !== 'NGN') rateInput.value = exchangeRates[cur] || '';
+}
+
+async function refreshExchangeRates() {
+  showToast('Fetching live exchange rates...', 'info');
+  await fetchLiveRates();
+  Object.keys(CURRENCIES).filter(k=>k!=='NGN').forEach(k => {
+    const el = document.getElementById('rate_'+k);
+    if (el) el.value = exchangeRates[k] || '';
+  });
+  showToast('Exchange rates updated!', 'success');
+}
+
 function toggleRecurring() {
   const cb = document.getElementById('invRecurring');
   document.getElementById('recurringOptions').style.display = cb && cb.checked ? 'block' : 'none';
@@ -3271,6 +3329,7 @@ function renderBillsView() {
             'style="color:var(--warning);border-color:var(--warning);">' +
             '<i class="fas fa-money-bill-wave"></i></div>'
           : '') +
+        (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment(${b.id},'bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
         '<div class="action-btn danger" onclick="deleteBill(' + b.id + ')">' +
         '<i class="fas fa-trash"></i></div>' +
         
@@ -3347,6 +3406,11 @@ window.openBillModal = (presetVendorId) => {
         <option value="10">10% — Director Fees / Contracts</option>
       </select>
       <div class="form-hint">WHT is deducted from payment &amp; remitted to NRS</div>
+    </div>
+    <div class="form-group" style="margin-top:8px;">
+      <label class="form-label"><i class="fas fa-paperclip" style="margin-right:4px;"></i>Attach Receipt / Document</label>
+      <input type="file" class="form-control" id="billAttachment" accept=".pdf,.jpg,.jpeg,.png" style="font-size:0.8rem;">
+      <div class="form-hint">PDF or image, max 5MB</div>
     </div>
     <div class="section-label" style="margin-top:14px;">Line Items</div>
     <div id="billLinesHeader" class="line-items-header"style="grid-template-columns:1.5fr 1fr 80px 110px 110px 36px;"><span>Description</span><span id="bphProduct" style="display:none;color:var(--info);">Product</span><span>Qty</span><span>Unit Rate</span><span>Amount</span><span></span></div>
@@ -4146,7 +4210,10 @@ function renderBankingView() {
   document.getElementById('bankingView').innerHTML = `
     <div class="page-header">
       <div class="page-title"><h2>Banking</h2><p>${bankAccounts.length} bank account${bankAccounts.length!==1?'s':''}</p></div>
-      <div class="page-actions"><button class="btn btn-primary" onclick="openBankModal()"><i class="fas fa-plus"></i> Add Bank Account</button></div>
+      <div class="page-actions">
+        <button class="btn btn-secondary" onclick="importBankStatement()"><i class="fas fa-file-csv"></i> Import Statement</button>
+        <button class="btn btn-primary" onclick="openBankModal()"><i class="fas fa-plus"></i> Add Bank Account</button>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
       ${bankAccounts.map(b => {
@@ -4160,6 +4227,7 @@ function renderBankingView() {
           </div>
           <div style="padding:12px 18px;display:flex;gap:8px;">
             <button class="btn btn-secondary btn-sm" onclick="openBankTxModal(${b.id})"><i class="fas fa-plus"></i> Transaction</button>
+            <button class="btn btn-secondary btn-sm" onclick="openReconcileView(${b.id})" style="color:var(--brand);"><i class="fas fa-check-double"></i> Reconcile</button>
             <button class="btn btn-ghost btn-sm" onclick="deleteBankAccount(${b.id})"><i class="fas fa-trash"></i></button>
           </div>
         </div>`;
@@ -4168,13 +4236,14 @@ function renderBankingView() {
     ${bankTransactions.length>0?`
     <div class="section-label">Recent Transactions</div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th><th>Ref</th></tr></thead>
+      <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th><th>Ref</th><th>Status</th></tr></thead>
       <tbody>${[...bankTransactions].sort((a,b)=>b.date>a.date?1:-1).slice(0,20).map(t=>{
         const ba = bankAccounts.find(x=>x.id===t.bankId);
         return `<tr><td>${t.date}</td><td>${ba?.name||'—'}</td><td>${t.description}</td>
-          <td>${t.type==='debit'?fmt(t.amount):''}</td>
-          <td>${t.type==='credit'?fmt(t.amount):''}</td>
-          <td class="td-mono">${t.reference||''}</td></tr>`;
+          <td style="color:var(--danger);">${t.type==='debit'?fmt(t.amount):''}</td>
+          <td style="color:var(--success);">${t.type==='credit'?fmt(t.amount):''}</td>
+          <td class="td-mono">${t.reference||''}</td>
+          <td>${t.reconciled?'<span class="badge badge-success">Cleared</span>':'<span class="badge badge-neutral">Uncleared</span>'}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`:''}`;
 }
@@ -4229,6 +4298,115 @@ window.saveBankTx = (bankId) => {
   var suspAcc = accounts.find(function(a){ return a.code==='9999'; });   if (!suspAcc) {     suspAcc = { code:'9999', name:'Suspense / Unallocated', type:'Asset', balance:0 };     accounts.push(suspAcc);   }   journalEntries.push({     id: genId(), date: txDate,     description: desc + (txRef ? ' [Ref: ' + txRef + ']' : ''),     type: 'bank',     lines: txType === 'credit'       ? [{ accountCode: '1000', amount: amt, type: 'debit'  },          { accountCode: '9999', amount: amt, type: 'credit' }]       : [{ accountCode: '9999', amount: amt, type: 'debit'  },          { accountCode: '1000', amount: amt, type: 'credit' }]   });   logAction('BANK_TX', (txType === 'credit' ? 'Received ' : 'Paid ') + fmt(amt) + ' — ' + desc);   
   recalcBalances(); saveAllData(); closeTopModal(); renderBankingView();   
   showToast('Bank transaction recorded and posted to ledger. (Edit journal to re-allocate from Suspense.)', 'success');
+};
+
+window.openReconcileView = function(bankId) {
+  const account = bankAccounts.find(b=>b.id===bankId);
+  if (!account) return;
+  const txs = [...bankTransactions].filter(t=>t.bankId===bankId).sort((a,b)=>b.date>a.date?1:-1);
+  const reconciled = txs.filter(t=>t.reconciled);
+  const unreconciled = txs.filter(t=>!t.reconciled);
+  const bookBal = account.openingBalance + txs.reduce((s,t)=>s+(t.type==='credit'?t.amount:-t.amount),0);
+  const clearedBal = account.openingBalance + reconciled.reduce((s,t)=>s+(t.type==='credit'?t.amount:-t.amount),0);
+  const diff = bookBal - clearedBal;
+  showModal('Reconcile — '+account.name,`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
+      <div style="background:var(--surface2);padding:12px;border-radius:8px;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--text-3);text-transform:uppercase;">Book Balance</div>
+        <div style="font-size:1.1rem;font-weight:700;margin-top:4px;">${fmt(bookBal)}</div>
+      </div>
+      <div style="background:var(--surface2);padding:12px;border-radius:8px;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--text-3);text-transform:uppercase;">Cleared Balance</div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--success);margin-top:4px;">${fmt(clearedBal)}</div>
+      </div>
+      <div style="background:var(--surface2);padding:12px;border-radius:8px;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--text-3);text-transform:uppercase;">Difference</div>
+        <div style="font-size:1.1rem;font-weight:700;color:${Math.abs(diff)>0.01?'var(--danger)':'var(--success)'};margin-top:4px;">${fmt(diff)}</div>
+      </div>
+    </div>
+    <div style="font-size:0.78rem;font-weight:600;margin-bottom:8px;">Unreconciled (${unreconciled.length})</div>
+    <div style="max-height:300px;overflow-y:auto;">
+      ${unreconciled.length===0
+        ? '<div style="text-align:center;padding:24px;color:var(--text-3);">All transactions reconciled!</div>'
+        : unreconciled.map(t=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+            <input type="checkbox" id="rec_${t.id}" style="width:16px;height:16px;cursor:pointer;">
+            <div style="flex:1;">
+              <div style="font-size:0.82rem;font-weight:600;">${t.description}</div>
+              <div style="font-size:0.72rem;color:var(--text-3);">${t.date} · ${t.reference||''}</div>
+            </div>
+            <div style="font-weight:700;color:${t.type==='credit'?'var(--success)':'var(--danger)'};">
+              ${t.type==='credit'?'+':'-'}${fmt(t.amount)}
+            </div>
+          </div>`).join('')}
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>
+     <button class="btn btn-primary" onclick="markSelectedReconciled(${bankId})"><i class="fas fa-check-double"></i> Mark Selected Reconciled</button>`,
+    {width:'620px'}
+  );
+};
+
+window.markSelectedReconciled = function(bankId) {
+  const txs = bankTransactions.filter(t=>t.bankId===bankId&&!t.reconciled);
+  let count=0;
+  txs.forEach(t=>{const cb=document.getElementById('rec_'+t.id);if(cb&&cb.checked){t.reconciled=true;t.reconciledAt=today();count++;}});
+  if (!count) return showToast('Select at least one transaction','info');
+  saveAllData();closeTopModal();renderBankingView();
+  showToast(count+' transaction'+(count!==1?'s':'')+' marked as reconciled','success');
+};
+
+window.importBankStatement = function() {
+  if (!bankAccounts.length) return showToast('Add a bank account first', 'info');
+  const acOpts = bankAccounts.map(b=>'<option value="'+b.id+'">'+b.name+' — '+(b.bank||'')+'</option>').join('');
+  showModal('Import Bank Statement', `
+    <p style="font-size:0.82rem;color:var(--text-3);margin-bottom:12px;">Upload a CSV from your internet banking. Common columns: <strong>Date, Description, Debit, Credit</strong>.</p>
+    <div class="form-group"><label class="form-label required">Bank Account</label><select class="form-control" id="stmtBank">${acOpts}</select></div>
+    <div class="form-group"><label class="form-label required">CSV File</label><input type="file" class="form-control" id="stmtFile" accept=".csv"></div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label">Date Column</label><input class="form-control" id="stmtDateCol" value="Date"></div>
+      <div class="form-group"><label class="form-label">Description Column</label><input class="form-control" id="stmtDescCol" value="Description"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label">Debit Column</label><input class="form-control" id="stmtDebitCol" value="Debit"></div>
+      <div class="form-group"><label class="form-label">Credit Column</label><input class="form-control" id="stmtCreditCol" value="Credit"></div>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="processStatementCSV()"><i class="fas fa-upload"></i> Import</button>`
+  );
+};
+
+window.processStatementCSV = function() {
+  const file = document.getElementById('stmtFile')?.files[0];
+  const bankId = parseInt(document.getElementById('stmtBank')?.value);
+  const dateCol = (document.getElementById('stmtDateCol')?.value||'Date').toLowerCase();
+  const descCol = (document.getElementById('stmtDescCol')?.value||'Description').toLowerCase();
+  const debitCol = (document.getElementById('stmtDebitCol')?.value||'Debit').toLowerCase();
+  const creditCol = (document.getElementById('stmtCreditCol')?.value||'Credit').toLowerCase();
+  if (!file||!bankId) return showToast('Select a bank account and CSV file', 'danger');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const lines = e.target.result.split('\n').filter(l=>l.trim());
+    if (lines.length < 2) return showToast('CSV appears empty', 'danger');
+    const headers = lines[0].split(',').map(h=>h.trim().replace(/"/g,'').toLowerCase());
+    const di = headers.findIndex(h=>h.includes(dateCol));
+    const ni = headers.findIndex(h=>h.includes(descCol));
+    const dbi = headers.findIndex(h=>h.includes(debitCol));
+    const cri = headers.findIndex(h=>h.includes(creditCol));
+    if (di<0) return showToast('Cannot find Date column. Check the column name.', 'danger');
+    let imported=0, skipped=0;
+    lines.slice(1).forEach(line => {
+      const cols = line.split(',').map(c=>c.trim().replace(/"/g,''));
+      const date = cols[di]; const desc = cols[ni]||'Imported';
+      const debit = parseFloat((cols[dbi]||'').replace(/[^0-9.]/g,''))||0;
+      const credit = parseFloat((cols[cri]||'').replace(/[^0-9.]/g,''))||0;
+      if (!date||(!debit&&!credit)){skipped++;return;}
+      if (credit>0){bankTransactions.push({id:genId(),bankId,date,type:'credit',amount:credit,description:desc,reference:'IMPORT',reconciled:false});imported++;}
+      if (debit>0){bankTransactions.push({id:genId(),bankId,date,type:'debit',amount:debit,description:desc,reference:'IMPORT',reconciled:false});imported++;}
+    });
+    saveAllData();closeTopModal();renderBankingView();
+    showToast('Imported '+imported+' transactions. '+skipped+' rows skipped.','success');
+  };
+  reader.readAsText(file);
 };
 
 window.reconcileTx = async function(id) {
@@ -4884,6 +5062,39 @@ function renderSettingsView() {
             <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()"><i class="fas fa-upload"></i> Import Backup</button>
             <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importData(this)">
             <button class="btn btn-danger" onclick="clearData()"><i class="fas fa-trash"></i> Clear All Data</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/-1;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <span class="card-title"><i class="fas fa-coins" style="margin-right:8px;color:var(--brand);"></i>Exchange Rates (to NGN)</span>
+          <button class="btn btn-secondary btn-sm" onclick="refreshExchangeRates()"><i class="fas fa-rotate"></i> Refresh</button>
+        </div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            ${Object.entries(CURRENCIES).filter(([k])=>k!=='NGN').map(([k,v])=>`
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.8rem;font-weight:600;min-width:36px;">${k}</span>
+                <input type="number" class="form-control" id="rate_${k}" value="${exchangeRates[k]||''}" step="0.01" onchange="exchangeRates['${k}']=parseFloat(this.value)||1">
+                <span style="font-size:0.75rem;color:var(--text-3);">NGN</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/-1;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <span class="card-title"><i class="fas fa-coins" style="margin-right:8px;color:var(--brand);"></i>Exchange Rates (to NGN)</span>
+          <button class="btn btn-secondary btn-sm" onclick="refreshExchangeRates()"><i class="fas fa-rotate"></i> Refresh Live Rates</button>
+        </div>
+        <div class="card-body">
+          <p style="font-size:0.78rem;color:var(--text-3);margin-bottom:14px;">Set how many NGN equals 1 unit of each currency. Used for multi-currency invoices.</p>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            ${Object.entries(CURRENCIES).filter(([k])=>k!=='NGN').map(([k,v])=>`
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.8rem;font-weight:600;min-width:40px;">${k}</span>
+                <input type="number" class="form-control" id="rate_${k}" value="${exchangeRates[k]||''}" step="0.01" onchange="exchangeRates['${k}']=parseFloat(this.value)||1">
+                <span style="font-size:0.75rem;color:var(--text-3);">NGN</span>
+              </div>`).join('')}
           </div>
         </div>
       </div>
@@ -5737,8 +5948,12 @@ window.saveInvoice = async function() {
   if (subtotal <= 0) return alert('Invoice total must be > 0.');
   vatAmt = parseFloat(vatAmt.toFixed(2));
   const total = parseFloat((subtotal + vatAmt).toFixed(2));
-  const invoiceData = {
-    customerId: custId, date: invDate, dueDate, lines, recurring, recurringFreq: recurFreq,
+  const currency = document.getElementById('invCurrency')?.value || 'NGN';
+    const exRate = currency !== 'NGN' ? (parseFloat(document.getElementById('invExRate')?.value)||exchangeRates[currency]||1) : 1;
+    const invoiceData = {
+      customerId: custId,
+      currency: currency,
+      exchangeRate: exRate, date: invDate, dueDate, lines, recurring, recurringFreq: recurFreq,
     subtotal, vat: vatAmt, total, status: 'unpaid', payments: [], amountPaid: 0, balance: total
   };
   try {
@@ -6420,6 +6635,7 @@ const PAGE_RENDERS = {
   transactions: renderTransactionsView, budgets: renderBudgetsView,
   products: renderProductsView, employees: renderEmployeesView,
   assets: renderAssetsView, settings: renderSettingsView,
+  purchaseorders: renderPurchaseOrdersView,
   help: renderHelpView, audittrail: renderAuditTrailView,
 };
 
@@ -6491,6 +6707,161 @@ function calculateLeviesClient(monthlyGross, basicSalary) {
   return { nsitf, itf, nhf };
 }
 // ════════════════════════════════════════════════════════════
+// ─── ATTACHMENTS ─────────────────────────────────────────────
+window.viewAttachment = function(id, type) {
+  const record = type==='bill' ? bills.find(b=>b.id===id) : invoices.find(i=>i.id===id);
+  if (!record?.attachment) return showToast('No attachment found','info');
+  const att = record.attachment;
+  if (att.type?.startsWith('image/')) {
+    showModal('Attachment — '+att.name,
+      `<img src="${att.data}" style="max-width:100%;border-radius:8px;">`,
+      `<a href="${att.data}" download="${att.name}" class="btn btn-primary"><i class="fas fa-download"></i> Download</a>`
+    );
+  } else {
+    const link=document.createElement('a');
+    link.href=att.data; link.download=att.name; link.click();
+  }
+};
+
+// ─── PURCHASE ORDERS ─────────────────────────────────────────
+function renderPurchaseOrdersView() {
+  const rows = [...purchaseOrders].sort((a,b)=>b.date>a.date?1:-1).map(po=>{
+    const v=vendors.find(x=>x.id===po.vendorId);
+    const sc={draft:'badge-neutral',sent:'badge-info',received:'badge-success',cancelled:'badge-danger'}[po.status]||'badge-neutral';
+    return `<tr>
+      <td class="td-bold td-mono">${po.number}</td><td>${v?.name||'—'}</td>
+      <td>${po.date}</td><td>${po.expectedDate||'—'}</td>
+      <td class="td-bold">${fmt(po.total)}</td>
+      <td><span class="badge ${sc}">${po.status}</span></td>
+      <td><div class="table-actions">
+        ${po.status!=='received'&&po.status!=='cancelled'?`<div class="action-btn" title="Convert to Bill" onclick="convertPOtoBill(${po.id})" style="color:var(--success);border-color:var(--success);"><i class="fas fa-file-invoice"></i></div>`:''}
+        <div class="action-btn danger" onclick="deletePO(${po.id})"><i class="fas fa-trash"></i></div>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('purchaseordersView').innerHTML = `
+    <div class="page-header">
+      <div class="page-title"><h2>Purchase Orders</h2><p>${purchaseOrders.length} PO${purchaseOrders.length!==1?'s':''}</p></div>
+      <div class="page-actions"><button class="btn btn-primary" onclick="openPOModal()"><i class="fas fa-plus"></i> New PO</button></div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>PO #</th><th>Vendor</th><th>Date</th><th>Expected</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="7"><div class="empty-state" style="padding:32px"><i class="fas fa-clipboard-list"></i><p>No purchase orders yet.</p></div></td></tr>'}</tbody>
+      </table></div>`;
+}
+
+window.openPOModal = () => {
+  if (!vendors.length) return alert('Add a vendor first.');
+  const vOpts=vendors.map(v=>`<option value="${v.id}">${v.name}</option>`).join('');
+  const accOpts=accounts.filter(a=>a.type==='Expense').map(a=>`<option value="${a.code}">${a.code} – ${a.name}</option>`).join('');
+  showModal('New Purchase Order',`
+    <div class="form-row cols-3">
+      <div class="form-group"><label class="form-label required">Vendor</label><select class="form-control" id="poVendor">${vOpts}</select></div>
+      <div class="form-group"><label class="form-label">PO Date</label><input type="date" class="form-control" id="poDate" value="${today()}"></div>
+      <div class="form-group"><label class="form-label">Expected Delivery</label><input type="date" class="form-control" id="poExp" value="${futureDate(7)}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Expense Account</label><select class="form-control" id="poAcc">${accOpts}</select></div>
+    <div class="section-label" style="margin-top:14px;">Line Items</div>
+    <div id="poLines"></div>
+    <button class="btn btn-ghost btn-sm" onclick="addPOLine()"><i class="fas fa-plus"></i> Add Line</button>
+    <div style="margin-top:12px;text-align:right;font-size:0.88rem;font-weight:700;">Total: <span id="poTotal" style="color:var(--brand);">${fmt(0)}</span></div>
+    <div class="form-group" style="margin-top:12px;"><label class="form-label">Notes</label><textarea class="form-control" id="poNotes" rows="2"></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="savePO()"><i class="fas fa-save"></i> Save PO</button>`,
+    {width:'780px'}
+  );
+  addPOLine();
+};
+
+window.addPOLine = () => {
+  const c=document.getElementById('poLines'); if(!c) return;
+  const id=Date.now();
+  const d=document.createElement('div');
+  d.style.cssText='display:grid;grid-template-columns:2fr 80px 120px 36px;gap:8px;margin-bottom:8px;';
+  d.id='pol_'+id;
+  d.innerHTML=`<input class="form-control" placeholder="Description" id="pold_${id}">
+    <input type="number" class="form-control" placeholder="Qty" id="polq_${id}" value="1" min="1" oninput="updatePOTotal()">
+    <input type="number" class="form-control" placeholder="Unit Price" id="polp_${id}" step="0.01" oninput="updatePOTotal()">
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('pol_${id}').remove();updatePOTotal()"><i class="fas fa-times"></i></button>`;
+  c.appendChild(d);
+};
+
+window.updatePOTotal = () => {
+  let total=0;
+  document.querySelectorAll('#poLines > div').forEach(row=>{
+    const id=row.id.replace('pol_','');
+    total+=(parseFloat(document.getElementById('polq_'+id)?.value)||0)*(parseFloat(document.getElementById('polp_'+id)?.value)||0);
+  });
+  const el=document.getElementById('poTotal'); if(el) el.textContent=fmt(total);
+};
+
+window.savePO = () => {
+  const vendorId=parseInt(document.getElementById('poVendor')?.value);
+  const lines=[]; let total=0;
+  document.querySelectorAll('#poLines > div').forEach(row=>{
+    const id=row.id.replace('pol_','');
+    const desc=document.getElementById('pold_'+id)?.value.trim();
+    const qty=parseFloat(document.getElementById('polq_'+id)?.value)||0;
+    const price=parseFloat(document.getElementById('polp_'+id)?.value)||0;
+    if(desc&&qty&&price){lines.push({description:desc,quantity:qty,unitPrice:price,amount:qty*price});total+=qty*price;}
+  });
+  if(!lines.length) return alert('Add at least one line item.');
+  const po={id:genId(),number:'PO-'+String(purchaseOrders.length+1).padStart(4,'0'),
+    vendorId,date:document.getElementById('poDate')?.value,
+    expectedDate:document.getElementById('poExp')?.value,
+    expenseAccount:document.getElementById('poAcc')?.value,
+    notes:document.getElementById('poNotes')?.value,
+    lines,total,status:'draft'};
+  purchaseOrders.push(po);
+  localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
+  closeTopModal();renderPurchaseOrdersView();
+  showToast('Purchase Order '+po.number+' created','success');
+};
+
+window.convertPOtoBill = async (poId) => {
+  const po = purchaseOrders.find(p => p.id === poId);
+  if (!po) return;
+
+  if (!confirm('Convert ' + po.number + ' to a Bill?')) return;
+
+  const attFile = document.getElementById('billAttachment')?.files[0];
+  let attachment = null;
+
+  if (attFile) {
+    if (attFile.size > 5 * 1024 * 1024) {
+      showToast('File too large. Max 5MB.', 'danger');
+      return;
+    }
+
+    attachment = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve({
+        name: attFile.name,
+        type: attFile.type,
+        data: e.target.result
+      });
+      reader.readAsDataURL(attFile);
+    });
+  }
+  bills.push({id:genId(),number:'BILL-'+String(bills.length+1).padStart(4,'0'),
+    vendorId:po.vendorId,date:today(),dueDate:futureDate(30),
+    lines:po.lines,total:po.total,status:'unpaid',
+    amountPaid:0,balance:po.total,payments:[],
+    expenseAccount:po.expenseAccount,isInventoryPurchase:false,
+    whtRate:0,whtAmount:0,netPayable:po.total,poRef:po.number});
+  po.status='received';
+  localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
+  saveAllData();renderPurchaseOrdersView();
+  showToast('Bill created from '+po.number+'. Go to Bills to pay.','success');
+};
+
+window.deletePO = (id) => {
+  if(!confirm('Delete this purchase order?')) return;
+  purchaseOrders=purchaseOrders.filter(p=>p.id!==id);
+  localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
+  renderPurchaseOrdersView();
+};
+
 // ─── INIT ─────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════
 // ─── INVITE TOKEN GATE ───────────────────────────────────────
