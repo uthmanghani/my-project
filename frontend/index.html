@@ -6861,6 +6861,19 @@ window.deletePO = (id) => {
   localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
   renderPurchaseOrdersView();
 };
+// ============================================
+// PERMANENT FIX: Add Customer button handler
+// ============================================
+if (typeof window.showAddCustomer === 'undefined') {
+  window.showAddCustomer = function() {
+    if (typeof openCustomerModal === 'function') {
+      openCustomerModal();
+    } else {
+      console.error('openCustomerModal is not defined');
+      alert('Error: Customer form not available. Please refresh the page.');
+    }
+  };
+}
 
 // ─── INIT ─────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════
