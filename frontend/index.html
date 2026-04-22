@@ -2359,8 +2359,8 @@ function renderCustomersView() {
       <div class="page-title"><h2>Customers</h2><p>${customers.length} customer${customers.length!==1?'s':''} on record</p></div>
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="exportCustomersCSV()"><i class="fas fa-file-csv"></i> Export CSV</button>
-        '<button class="btn btn-secondary btn-sm" onclick="importCustomersCSV()"><i class="fas fa-file-csv"></i> Import CSV</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="showAddCustomer()">Add Customer</button>'
+        <button class="btn btn-secondary" onclick="importCustomersCSV()"><i class="fas fa-file-csv"></i> Import CSV</button>
+        <button class="btn btn-primary" onclick="showAddCustomer()"><i class="fas fa-plus"></i> Add Customer</button>
         <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="fas fa-file-invoice-dollar"></i> Create Invoice</button>
         <button class="btn btn-secondary" onclick="showARAgingPanel()"><i class="fas fa-clock"></i> AR Aging Report</button>
       </div>
