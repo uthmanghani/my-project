@@ -877,7 +877,7 @@
       </div>
     </div>
     <div class="ob-tagline">Built for <span>Nigerian</span> Business Leaders</div>
-    <div class="ob-desc">Full-suite accounting, payroll, inventory, tax compliance, and financial reporting — purpose-built for Nigerian enterprises of all sizes.</div>
+    <div class="ob-desc">Full-suite accounting, payroll, inventory, tax compliance, and financial reporting.  purpose-built for Nigerian enterprises of all sizes.</div>
     <div class="ob-features">
       <div class="ob-feat"><div class="ob-feat-icon"><i class="fas fa-shield-halved"></i></div>NTA 2025 / CITA / VATA Compliant</div>
       <div class="ob-feat"><div class="ob-feat-icon"><i class="fas fa-layer-group"></i></div>Industry-Specific Chart of Accounts</div>
@@ -2346,7 +2346,8 @@ function renderCustomersView() {
       <td>${c.address||'—'}</td>
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
-        <div class="action-btn" title="New Invoice" onclick="openInvoiceModal(${c.id})"><i class="fas fa-file-invoice"></i></div>
+        <div class="action-btn" onclick="openInvoiceModal(${c.id})" title="New Invoice"><i class="fas fa-file-invoice-dollar"></i></div>
+            <div class="action-btn" onclick="showCustomerStatement(${c.id})" title="Account Statement" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-file-alt"></i></div>
         <div class="action-btn" title="View Statement" onclick="viewCustomerStatement(${c.id})" style="color:var(--info);border-color:var(--info);"><i class="fas fa-file-lines"></i></div>
         <div class="action-btn danger" title="Delete" onclick="deleteCustomer(${c.id})"><i class="fas fa-trash"></i></div>
       </div></td>
@@ -2471,6 +2472,7 @@ function renderInvoicesView() {
     const displayStatus = overdue ? 'overdue' : inv.status;
     return `
       <tr>
+        <td><input type="checkbox" class="inv-check" value="${inv.id}" onchange="updateBulkBar()"></td>
         <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
         <td>${c?.name || '—'}</td>
         <td>${inv.date}</td>
@@ -2509,9 +2511,15 @@ function renderInvoicesView() {
       <div class="kpi-card blue"><div class="kpi-label">Collected</div><div class="kpi-value" style="font-size:1.3rem;">${fmt(paid)}</div></div>
       <div class="kpi-card amber"><div class="kpi-label">Outstanding</div><div class="kpi-value" style="font-size:1.3rem;">${fmt(unpaid)}</div></div>
     </div>
+    <div id="bulkActionsBar" style="display:none;background:var(--brand);color:white;padding:10px 16px;border-radius:8px;margin-bottom:12px;display:flex;align-items:center;gap:12px;">
+      <span id="bulkCount" style="font-size:0.82rem;font-weight:600;">0 selected</span>
+      <button onclick="bulkDeleteInvoices()" class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:white;border:none;"><i class="fas fa-trash"></i> Delete</button>
+      <button onclick="bulkExportInvoices()" class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:white;border:none;"><i class="fas fa-download"></i> Export</button>
+      <button onclick="clearBulkSelection()" class="btn btn-sm" style="background:rgba(255,255,255,0.1);color:white;border:none;"><i class="fas fa-times"></i> Clear</button>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Paid</th><th>Balance</th><th>Actions</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="selectAllInv" onchange="toggleSelectAllInv(this)"></th><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Paid</th><th>Balance</th><th>Actions</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-invoice-dollar"></i><p>No invoices yet.</p></div></td></tr>'}</tbody>
       </table>
     </div>
@@ -2802,6 +2810,67 @@ window.exportARAgingCSV = function() {
   link.download = "AR_Aging_" + today() + ".csv";
   link.click();
 };
+window.showCustomerStatement = function(customerId) {
+  const cust = customers.find(c=>c.id===customerId);
+  if (!cust) return;
+  const custInvoices = [...invoices].filter(i=>i.customerId===customerId).sort((a,b)=>a.date>b.date?1:-1);
+  const custPayments = custInvoices.reduce((s,i)=>s+(i.amountPaid||0),0);
+  const custOutstanding = custInvoices.reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
+  let runningBal = 0;
+  const rows = custInvoices.map(inv=>{
+    runningBal += inv.total;
+    const paid = inv.amountPaid||0;
+    runningBal -= paid;
+    const statusColor = inv.status==='paid'?'var(--success)':inv.status==='overdue'||inv.dueDate<today()?'var(--danger)':'var(--warning)';
+    return `<tr>
+      <td>${inv.date}</td>
+      <td class="td-mono">${inv.number}</td>
+      <td style="color:var(--text-2);">Invoice</td>
+      <td class="td-bold">${fmt(inv.total)}</td>
+      <td style="color:var(--success);">${paid>0?fmt(paid):''}</td>
+      <td class="td-bold" style="color:${statusColor};">${fmt(inv.balance!==undefined?inv.balance:inv.total)}</td>
+    </tr>`;
+  }).join('');
+  const w = window.open('','_blank','width=800,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${cust.name}</title>
+  <style>body{font-family:Arial,sans-serif;max-width:760px;margin:32px auto;color:#1a1a1a;font-size:13px;}
+  .hdr{display:flex;justify-content:space-between;margin-bottom:24px;}
+  .co{font-size:18px;font-weight:700;color:#0a4f45;}
+  table{width:100%;border-collapse:collapse;margin-top:16px;}
+  th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:12px;border-bottom:2px solid #ddd;}
+  td{padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;}
+  .summary{display:flex;gap:16px;margin-top:20px;}
+  .sum-box{flex:1;background:#f9f9f9;padding:12px;border-radius:6px;text-align:center;}
+  .sum-val{font-size:16px;font-weight:700;margin-top:4px;}
+  .footer{text-align:center;margin-top:32px;font-size:11px;color:#999;}
+  @media print{button{display:none;}}</style></head><body>
+  <div class="hdr">
+    <div><div class="co">${settings.companyName||'My Company'}</div>
+      <div style="font-size:11px;color:#666;">${settings.companyAddress||''}<br>TIN: ${settings.companyTaxId||'N/A'}</div></div>
+    <div style="text-align:right;"><div style="font-size:16px;font-weight:700;">Account Statement</div>
+      <div style="font-size:11px;color:#666;">As at ${today()}</div></div>
+  </div>
+  <div style="background:#e8f5e9;padding:12px 16px;border-radius:6px;margin-bottom:16px;">
+    <div style="font-weight:700;font-size:14px;">${cust.name}</div>
+    <div style="font-size:11px;color:#555;">${cust.email||''} · ${cust.phone||''} · ${cust.address||''}</div>
+  </div>
+  <table>
+    <thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Paid</th><th>Balance</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">No transactions</td></tr>'}</tbody>
+  </table>
+  <div class="summary">
+    <div class="sum-box"><div style="font-size:11px;color:#666;">Total Invoiced</div><div class="sum-val">${fmt(custInvoices.reduce((s,i)=>s+i.total,0))}</div></div>
+    <div class="sum-box"><div style="font-size:11px;color:#666;">Total Paid</div><div class="sum-val" style="color:#16a34a;">${fmt(custPayments)}</div></div>
+    <div class="sum-box"><div style="font-size:11px;color:#666;">Outstanding Balance</div><div class="sum-val" style="color:${custOutstanding>0?'#dc2626':'#16a34a'};">${fmt(custOutstanding)}</div></div>
+  </div>
+  <div class="footer">Generated by AccounTrack™ Pro · ${settings.companyName||''} · ${today()}</div>
+  <div style="text-align:center;margin-top:16px;">
+    <button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">Print / Save as PDF</button>
+  </div>
+  </body></html>`);
+  w.document.close();
+};
+
 window.showARAgingPanel = function() {
   var filterText = (document.getElementById("arFilter") || {}).value || "";
   var data = calculateARAging();
@@ -3149,7 +3218,7 @@ function renderVendorsView() {
   const rows = pagedVend.map(v => {
     const out = bills.filter(b=>b.vendorId===v.id&&b.status!=='paid').reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
     return `<tr>
-      <td class="td-bold">${v.name}</td><td>${v.email||'—'}</td><td>${v.phone||'—'}</td>
+      <td class="td-bold">${v.name}${v.notes?`<div style="font-size:0.7rem;color:var(--text-3);margin-top:2px;"><i class="fas fa-sticky-note"></i> ${v.notes.substring(0,40)}${v.notes.length>40?'...':''}</div>`:''}</td><td>${v.email||'—'}</td><td>${v.phone||'—'}</td>
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
         <div class="action-btn" title="New Bill" onclick="openBillModal(${v.id})"><i class="fas fa-file-invoice"></i></div>
@@ -3183,7 +3252,8 @@ window.openVendorModal = () => {
       <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="vPhone"></div>
       <div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="vTin"></div>
     </div>
-    <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="vAddr" rows="2"></textarea></div>`,
+    <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="vAddr" rows="2"></textarea></div>
+    <div class="form-group"><label class="form-label"><i class="fas fa-sticky-note" style="margin-right:4px;color:var(--brand);"></i>Internal Notes</label><textarea class="form-control" id="vNotes" rows="2" placeholder="Private notes visible only to your team..."></textarea></div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveVendor()"><i class="fas fa-save"></i> Save</button>`
   );
@@ -3191,7 +3261,7 @@ window.openVendorModal = () => {
 window.saveVendor = () => {
   const name = document.getElementById('vName')?.value.trim();
   if (!name) return alert('Vendor name required.');
-  vendors.push({ id:genId(), name, email:document.getElementById('vEmail')?.value, phone:document.getElementById('vPhone')?.value, tin:document.getElementById('vTin')?.value, address:document.getElementById('vAddr')?.value });
+  vendors.push({ id:genId(), name, email:document.getElementById('vEmail')?.value, phone:document.getElementById('vPhone')?.value, tin:document.getElementById('vTin')?.value, address:document.getElementById('vAddr')?.value, notes:document.getElementById('vNotes')?.value });
   saveAllData(); closeTopModal(); renderVendorsView();
   showToast('Vendor added successfully.', 'success');
 };
@@ -4537,7 +4607,12 @@ function runPayroll(periodLabel) {
 function renderReportsView() {
   document.getElementById('reportsView').innerHTML = `
     <div class="page-header">
-      <div class="page-title"><h2>Financial Reports</h2><p>IFRS-aligned · NTA 2025 compliant</p></div>
+      <div class="page-title"><h2>Reports</h2><p>Financial statements and analytics</p></div>
+      <div class="page-actions">
+        <button class="btn btn-secondary" onclick="printCurrentReport()"><i class="fas fa-print"></i> Print Report</button>
+        <button class="btn btn-secondary" onclick="exportReportCSV()"><i class="fas fa-download"></i> Export CSV</button>
+      </div>
+    </div>
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
       </div>
@@ -6707,6 +6782,80 @@ function calculateLeviesClient(monthlyGross, basicSalary) {
   return { nsitf, itf, nhf };
 }
 // ════════════════════════════════════════════════════════════
+// ─── REPORT EXPORT ────────────────────────────────────────────
+window.printCurrentReport = function() {
+  const content = document.getElementById('rptContent');
+  if (!content) return showToast('No report loaded', 'info');
+  const w = window.open('','_blank','width=900,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><title>Report — ${settings.companyName||'AccounTrack'}</title>
+  <style>body{font-family:Arial,sans-serif;padding:32px;color:#1a1a1a;font-size:12px;}
+  table{width:100%;border-collapse:collapse;margin:12px 0;}
+  th{background:#f5f5f5;padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;}
+  td{padding:7px 8px;border-bottom:1px solid #eee;}
+  h2{color:#0a4f45;} .footer{text-align:center;margin-top:32px;font-size:10px;color:#999;}
+  @media print{button{display:none;}}</style></head><body>
+  <div style="display:flex;justify-content:space-between;margin-bottom:20px;">
+    <div><div style="font-size:18px;font-weight:700;color:#0a4f45;">${settings.companyName||'My Company'}</div>
+    <div style="font-size:11px;color:#666;">TIN: ${settings.companyTaxId||'N/A'} · As at ${today()}</div></div>
+    <div style="text-align:right;font-size:11px;color:#666;">AccounTrack™ Pro<br>NTA 2025 Compliant</div>
+  </div>
+  ${content.innerHTML}
+  <div class="footer">Generated by AccounTrack™ Pro · ${today()}</div>
+  <div style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">Print / Save PDF</button></div>
+  </body></html>`);
+  w.document.close();
+};
+
+window.exportReportCSV = function() {
+  const content = document.getElementById('rptContent');
+  if (!content) return showToast('No report loaded', 'info');
+  const table = content.querySelector('table');
+  if (!table) return showToast('No table data to export', 'info');
+  const rows = [...table.querySelectorAll('tr')].map(r=>[...r.querySelectorAll('th,td')].map(c=>'"'+c.textContent.trim().replace(/"/g,'""')+'"').join(','));
+  const csv = rows.join('\n');
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'report_'+today()+'.csv'});
+  a.click();
+  showToast('Report exported as CSV','success');
+};
+
+// ─── BULK ACTIONS ─────────────────────────────────────────────
+function updateBulkBar() {
+  const checked = document.querySelectorAll('.inv-check:checked');
+  const bar = document.getElementById('bulkActionsBar');
+  const count = document.getElementById('bulkCount');
+  if (bar) bar.style.display = checked.length>0?'flex':'none';
+  if (count) count.textContent = checked.length+' selected';
+}
+function toggleSelectAllInv(cb) {
+  document.querySelectorAll('.inv-check').forEach(c=>{ c.checked=cb.checked; });
+  updateBulkBar();
+}
+function clearBulkSelection() {
+  document.querySelectorAll('.inv-check').forEach(c=>c.checked=false);
+  const bar=document.getElementById('bulkActionsBar');
+  if(bar) bar.style.display='none';
+}
+function bulkDeleteInvoices() {
+  const ids=[...document.querySelectorAll('.inv-check:checked')].map(c=>parseInt(c.value));
+  if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' invoice'+( ids.length!==1?'s':'')+' permanently?')) return;
+  invoices=invoices.filter(i=>!ids.includes(i.id));
+  saveAllData();renderInvoicesView();
+  showToast(ids.length+' invoice'+(ids.length!==1?'s':'')+' deleted','success');
+}
+function bulkExportInvoices() {
+  const ids=[...document.querySelectorAll('.inv-check:checked')].map(c=>parseInt(c.value));
+  if(!ids.length) return;
+  const selected=invoices.filter(i=>ids.includes(i.id));
+  const csv='Invoice#,Customer,Date,Due,Amount,Paid,Balance,Status\n'+selected.map(inv=>{
+    const c=customers.find(x=>x.id===inv.customerId);
+    return [inv.number,c?.name||'',inv.date,inv.dueDate,inv.total,inv.amountPaid||0,inv.balance||inv.total,inv.status].join(',');
+  }).join('\n');
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'invoices_export_'+today()+'.csv'});
+  a.click();
+  showToast(selected.length+' invoices exported','success');
+}
+
 // ─── ATTACHMENTS ─────────────────────────────────────────────
 window.viewAttachment = function(id, type) {
   const record = type==='bill' ? bills.find(b=>b.id===id) : invoices.find(i=>i.id===id);
