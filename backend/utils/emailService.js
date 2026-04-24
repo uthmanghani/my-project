@@ -32,6 +32,29 @@ exports.sendInvoiceEmail = async ({ to, customerName, invoiceNumber, amount, due
       </div>`
   });
 };
+exports.sendOTPEmail = async ({ to, otp, firstName }) => {
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject: 'AccounTrack — Your Login Verification Code',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;">
+        <div style="background:#0a4f45;padding:24px;text-align:center;border-radius:8px 8px 0 0;">
+          <h1 style="color:white;margin:0;font-size:20px;">AccounTrack™ Pro</h1>
+        </div>
+        <div style="padding:32px;background:#f9f9f9;border-radius:0 0 8px 8px;">
+          <p>Hello ${firstName},</p>
+          <p>Your verification code is:</p>
+          <div style="text-align:center;margin:24px 0;">
+            <div style="background:#0a4f45;color:white;font-size:36px;font-weight:800;letter-spacing:12px;padding:20px 32px;border-radius:10px;display:inline-block;">${otp}</div>
+          </div>
+          <p style="color:#666;font-size:13px;">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+          <p style="color:#999;font-size:12px;">If you did not attempt to sign in, please change your password immediately.</p>
+        </div>
+      </div>`
+  });
+};
+
 exports.sendPasswordResetEmail = async ({ to, token, firstName }) => {
   const resetUrl = `https://accountrack.onrender.com?resetToken=${token}`;
   await transporter.sendMail({

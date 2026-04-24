@@ -1537,6 +1537,20 @@ async function obSignIn() {
       throw new Error(err.error || 'Invalid credentials');
     }
     const data = await res.json();
+    // ─── 2FA: Send OTP before granting access ───────────────
+    if (settings.enable2FA || localStorage.getItem('at_2fa') === 'true') {
+      window._pending2FAData = data;
+      window._pending2FAEmail = email;
+      try {
+        await fetch(`${API_BASE}/auth/send-otp`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+      } catch(e) {}
+      show2FAScreen(email);
+      return;
+    }
+    // ─── No 2FA — proceed normally ───────────────────────────
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
@@ -1594,6 +1608,73 @@ function obGoBack(step) {
 }
 
 // ─── REGISTER — calls backend /auth/register ─────────────────────────
+function show2FAScreen(email) {
+  const root = document.getElementById('onboardingRoot');
+  const overlay = document.createElement('div');
+  overlay.id = 'twoFAOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,79,69,0.97);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:40px;max-width:400px;width:90vw;text-align:center;">
+      <div style="width:64px;height:64px;background:#e8f5e9;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px;">🔐</div>
+      <h2 style="color:#0a4f45;margin:0 0 8px;font-size:1.3rem;">Verify Your Identity</h2>
+      <p style="color:#666;font-size:0.85rem;margin:0 0 8px;">A 6-digit code was sent to</p>
+      <p style="color:#0a4f45;font-weight:700;font-size:0.9rem;margin:0 0 24px;">${email}</p>
+      <div id="otpError" style="background:#fee2e2;color:#dc2626;padding:8px 14px;border-radius:8px;margin-bottom:12px;font-size:0.82rem;display:none;"></div>
+      <input id="otpInput" type="text" maxlength="6" placeholder="Enter 6-digit code"
+        style="width:100%;padding:14px;text-align:center;font-size:1.6rem;font-weight:700;letter-spacing:10px;border:2px solid #ddd;border-radius:10px;margin-bottom:16px;box-sizing:border-box;"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+      <button onclick="verify2FA()" style="width:100%;padding:14px;background:#0a4f45;color:white;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:12px;">
+        Verify & Sign In
+      </button>
+      <button onclick="resend2FAOTP('${email}')" style="background:none;border:none;color:#0a4f45;font-size:0.82rem;cursor:pointer;text-decoration:underline;">
+        Resend code
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('otpInput')?.focus(), 100);
+  document.getElementById('otpInput')?.addEventListener('keydown', e => { if(e.key==='Enter') verify2FA(); });
+}
+
+async function verify2FA() {
+  const otp = document.getElementById('otpInput')?.value.trim();
+  const errEl = document.getElementById('otpError');
+  if (!otp || otp.length !== 6) { errEl.style.display='block'; errEl.textContent='Enter the 6-digit code'; return; }
+  try {
+    const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: window._pending2FAEmail, otp })
+    });
+    const data_v = await res.json();
+    if (!res.ok || !data_v.verified) { errEl.style.display='block'; errEl.textContent=data_v.error||'Invalid code. Try again.'; return; }
+    document.getElementById('twoFAOverlay')?.remove();
+    const data = window._pending2FAData;
+    authToken = data.token;
+    localStorage.setItem('at_token', authToken);
+    currentUserId = data.user.id;
+    localStorage.setItem('at_user_profile', JSON.stringify({ ...data.user, role: data.user.role }));
+    try {
+      const cp = await apiFetch('/company/profile');
+      localStorage.setItem('at_company_profile', JSON.stringify(cp));
+      if (cp.industry) localStorage.setItem('at_industry', cp.industry);
+    } catch(e) {}
+    await loadAllData();
+    document.getElementById('onboardingRoot').classList.add('hidden');
+    obUpdateSidebarUser({ firstName: data.user?.firstName||'', lastName: data.user?.lastName||'', email: window._pending2FAEmail }, { companyName: settings.companyName });
+    navigateTo('dashboard');
+    window._pending2FAData = null; window._pending2FAEmail = null;
+  } catch(e) { errEl.style.display='block'; errEl.textContent='Verification failed. Try again.'; }
+}
+
+async function resend2FAOTP(email) {
+  try {
+    await fetch(`${API_BASE}/auth/send-otp`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email })
+    });
+    showToast('New code sent to '+email, 'success');
+  } catch(e) { showToast('Could not resend code', 'danger'); }
+}
+
 async function obFinishSetup() {
   obClearError(2);
   const fn  = document.getElementById('adminFirstName').value.trim();
@@ -3012,6 +3093,13 @@ function updateInvCurrency() {
   if (rateInput && cur !== 'NGN') rateInput.value = exchangeRates[cur] || '';
 }
 
+function toggle2FA() {
+  const current = localStorage.getItem('at_2fa') === 'true';
+  localStorage.setItem('at_2fa', (!current).toString());
+  showToast('Two-Factor Authentication ' + (!current?'enabled':'disabled'), 'success');
+  renderSettingsView();
+}
+
 async function refreshExchangeRates() {
   showToast('Fetching live exchange rates...', 'info');
   await fetchLiveRates();
@@ -3066,14 +3154,19 @@ window.generateWHTCertificate = function(billId) {
 };
  
 window.printInvoice = function(id) {
-
-
-
   var inv = invoices.find(function(i) { return i.id === invoiceId; });
   if (!inv) { alert("Invoice not found."); return; }
- 
   var customer = customers.find(function(c) { return c.id === inv.customerId; });
- 
+ const template = settings.invoiceTemplate || 'classic';
+  const logo = settings.companyLogo || localStorage.getItem('at_logo') || '';
+  const headerStyle = template === 'modern'
+    ? `background:#0a4f45;color:white;padding:28px 32px;`
+    : template === 'minimal'
+    ? `border-bottom:3px solid #0a4f45;padding:20px 32px;`
+    : `background:#f9f9f9;border-bottom:2px solid #0a4f45;padding:20px 32px;`;
+  const logoHtml = logo
+    ? `<img src="${logo}" style="height:52px;object-fit:contain;border-radius:4px;">`
+    : `<div style="font-size:22px;font-weight:800;color:${template==='modern'?'white':'#0a4f45'};">${settings.companyName||'My Company'}</div>`;
   // Build the line items rows
   var lineRows = inv.lines.map(function(line, index) {
     return "<tr>"
@@ -3114,9 +3207,10 @@ window.printInvoice = function(id) {
     + ".footer   { margin-top:48px; padding-top:12px; border-top:1px solid #e2e8f0; font-size:10px; color:#94a3b8; }"
     + "@media print { body { padding:16px; } button { display:none; } }"
     + "</style></head><body>"
-    + "<div class='header'>"
-    + "  <div>"
-    + "    <div class='co-name'>" + (settings.companyName || "My Company") + "</div>"
+    + `<div style="${headerStyle}">`
+    + `<div style="display:flex;justify-content:space-between;align-items:center;">`
+    + `<div>${logoHtml}<div style="font-size:11px;${template==='modern'?'color:rgba(255,255,255,0.7)':'color:#666'};margin-top:4px;">${settings.companyAddress||''}</div></div>`
+    + `<div style="text-align:right;"><div style="font-size:22px;font-weight:800;${template==='modern'?'color:white':'color:#0a4f45'};">INVOICE</div>`
     + "    <div class='co-sub'>"  + (settings.companyAddress || "") + "</div>"
     + "    <div class='co-sub'>"  + (settings.companyEmail   || "") + "&nbsp;&nbsp;" + (settings.companyPhone || "") + "</div>"
     + (settings.companyTaxId ? "<div class='co-sub'>TIN: " + settings.companyTaxId + "</div>" : "")
@@ -3222,6 +3316,7 @@ function renderVendorsView() {
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
         <div class="action-btn" title="New Bill" onclick="openBillModal(${v.id})"><i class="fas fa-file-invoice"></i></div>
+        <div class="action-btn" title="Account Statement" onclick="showVendorStatement(${v.id})" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-file-alt"></i></div>
         <div class="action-btn danger" onclick="deleteVendor(${v.id})"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
@@ -3266,6 +3361,89 @@ window.saveVendor = () => {
   showToast('Vendor added successfully.', 'success');
 };
 window.deleteVendor = (id) => { if(confirm('Delete vendor?')){ vendors=vendors.filter(v=>v.id!==id); saveAllData(); renderVendorsView(); }};
+
+window.showVendorStatement = function(vendorId) {
+  const vendor = vendors.find(v=>v.id===vendorId);
+  if (!vendor) return;
+  const vendBills = [...bills].filter(b=>b.vendorId===vendorId).sort((a,b)=>a.date>b.date?1:-1);
+  const totalBilled = vendBills.reduce((s,b)=>s+b.total,0);
+  const totalPaid = vendBills.reduce((s,b)=>s+(b.amountPaid||0),0);
+  const totalOwed = vendBills.reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
+  const rows = vendBills.map(bill=>{
+    const sc = bill.status==='paid'?'#16a34a':bill.dueDate<today()?'#dc2626':'#d97706';
+    return `<tr>
+      <td>${bill.date}</td>
+      <td class="td-mono">${bill.number||'—'}</td>
+      <td>Bill</td>
+      <td style="font-weight:600;">${fmt(bill.total)}</td>
+      <td style="color:#16a34a;">${bill.amountPaid>0?fmt(bill.amountPaid):''}</td>
+      <td style="font-weight:700;color:${sc};">${fmt(bill.balance!==undefined?bill.balance:bill.total)}</td>
+      <td>${bill.dueDate||'—'}</td>
+    </tr>`;
+  }).join('');
+  const w = window.open('','_blank','width=820,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><title>Vendor Statement — ${vendor.name}</title>
+  <style>
+    body{font-family:Arial,sans-serif;max-width:780px;margin:32px auto;color:#1a1a1a;font-size:13px;}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}
+    .co{font-size:18px;font-weight:700;color:#0a4f45;}
+    .vendor-box{background:#fef3c7;border:1px solid #fcd34d;padding:12px 16px;border-radius:6px;margin-bottom:16px;}
+    table{width:100%;border-collapse:collapse;margin-top:12px;}
+    th{background:#f5f5f5;padding:8px 10px;text-align:left;font-size:11px;border-bottom:2px solid #ddd;}
+    td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px;}
+    .summary{display:flex;gap:12px;margin-top:20px;}
+    .sum-box{flex:1;background:#f9f9f9;padding:12px;border-radius:6px;text-align:center;}
+    .sum-val{font-size:16px;font-weight:700;margin-top:4px;}
+    .footer{text-align:center;margin-top:32px;font-size:10px;color:#999;border-top:1px solid #eee;padding-top:12px;}
+    @media print{button{display:none;}}
+  </style></head><body>
+  <div class="hdr">
+    <div>
+      <div class="co">${settings.companyName||'My Company'}</div>
+      <div style="font-size:11px;color:#666;margin-top:2px;">${settings.companyAddress||''}<br>TIN: ${settings.companyTaxId||'N/A'}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:18px;font-weight:800;color:#0a4f45;">VENDOR STATEMENT</div>
+      <div style="font-size:11px;color:#666;margin-top:2px;">As at ${today()}</div>
+    </div>
+  </div>
+  <div class="vendor-box">
+    <div style="font-weight:700;font-size:14px;">${vendor.name}</div>
+    <div style="font-size:11px;color:#555;margin-top:3px;">${vendor.email||''} · ${vendor.phone||''}</div>
+    ${vendor.tin?`<div style="font-size:11px;color:#555;">TIN: ${vendor.tin}</div>`:''}
+    ${vendor.address?`<div style="font-size:11px;color:#555;">${vendor.address}</div>`:''}
+  </div>
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Due Date</th></tr>
+    </thead>
+    <tbody>
+      ${rows||'<tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">No transactions on record</td></tr>'}
+    </tbody>
+  </table>
+  <div class="summary">
+    <div class="sum-box">
+      <div style="font-size:11px;color:#666;">Total Billed</div>
+      <div class="sum-val">${fmt(totalBilled)}</div>
+    </div>
+    <div class="sum-box">
+      <div style="font-size:11px;color:#666;">Total Paid</div>
+      <div class="sum-val" style="color:#16a34a;">${fmt(totalPaid)}</div>
+    </div>
+    <div class="sum-box">
+      <div style="font-size:11px;color:#666;">Amount Owed</div>
+      <div class="sum-val" style="color:${totalOwed>0?'#dc2626':'#16a34a'};">${fmt(totalOwed)}</div>
+    </div>
+  </div>
+  <div class="footer">
+    Generated by AccounTrack™ Pro &middot; ${settings.companyName||''} &middot; ${today()}
+  </div>
+  <div style="text-align:center;margin-top:16px;">
+    <button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">Print / Save as PDF</button>
+  </div>
+  </body></html>`);
+  w.document.close();
+};
 // ════ AP AGING ════════════════════════════════════════
 function calculateAPAging() {
   var todayDate = today();
@@ -3664,6 +3842,7 @@ function renderEmployeesView() {
       <div class="page-title"><h2>Payroll Management</h2><p>NTA 2025 PAYE compliant · ${employees.length} employee${employees.length!==1?'s':''}</p></div>
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="exportPayeSchedule()"><i class="fas fa-download"></i> Export PAYE Schedule</button>
+        <button class="btn btn-secondary" onclick="printAllPayslips()"><i class="fas fa-print"></i> Print All Payslips</button>
         <button class="btn btn-primary" onclick="openEmployeeModal()"><i class="fas fa-user-plus"></i> Add Employee</button>
         <button class="btn btn-secondary" onclick="openPayrollRunModal()"><i class="fas fa-play-circle"></i> Run Payroll</button>
       </div>
@@ -3740,11 +3919,87 @@ window.openPayslip = (id) => {
       <hr class="payslip-divider thick">
       <div class="payslip-row total"><span class="pl">NET PAY</span><span class="pv">${fmt(c.monthlyNet)}</span></div>
     </div>
-    <div class="form-group" style="margin-top:16px;"><label class="form-label">Payment Date</label><input type="date" class="form-control" id="payDate" value="${today()}"></div>`,
+    <div class="form-group" style="margin-top:16px;"><label class="form-label">Payment Date</label><input type="date" class="form-control" id="payDate" value="${today()}"></div>
+    <div style="margin-top:12px;text-align:right;">
+      <button onclick="printPayslipFull(${emp.id})" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print Payslip</button>
+    </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>
+     <button class="btn btn-secondary" onclick="printPayslip(${`_payEmpId`})"><i class="fas fa-print"></i> Print Payslip</button>
      <button class="btn btn-primary" onclick="recordPayroll()"><i class="fas fa-check-circle"></i> Record Payment & Post to Ledger</button>`
   );
 };
+window.printAllPayslips = function() {
+  if (!employees.length) return showToast('No employees to print', 'info');
+  employees.forEach(emp => window.printPayslipFull(emp.id));
+};
+
+window.printPayslipFull = function(empId) {
+  const emp = employees.find(e=>e.id===empId); if(!emp) return;
+  const c = calculatePAYE(emp.annualSalary, emp.annualRent||0);
+  const levies = calculateLeviesClient(c.monthlyGross, c.monthlyGross*0.7);
+  const month = new Date().toLocaleString('en-NG',{month:'long',year:'numeric'});
+  const w = window.open('','_blank','width=700,height=600');
+  w.document.write(`<!DOCTYPE html><html><head><title>Payslip — ${emp.name}</title>
+  <style>
+    body{font-family:Arial,sans-serif;max-width:620px;margin:32px auto;color:#1a1a1a;font-size:13px;}
+    .hdr{background:#0a4f45;color:white;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center;}
+    .hdr h2{margin:0;font-size:16px;} .hdr-sub{font-size:11px;opacity:0.8;margin-top:2px;}
+    .body{border:1px solid #ddd;border-top:none;padding:20px 24px;border-radius:0 0 8px 8px;}
+    .emp-box{background:#f9f9f9;padding:12px 16px;border-radius:6px;margin-bottom:16px;display:flex;justify-content:space-between;}
+    .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:12px;}
+    .row.total{border-top:2px solid #0a4f45;border-bottom:none;padding-top:10px;margin-top:4px;}
+    .row .label{color:#555;} .row .value{font-weight:600;}
+    .row.total .label,.row.total .value{font-weight:700;font-size:15px;color:#0a4f45;}
+    .row.deduction .value{color:#dc2626;}
+    .section-title{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#888;margin:14px 0 6px;}
+    .footer{text-align:center;margin-top:24px;font-size:10px;color:#999;}
+    .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#e8f5e9;color:#0a4f45;}
+    @media print{button{display:none;}}
+  </style></head><body>
+  <div class="hdr">
+    <div><h2>${settings.companyName||'My Company'}</h2><div class="hdr-sub">TIN: ${settings.companyTaxId||'N/A'} · ${settings.companyAddress||''}</div></div>
+    <div style="text-align:right;"><div style="font-size:14px;font-weight:700;">PAYSLIP</div><div class="hdr-sub">${month}</div><div class="badge" style="background:rgba(255,255,255,0.2);color:white;margin-top:4px;">NTA 2025 Compliant</div></div>
+  </div>
+  <div class="body">
+    <div class="emp-box">
+      <div><div style="font-weight:700;font-size:14px;">${emp.name}</div>
+           <div style="font-size:11px;color:#666;margin-top:2px;">${emp.position||'Staff'} ${emp.department?'· '+emp.department:''}</div>
+           <div style="font-size:11px;color:#666;">ID: ${emp.employeeId||'—'}</div></div>
+      <div style="text-align:right;font-size:11px;color:#666;">
+        <div>Pay Date: ${today()}</div>
+        <div>Period: ${month}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Earnings</div>
+    <div class="row"><span class="label">Monthly Gross Salary</span><span class="value">${fmt(c.monthlyGross)}</span></div>
+
+    <div class="section-title">Deductions</div>
+    <div class="row deduction"><span class="label">Pension Contribution (8%)</span><span class="value">– ${fmt(c.monthlyPension)}</span></div>
+    <div class="row deduction"><span class="label">PAYE Tax (NTA 2025)</span><span class="value">– ${fmt(c.monthlyPAYE)}</span></div>
+    <div class="row"><span class="label" style="color:#888;">Rent Relief Applied</span><span class="value" style="color:#16a34a;">– ${fmt(c.monthlyRentRelief)}</span></div>
+
+    <div class="section-title">Statutory Levies (Employer Contribution)</div>
+    <div class="row"><span class="label">NSITF (1%)</span><span class="value">${fmt(levies.nsitf)}</span></div>
+    <div class="row"><span class="label">ITF (1%)</span><span class="value">${fmt(levies.itf)}</span></div>
+    <div class="row"><span class="label">NHF (2.5% of basic)</span><span class="value">${fmt(levies.nhf)}</span></div>
+
+    <div class="row total"><span class="label">NET PAY</span><span class="value">${fmt(c.monthlyNet)}</span></div>
+
+    <div style="margin-top:20px;display:flex;justify-content:space-between;">
+      <div style="width:160px;border-top:1px solid #333;padding-top:4px;font-size:11px;text-align:center;">Employee Signature</div>
+      <div style="width:160px;border-top:1px solid #333;padding-top:4px;font-size:11px;text-align:center;">Authorised By</div>
+      <div style="width:160px;border-top:1px solid #333;padding-top:4px;font-size:11px;text-align:center;">Company Stamp</div>
+    </div>
+  </div>
+  <div class="footer">Generated by AccounTrack™ Pro · Confidential · ${today()}</div>
+  <div style="text-align:center;margin-top:16px;">
+    <button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:13px;">Print / Save as PDF</button>
+  </div>
+  </body></html>`);
+  w.document.close();
+};
+
 window.recordPayroll = () => {
   if (!_payEmpId) return;
   const emp = employees.find(e=>e.id===_payEmpId);
@@ -4625,6 +4880,7 @@ function renderReportsView() {
       <button class="report-tab" onclick="showRpt('cf',this)">Cash Flow</button>
       <button class="report-tab" onclick="showRpt('vat',this)">VAT Summary</button>
       <button class="report-tab" onclick="showRpt('aging',this)">AR Aging</button>
+      <button class="report-tab" onclick="showRpt('dept',this)">By Department</button>
     </div>
     <div id="rptContent" class="report-panel"></div>`;
   showRpt('pl');
@@ -4750,7 +5006,61 @@ window.showRpt = (type, btn) => {
       + '</div>'
       + (glSections.trim() ? glSections : '<div class="empty-state" style="padding:48px;"><i class="fas fa-book-open"></i><p>No transactions found for the selected filters.</p></div>');
   } else {
-    if (type === 'aging') {
+    if (type === 'dept') {
+    const depts = [...new Set(employees.map(e=>e.department||'General'))].sort();
+    const allDepts = ['All', ...depts];
+    const selDept = window._selectedDept || 'All';
+    const deptExpenses = {};
+    depts.forEach(dept => {
+      const deptEmps = employees.filter(e=>(e.department||'General')===dept);
+      const totalSalary = deptEmps.reduce((s,e)=>s+calculatePAYE(e.annualSalary,e.annualRent||0).monthlyGross,0);
+      const totalPAYE = deptEmps.reduce((s,e)=>s+calculatePAYE(e.annualSalary,e.annualRent||0).monthlyPAYE,0);
+      const totalNet = deptEmps.reduce((s,e)=>s+calculatePAYE(e.annualSalary,e.annualRent||0).monthlyNet,0);
+      deptExpenses[dept] = { headcount: deptEmps.length, salary: totalSalary, paye: totalPAYE, net: totalNet };
+    });
+    const totalAll = Object.values(deptExpenses).reduce((s,d)=>s+d.salary,0);
+    rptEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <span style="font-size:0.78rem;font-weight:600;color:var(--text-3);">DEPARTMENT:</span>
+        ${allDepts.map(d=>`<button onclick="window._selectedDept='${d}';showRpt('dept')" class="btn btn-sm ${selDept===d?'btn-primary':'btn-secondary'}">${d}</button>`).join('')}
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Department</th><th>Headcount</th><th>Monthly Gross</th><th>PAYE</th><th>Net Pay</th><th>% of Total Payroll</th></tr></thead>
+        <tbody>
+          ${Object.entries(deptExpenses)
+            .filter(([dept])=>selDept==='All'||dept===selDept)
+            .map(([dept,d])=>`<tr>
+              <td class="td-bold">${dept}</td>
+              <td>${d.headcount} employee${d.headcount!==1?'s':''}</td>
+              <td class="td-bold">${fmt(d.salary)}</td>
+              <td style="color:var(--danger);">${fmt(d.paye)}</td>
+              <td style="color:var(--success);">${fmt(d.net)}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="flex:1;height:8px;background:var(--border);border-radius:4px;">
+                    <div style="width:${totalAll>0?Math.round((d.salary/totalAll)*100):0}%;height:100%;background:var(--brand);border-radius:4px;"></div>
+                  </div>
+                  <span style="font-size:0.78rem;font-weight:600;">${totalAll>0?Math.round((d.salary/totalAll)*100):0}%</span>
+                </div>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--surface2);font-weight:700;">
+            <td>TOTAL</td>
+            <td>${employees.length} employees</td>
+            <td>${fmt(totalAll)}</td>
+            <td style="color:var(--danger);">${fmt(Object.values(deptExpenses).reduce((s,d)=>s+d.paye,0))}</td>
+            <td style="color:var(--success);">${fmt(Object.values(deptExpenses).reduce((s,d)=>s+d.net,0))}</td>
+            <td>100%</td>
+          </tr>
+        </tfoot>
+      </table></div>
+      ${depts.length===0?'<div style="text-align:center;padding:32px;color:var(--text-3);"><i class="fas fa-chart-pie" style="font-size:2rem;margin-bottom:8px;"></i><p>Add departments to employees to see department breakdown.</p></div>':''}`;
+    return;
+  }
+
+  if (type === 'aging') {
     const todayMs = new Date();
     const buckets = { current:[], d1_30:[], d31_60:[], d61_90:[], d90plus:[] };
     invoices.filter(i=>i.status!=='paid').forEach(inv => {
@@ -5112,6 +5422,26 @@ function renderSettingsView() {
           <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="sPhone" value="${settings.companyPhone}"></div></div>
           <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Email</label><input class="form-control" id="sEmail" value="${settings.companyEmail}"></div>
           <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="sAddr" rows="2">${settings.companyAddress}</textarea></div>
+          <div class="form-group">
+            <label class="form-label"><i class="fas fa-image" style="margin-right:4px;"></i>Company Logo</label>
+            <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+              ${settings.companyLogo ? `<img id="logoPreview" src="${settings.companyLogo}" style="height:48px;border-radius:6px;border:1px solid var(--border);">` : `<img id="logoPreview" style="display:none;height:48px;border-radius:6px;">`}
+              <button class="btn btn-secondary btn-sm" onclick="uploadCompanyLogo()"><i class="fas fa-upload"></i> Upload Logo</button>
+              ${settings.companyLogo ? `<button class="btn btn-ghost btn-sm" onclick="settings.companyLogo=null;localStorage.removeItem('at_logo');renderSettingsView();">Remove</button>` : ''}
+            </div>
+            <div class="form-hint">Appears on printed invoices. PNG or JPG, max 2MB.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Invoice Template Style</label>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;">
+              ${['classic','modern','minimal'].map(style=>`
+                <div onclick="settings.invoiceTemplate='${style}';document.querySelectorAll('.tpl-opt').forEach(el=>el.classList.remove('selected'));this.classList.add('selected');"
+                  class="tpl-opt" style="border:2px solid ${(settings.invoiceTemplate||'classic')===style?'var(--brand)':'var(--border)'};border-radius:8px;padding:10px;cursor:pointer;text-align:center;">
+                  <div style="font-size:0.78rem;font-weight:600;text-transform:capitalize;">${style}</div>
+                  <div style="font-size:0.68rem;color:var(--text-3);">${style==='classic'?'Traditional layout':style==='modern'?'Bold header':'Clean & simple'}</div>
+                </div>`).join('')}
+            </div>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -5176,6 +5506,12 @@ function renderSettingsView() {
       <div class="card">
         <div class="card-header"><span class="card-title"><i class="fas fa-palette" style="margin-right:8px;color:var(--brand);"></i>Appearance</span></div>
         <div class="card-body">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
+            <div><div style="font-size:0.82rem;font-weight:600;color:var(--text-1);">Two-Factor Authentication (2FA)</div><div style="font-size:0.72rem;color:var(--text-3);">Send a verification code to your email on every login</div></div>
+            <div onclick="toggle2FA()" style="width:44px;height:24px;background:${localStorage.getItem('at_2fa')==='true'?'var(--brand)':'var(--border)'};border-radius:12px;cursor:pointer;position:relative;transition:background 0.2s;">
+              <div style="position:absolute;top:2px;left:${localStorage.getItem('at_2fa')==='true'?'22':'2'}px;width:20px;height:20px;background:white;border-radius:50%;transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2);"></div>
+            </div>
+          </div>
           <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
             <div><div style="font-size:0.82rem;font-weight:600;color:var(--text-1);">Dark Mode</div><div style="font-size:0.72rem;color:var(--text-3);">Switch to dark theme</div></div>
             <div id="darkToggleInline" onclick="toggleDark()" style="width:44px;height:24px;background:${settings.darkMode?'var(--brand)':'var(--border)'};border-radius:12px;cursor:pointer;position:relative;transition:background 0.2s;">
@@ -6331,6 +6667,25 @@ window.saveBudget = async function() {
 };
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────
+window.uploadCompanyLogo = function() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = function(e) {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 2*1024*1024) return showToast('Logo too large. Max 2MB.', 'danger');
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      settings.companyLogo = ev.target.result;
+      localStorage.setItem('at_logo', ev.target.result);
+      const preview = document.getElementById('logoPreview');
+      if (preview) { preview.src = ev.target.result; preview.style.display='block'; }
+      showToast('Logo uploaded successfully', 'success');
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+};
+
 window.saveSettings = async function() {
   const data = {
     companyName:         document.getElementById('sCo')?.value,

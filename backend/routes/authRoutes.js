@@ -21,6 +21,8 @@ router.post('/invite', authenticateToken, authController.inviteUser);
 router.get('/users', authenticateToken, authController.getUsers);
 router.delete('/users/:id', authenticateToken, authController.removeUser);
 
+router.post('/send-otp', authController.sendOTP);
+router.post('/verify-otp', authController.verifyOTP);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
  
