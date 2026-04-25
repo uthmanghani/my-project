@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a4f45">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AccounTrack">
+  <link rel="manifest" href="/manifest.json">
   <title>AccounTrack™ Pro · Nigerian Business ERP</title>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -1105,6 +1110,7 @@
     <div class="nav-item" data-page="help" data-label="Help"><i class="fas fa-question-circle"></i> <span>Help</span></div>
     <div class="nav-item" id="collapseSidebarBtn" data-label="Expand" onclick="toggleSidebarCollapse()"><i class="fas fa-chevron-left"></i> <span>Collapse</span></div>
     <div class="nav-item" id="darkModeToggle" data-label="Dark Mode" onclick="toggleDark()"><i class="fas fa-moon"></i> <span id="darkLabel">Dark Mode</span></div>
+    <div class="nav-item" id="pwaInstallBtn" data-label="Install App" onclick="installPWA()" style="display:none;color:#f59e0b;"><i class="fas fa-mobile-screen"></i> <span>Install App</span></div>
     <div class="nav-item" id="logoutBtn" data-label="Sign Out" onclick="obSignOut()" style="display:none;"><i class="fas fa-right-from-bracket" style="color:#ef4444;"></i> <span style="color:#ef4444;">Sign Out</span></div>
   </div>
 </div>
@@ -4816,6 +4822,165 @@ window.filterTx = () => {
   const el = document.getElementById('txCount');
   if (el) el.textContent = `${filtered.length} entries`;
 };
+window.exportNRSReturns = function() {
+  showModal('NRS Tax Returns Export', `
+    <p style="font-size:0.82rem;color:var(--text-2);margin-bottom:16px;">
+      Export NRS-compliant files to upload directly to <strong>TaxPro Max / Rev360</strong>.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportPAYEReturn();closeTopModal()">
+        <i class="fas fa-users" style="font-size:1.8rem;color:#0a4f45;margin-bottom:8px;"></i>
+        <div style="font-weight:700;font-size:0.88rem;">PAYE Monthly Return</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Form PAYE-001 · Due 10th of month</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportVATReturn();closeTopModal()">
+        <i class="fas fa-percent" style="font-size:1.8rem;color:#0891b2;margin-bottom:8px;"></i>
+        <div style="font-weight:700;font-size:0.88rem;">VAT Monthly Return</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Form VAT-002 · Due 21st of month</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportWHTReturn();closeTopModal()">
+        <i class="fas fa-file-invoice" style="font-size:1.8rem;color:#d97706;margin-bottom:8px;"></i>
+        <div style="font-weight:700;font-size:0.88rem;">WHT Monthly Schedule</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Withholding Tax Deductions</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportCITReturn();closeTopModal()">
+        <i class="fas fa-building" style="font-size:1.8rem;color:#7c3aed;margin-bottom:8px;"></i>
+        <div style="font-weight:700;font-size:0.88rem;">CIT Annual Summary</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Companies Income Tax · Form CIT-001</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;padding:12px 14px;background:#fef3c7;border-radius:8px;font-size:0.78rem;color:#92400e;">
+      <i class="fas fa-info-circle" style="margin-right:6px;"></i>
+      Upload the exported CSV to <strong>taxpromax.firs.gov.ng</strong> or <strong>rev360.nrs.gov.ng</strong> under e-Filing.
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>`
+  );
+};
+
+window.exportPAYEReturn = function() {
+  const now = new Date();
+  const month = String(now.getMonth()+1).padStart(2,'0');
+  const yr = now.getFullYear();
+  const header = [
+    'EmployeeID', 'EmployeeName', 'TIN', 'GrossSalary_Monthly',
+    'PensionDeduction', 'RentRelief', 'TaxableIncome',
+    'PAYETax_Monthly', 'NetSalary', 'NHF', 'Month', 'Year', 'CompanyTIN'
+  ].join(',');
+  const rows = employees.map(emp => {
+    const c = calculatePAYE(emp.annualSalary||0, emp.annualRent||0);
+    const levies = calculateLeviesClient(c.monthlyGross, c.monthlyGross*0.7);
+    return [
+      emp.employeeId||'', '"'+(emp.name||'')+'"', emp.tin||'',
+      c.monthlyGross.toFixed(2), c.monthlyPension.toFixed(2),
+      c.monthlyRentRelief.toFixed(2), c.monthlyTaxable.toFixed(2),
+      c.monthlyPAYE.toFixed(2), c.monthlyNet.toFixed(2),
+      levies.nhf.toFixed(2), month, yr,
+      settings.companyTaxId||''
+    ].join(',');
+  }).join('\n');
+  const total = employees.reduce((s,e)=>s+calculatePAYE(e.annualSalary||0,e.annualRent||0).monthlyPAYE,0);
+  const summary = `\n\nSUMMARY,,,,,,,${total.toFixed(2)},,,,${month},${yr},${settings.companyName||''}`;
+  const csv = header + '\n' + rows + summary;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
+    download: `PAYE_Return_${yr}_${month}_${settings.companyName||'Company'}.csv`
+  });
+  a.click();
+  showToast('PAYE Return exported — upload to TaxPro Max / Rev360', 'success');
+};
+
+window.exportVATReturn = function() {
+  const now = new Date();
+  const month = String(now.getMonth()+1).padStart(2,'0');
+  const yr = now.getFullYear();
+  const outputHeader = 'InvoiceNumber,CustomerName,CustomerTIN,InvoiceDate,NetAmount,VATRate,VATAmount';
+  const inputHeader = 'BillNumber,VendorName,VendorTIN,BillDate,NetAmount,VATRate,VATAmount';
+  const outputRows = invoices
+    .filter(i => (i.vat||0) > 0)
+    .map(inv => {
+      const c = customers.find(x=>x.id===inv.customerId);
+      return [
+        inv.number||'', '"'+(c?.name||'')+'"', c?.tin||'',
+        inv.date, (inv.subtotal||inv.total).toFixed(2), '7.5',
+        (inv.vat||0).toFixed(2)
+      ].join(',');
+    }).join('\n');
+  const inputRows = bills
+    .filter(b => (b.vat||0) > 0)
+    .map(bill => {
+      const v = vendors.find(x=>x.id===bill.vendorId);
+      return [
+        bill.number||'', '"'+(v?.name||'')+'"', v?.tin||'',
+        bill.date, (bill.subtotal||bill.total).toFixed(2), '7.5',
+        (bill.vat||0).toFixed(2)
+      ].join(',');
+    }).join('\n');
+  const totalOutput = invoices.reduce((s,i)=>s+(i.vat||0),0);
+  const totalInput = bills.reduce((s,b)=>s+(b.vat||0),0);
+  const csv = `NRS VAT MONTHLY RETURN - FORM VAT-002\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Period:,${month}/${yr}\n\n`
+    + `OUTPUT VAT (Sales)\n${outputHeader}\n${outputRows||'No VAT invoices'}\n\n`
+    + `INPUT VAT (Purchases)\n${inputHeader}\n${inputRows||'No VAT bills'}\n\n`
+    + `SUMMARY\nTotal Output VAT,${totalOutput.toFixed(2)}\nTotal Input VAT,${totalInput.toFixed(2)}\nNet VAT Payable,${(totalOutput-totalInput).toFixed(2)}`;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
+    download: `VAT_Return_${yr}_${month}_${settings.companyName||'Company'}.csv`
+  });
+  a.click();
+  showToast('VAT Return exported — upload to TaxPro Max / Rev360', 'success');
+};
+
+window.exportWHTReturn = function() {
+  const now = new Date();
+  const month = String(now.getMonth()+1).padStart(2,'0');
+  const yr = now.getFullYear();
+  const header = 'BillNumber,VendorName,VendorTIN,BillDate,GrossAmount,WHTRate,WHTAmount,NetPayable';
+  const rows = bills
+    .filter(b => (b.whtAmount||0) > 0)
+    .map(bill => {
+      const v = vendors.find(x=>x.id===bill.vendorId);
+      return [
+        bill.number||'', '"'+(v?.name||'')+'"', v?.tin||'',
+        bill.date, bill.total.toFixed(2),
+        (bill.whtRate||0)+'%', (bill.whtAmount||0).toFixed(2),
+        (bill.netPayable||bill.total).toFixed(2)
+      ].join(',');
+    }).join('\n');
+  const totalWHT = bills.reduce((s,b)=>s+(b.whtAmount||0),0);
+  const csv = `NRS WITHHOLDING TAX SCHEDULE\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Period:,${month}/${yr}\n\n`
+    + `${header}\n${rows||'No WHT deductions this period'}\n\nTotal WHT Deducted:,${totalWHT.toFixed(2)}`;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
+    download: `WHT_Schedule_${yr}_${month}_${settings.companyName||'Company'}.csv`
+  });
+  a.click();
+  showToast('WHT Schedule exported', 'success');
+};
+
+window.exportCITReturn = function() {
+  const yr = new Date().getFullYear();
+  const totalRevenue = invoices.reduce((s,i)=>s+(i.subtotal||i.total),0);
+  const totalExpenses = bills.reduce((s,b)=>s+b.total,0);
+  const totalPayroll = employees.reduce((s,e)=>s+calculatePAYE(e.annualSalary||0,0).monthlyGross*12,0);
+  const totalExpensesAll = totalExpenses + totalPayroll;
+  const assessableProfit = Math.max(0, totalRevenue - totalExpensesAll);
+  const citRate = totalRevenue > 100000000 ? 0.30 : totalRevenue > 25000000 ? 0.20 : 0;
+  const estimatedCIT = assessableProfit * citRate;
+  const csv = `NRS COMPANIES INCOME TAX - FORM CIT-001\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Year:,${yr}\n\n`
+    + `INCOME STATEMENT SUMMARY\nTotal Revenue (Turnover):,${totalRevenue.toFixed(2)}\n`
+    + `Cost of Sales / Expenses:,${totalExpensesAll.toFixed(2)}\n`
+    + `Assessable Profit:,${assessableProfit.toFixed(2)}\n\n`
+    + `TAX COMPUTATION\nCIT Rate:,${(citRate*100).toFixed(0)}%\n`
+    + `Estimated CIT Liability:,${estimatedCIT.toFixed(2)}\n`
+    + `Filing Deadline:,${yr+1}-06-30\n\n`
+    + `NOTE: This is an estimate. Engage a Tax Consultant for final CIT computation and filing.`;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
+    download: `CIT_Summary_${yr}_${settings.companyName||'Company'}.csv`
+  });
+  a.click();
+  showToast('CIT Summary exported — review with your tax consultant', 'success');
+};
+
 window.exportPayeSchedule = () => {
   if (!employees.length) return showToast('No employees to export.', 'warning');
   const month = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -4887,6 +5052,7 @@ function renderReportsView() {
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="printCurrentReport()"><i class="fas fa-print"></i> Print Report</button>
         <button class="btn btn-secondary" onclick="exportReportCSV()"><i class="fas fa-download"></i> Export CSV</button>
+        <button class="btn btn-primary" onclick="exportNRSReturns()" style="background:#16a34a;border-color:#16a34a;"><i class="fas fa-file-export"></i> NRS Tax Returns</button>
       </div>
     </div>
       <div class="page-actions">
@@ -5717,6 +5883,7 @@ function renderHelpView() {
     { q:'How do I back up my data?', a:'Go to Settings → Data Management → Export Backup. Save the JSON file securely. You can restore it anytime using Import Backup.' },
     { q:'How do journal entries work?', a:'In Chart of Accounts, click "New Journal Entry". Debits must equal credits. AccounTrack uses double-entry bookkeeping compliant with IFRS standards.' },
     { q:'What is CITA compliance?', a:'Companies Income Tax Act requires companies to file annual tax returns with NRS (Nigeria Revenue Service, formerly FIRS). AccounTrack helps you track income, expenses and compute taxable profit.' },
+    { q:'What keyboard shortcuts are available?', a:'Press Ctrl+? to see all shortcuts. Key ones: Ctrl+N (new invoice), Ctrl+B (new bill), Ctrl+K (search), Ctrl+D (dashboard), Escape (close modal).' },
     { q:'How do I invoice a customer?', a:'Go to Customers, click "Create Invoice", select a customer, add product lines, and click Save & Post. The invoice posts to your AR and Revenue accounts automatically.' },
   ];
 
@@ -6277,6 +6444,32 @@ window.clearAuditLog = async function() {
     showToast('Clear failed: ' + err.message, 'danger');
   }
 };
+
+// ─── RECENTLY VIEWED ─────────────────────────────────────────
+const MAX_RECENT = 8;
+function trackRecentView(type, id, label) {
+  const key = 'at_recent';
+  let recent = JSON.parse(localStorage.getItem(key)||'[]');
+  recent = recent.filter(r => !(r.type===type && r.id===id));
+  recent.unshift({ type, id, label, time: Date.now() });
+  if (recent.length > MAX_RECENT) recent = recent.slice(0, MAX_RECENT);
+  localStorage.setItem(key, JSON.stringify(recent));
+  renderRecentlyViewed();
+}
+
+function renderRecentlyViewed() {
+  const el = document.getElementById('recentlyViewedList');
+  if (!el) return;
+  const recent = JSON.parse(localStorage.getItem('at_recent')||'[]');
+  if (!recent.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:0.78rem;padding:8px 12px;">No recent activity</div>'; return; }
+  const icons = { invoice:'fa-file-invoice-dollar', customer:'fa-user', vendor:'fa-truck', bill:'fa-file-invoice', product:'fa-box', employee:'fa-user-tie' };
+  el.innerHTML = recent.map(r => `
+    <div onclick="navigateTo('${r.type==='invoice'?'invoices':r.type==='bill'?'bills':r.type+'s'}')" style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+      <i class="fas ${icons[r.type]||'fa-file'}" style="color:var(--brand);font-size:0.78rem;width:14px;"></i>
+      <span style="font-size:0.8rem;color:var(--text-1);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.label}</span>
+      <span style="font-size:0.68rem;color:var(--text-4);">${r.type}</span>
+    </div>`).join('');
+}
 
 // ─── KEYBOARD SHORTCUTS ───
 document.addEventListener('keydown', function(e) {
@@ -7328,6 +7521,56 @@ window.viewAttachment = function(id, type) {
   }
 };
 
+// ─── KEYBOARD SHORTCUTS ──────────────────────────────────────
+(function initKeyboardShortcuts() {
+  document.addEventListener('keydown', function(e) {
+    if (!authToken) return;
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    if (['input','textarea','select'].includes(tag)) return;
+    if (e.ctrlKey || e.metaKey) {
+      switch(e.key) {
+        case 'k': e.preventDefault(); document.getElementById('globalSearch')?.focus(); break;
+        case 'n': e.preventDefault(); navigateTo('invoices'); setTimeout(()=>openInvoiceModal(),200); break;
+        case 'b': e.preventDefault(); navigateTo('bills'); setTimeout(()=>openBillModal(),200); break;
+        case 'u': e.preventDefault(); navigateTo('customers'); setTimeout(()=>showAddCustomer(),200); break;
+        case 'd': e.preventDefault(); navigateTo('dashboard'); break;
+        case 'r': e.preventDefault(); navigateTo('reports'); break;
+        case 'p': e.preventDefault(); navigateTo('employees'); break;
+        case ',': e.preventDefault(); navigateTo('settings'); break;
+        case '?': e.preventDefault(); showKeyboardShortcutsHelp(); break;
+      }
+    }
+    if (e.key === 'Escape') {
+      closeTopModal();
+    }
+  });
+})();
+
+function showKeyboardShortcutsHelp() {
+  showModal('Keyboard Shortcuts', `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.82rem;">
+      ${[
+        ['Ctrl + K', 'Focus search'],
+        ['Ctrl + N', 'New invoice'],
+        ['Ctrl + B', 'New bill'],
+        ['Ctrl + U', 'New customer'],
+        ['Ctrl + D', 'Dashboard'],
+        ['Ctrl + R', 'Reports'],
+        ['Ctrl + P', 'Payroll'],
+        ['Ctrl + ,', 'Settings'],
+        ['Ctrl + ?', 'Show shortcuts'],
+        ['Escape', 'Close modal'],
+      ].map(([k,d])=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--surface2);border-radius:6px;">
+          <span style="color:var(--text-3);">${d}</span>
+          <kbd style="background:var(--surface);border:1px solid var(--border);padding:2px 8px;border-radius:4px;font-size:0.78rem;font-weight:600;">${k}</kbd>
+        </div>`
+      ).join('')}
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>`
+  );
+}
+
 // ─── RECURRING BILLING ───────────────────────────────────────
 function renderRecurringBillingView() {
   const rows = recurringBillings.map(rb => {
@@ -7788,6 +8031,34 @@ async function saRevokeInvite(id) {
     saLoadInvites();
   } catch(e) { alert('Failed to revoke invite'); }
 }
+
+// ─── PWA SERVICE WORKER ──────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log('AccounTrack PWA ready'))
+      .catch(e => console.warn('SW registration failed', e));
+  });
+}
+
+// ─── PWA INSTALL PROMPT ──────────────────────────────────────
+let _pwaPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _pwaPrompt = e;
+  const btn = document.getElementById('pwaInstallBtn');
+  if (btn) btn.style.display = 'flex';
+});
+
+window.installPWA = async () => {
+  if (!_pwaPrompt) return;
+  _pwaPrompt.prompt();
+  const { outcome } = await _pwaPrompt.userChoice;
+  if (outcome === 'accepted') showToast('AccounTrack installed on your device!', 'success');
+  _pwaPrompt = null;
+  const btn = document.getElementById('pwaInstallBtn');
+  if (btn) btn.style.display = 'none';
+};
 
 (async function init() {
 
