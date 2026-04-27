@@ -6531,6 +6531,7 @@ window.saveCustomer = async function(editId) {
     } else {
       await apiFetch('/customers', { method:'POST', body:JSON.stringify(data) });
     }
+    logAction('CUSTOMER_CREATED', 'New customer added: ' + data.name);
     closeTopModal();
     await loadAllData();
     renderCustomersView();
@@ -6583,7 +6584,8 @@ window.saveInvoice = async function() {
     subtotal, vat: vatAmt, total, status: 'unpaid', payments: [], amountPaid: 0, balance: total
   };
   try {
-    await apiFetch('/invoices', { method:'POST', body:JSON.stringify(invoiceData) });
+    await apiFetch('/invoices', { method:'POST', body: JSON.stringify(invoiceData) });
+    logAction('INVOICE_CREATED', 'Invoice created — Customer: ' + (customers.find(c=>c._id===invoiceData.customerId||c.id==invoiceData.customerId)?.name||'') + ' — Total: ₦' + (invoiceData.total||0).toLocaleString());
     closeTopModal();
     await loadAllData();
     renderInvoicesView();
@@ -6633,7 +6635,8 @@ window.deleteVendor = async function(id) {
 
 // ─── BILLS ────────────────────────────────────────────────────────────
 window.saveBill = async function() {
-  const vendorId = +document.getElementById('bVendor').value;
+  const vendorId = document.getElementById('bVendor').value;
+  if (!vendorId) return showToast('Please select a vendor', 'danger');
   const bDate = document.getElementById('bDate').value;
   const bDue  = document.getElementById('bDue').value;
   const expCode = document.getElementById('bExpAcc').value;
@@ -6651,6 +6654,7 @@ window.saveBill = async function() {
   const billData = { vendorId, date:bDate, dueDate:bDue, lines, total, whtRate, expenseAccount:expCode, isInventoryPurchase, status:'unpaid', payments:[], amountPaid:0, balance:total };
   try {
     await apiFetch('/bills', { method:'POST', body:JSON.stringify(billData) });
+    logAction('BILL_CREATED', 'Bill created — Vendor: ' + (vendors.find(v=>v._id===vendorId||v.id==vendorId)?.name||vendorId) + ' — Total: ₦' + total.toLocaleString());
     closeTopModal();
     await loadAllData();
     renderBillsView();
