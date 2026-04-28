@@ -6552,7 +6552,7 @@ window.deleteCustomer = async function(id) {
 
 // ─── INVOICES ─────────────────────────────────────────────────────────
 window.saveInvoice = async function() {
-  const custId   = +document.getElementById('invCustomer').value;
+  const custId   = document.getElementById('invCustomer').value;
   const invDate  = document.getElementById('invDate').value;
   const dueDate  = document.getElementById('invDueDate').value;
   const recurring   = document.getElementById('invRecurring')?.checked || false;
