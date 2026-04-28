@@ -2563,28 +2563,33 @@ function renderInvoicesView() {
 
   // Build table rows
   const rows = pagedInv.map(inv => {
-    const c = customers.find(x => x.id === inv.customerId);
+    // Handle both populated object and plain ID from backend
+    const custId = inv.customerId?._id || inv.customerId;
+    const custName = inv.customerId?.name || customers.find(x => (x._id||x.id) == custId)?.name || '—';
+    const invId = inv._id || inv.id;
     const balance = inv.balance !== undefined ? inv.balance : inv.total;
     const amtPaid = inv.amountPaid || 0;
-    const overdue = inv.status !== 'paid' && inv.status !== 'partial' && inv.dueDate < today();
+    const invDate = (inv.date||'').split('T')[0];
+    const dueDate = (inv.dueDate||'').split('T')[0];
+    const overdue = inv.status !== 'paid' && inv.status !== 'partial' && dueDate < today();
     const displayStatus = overdue ? 'overdue' : inv.status;
     return `
       <tr>
-        <td><input type="checkbox" class="inv-check" value="${inv.id}" onchange="updateBulkBar()"></td>
+        <td><input type="checkbox" class="inv-check" value="${invId}" onchange="updateBulkBar()"></td>
         <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
-        <td>${c?.name || '—'}</td>
-        <td>${inv.date}</td>
-        <td>${inv.dueDate}</td>
+        <td>${custName}</td>
+        <td>${invDate}</td>
+        <td>${dueDate}</td>
         <td class="td-bold">${fmt(inv.total)}</td>
         <td>${statusBadge(displayStatus)}</td>
         <td style="color:var(--success);font-weight:600;">${fmt(amtPaid)}</td>
         <td class="td-bold" style="color:${balance > 0.005 ? 'var(--danger)' : 'var(--success)'};">${fmt(balance)}</td>
         <td>
           <div class="table-actions">
-            <div class="action-btn" title="View" onclick="viewInvoice(${inv.id})"><i class="fas fa-eye"></i></div>
-            ${inv.status !== 'paid' ? `<div class="action-btn" title="Record Payment" onclick="openCustomerPaymentModal(${inv.id})" style="color:var(--success);border-color:var(--success);"><i class="fas fa-money-bill-wave"></i></div>` : ''}
-            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder(${inv.id})" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}
-            <div class="action-btn danger" title="Delete" onclick="deleteInvoice(${inv.id})"><i class="fas fa-trash"></i></div>
+            <div class="action-btn" title="View" onclick="viewInvoice('${invId}')"><i class="fas fa-eye"></i></div>
+            ${inv.status !== 'paid' ? `<div class="action-btn" title="Record Payment" onclick="openCustomerPaymentModal('${invId}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-money-bill-wave"></i></div>` : ''}
+            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder('${invId}')" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}
+            <div class="action-btn danger" title="Delete" onclick="deleteInvoice('${invId}')"><i class="fas fa-trash"></i></div>
           </div>
         </td>
       </tr>
@@ -3572,14 +3577,17 @@ function renderBillsView() {
   const filteredBills = filterItems('bills', [...bills].sort((a,b)=>b.date>a.date?1:-1), ['number','status']);
   const { items: pagedBills, controls: billControls } = paginate('bills', filteredBills);
   const rows = pagedBills.map(b => {
-    const v       = vendors.find(x => x.id === b.vendorId);
+    const bId = b._id || b.id;
+    const vendId = b.vendorId?._id || b.vendorId;
+    const v = vendors.find(x => (x._id||x.id) == vendId) || (b.vendorId?.name ? b.vendorId : null);
     const balance = b.balance !== undefined ? b.balance : b.total;
     const amtPaid = b.amountPaid || 0;
     const overdue = b.status !== 'paid' && b.status !== 'partial'
                     && b.dueDate < today();
     const displayStatus = overdue ? 'overdue' : b.status;
+    const vendName = b.vendorId?.name || vendors.find(x=>(x._id||x.id)==(b.vendorId?._id||b.vendorId))?.name || '—';
     return '<tr>' +
-      '<td><input type="checkbox" class="bill-check" value="' + (b._id||b.id) + '" onchange="updateBillBulkBar()"></td>' +
+      '<td><input type="checkbox" class="bill-check" value="' + bId + '" onchange="updateBillBulkBar()"></td>' +
       '<td class="td-bold td-mono">' + b.number +
         (b.isInventoryPurchase
           ? ' <span style="font-size:0.65rem;background:#e0f2fe;color:#0369a1;' +
@@ -3595,12 +3603,12 @@ function renderBillsView() {
       '<td><div class="table-actions">' +
         (b.status !== 'paid'
           ? '<div class="action-btn" title="Pay Bill" ' +
-            'onclick="openVendorPaymentModal(\'' + (b._id||b.id) + '\')" ' +
+            'onclick="openVendorPaymentModal(\'' + bId + '\')" ' +
             'style="color:var(--warning);border-color:var(--warning);">' +
             '<i class="fas fa-money-bill-wave"></i></div>'
           : '') +
-        (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${b._id||b.id}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
-        '<div class="action-btn danger" onclick="deleteBill(\'' + (b._id||b.id) + '\')">' +
+        (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${bId}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
+        '<div class="action-btn danger" onclick="deleteBill(\'' + bId + '\')">' +
         '<i class="fas fa-trash"></i></div>' +
         
       '</div></td></tr>';
