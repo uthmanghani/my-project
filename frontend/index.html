@@ -3578,13 +3578,13 @@ function renderBillsView() {
                     && b.dueDate < today();
     const displayStatus = overdue ? 'overdue' : b.status;
     return '<tr>' +
-      '<td><input type="checkbox" class="bill-check" value="' + b.id + '" onchange="updateBillBulkBar()"></td>' +
+      '<td><input type="checkbox" class="bill-check" value="' + (b._id||b.id) + '" onchange="updateBillBulkBar()"></td>' +
       '<td class="td-bold td-mono">' + b.number +
         (b.isInventoryPurchase
           ? ' <span style="font-size:0.65rem;background:#e0f2fe;color:#0369a1;' +
             'padding:1px 5px;border-radius:4px;">INV</span>' : '') + '</td>' +
       '<td>' + (v?.name||'—') + '</td>' +
-      '<td>' + b.date + '</td><td>' + b.dueDate + '</td>' +
+      '<td>' + (b.date||'').split('T')[0] + '</td><td>' + (b.dueDate||'').split('T')[0] + '</td>' +
       '<td class="td-bold">' + fmt(b.total) + '</td>' +
       '<td style="color:var(--success);font-weight:600;">' + fmt(amtPaid) + '</td>' +
       '<td class="td-bold" style="color:' +
@@ -3594,12 +3594,12 @@ function renderBillsView() {
       '<td><div class="table-actions">' +
         (b.status !== 'paid'
           ? '<div class="action-btn" title="Pay Bill" ' +
-            'onclick="openVendorPaymentModal(' + b.id + ')" ' +
+            'onclick="openVendorPaymentModal(\'' + (b._id||b.id) + '\')" ' +
             'style="color:var(--warning);border-color:var(--warning);">' +
             '<i class="fas fa-money-bill-wave"></i></div>'
           : '') +
-        (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment(${b.id},'bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
-        '<div class="action-btn danger" onclick="deleteBill(' + b.id + ')">' +
+        (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${b._id||b.id}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
+        '<div class="action-btn danger" onclick="deleteBill(\'' + (b._id||b.id) + '\')">' +
         '<i class="fas fa-trash"></i></div>' +
         
       '</div></td></tr>';
