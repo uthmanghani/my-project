@@ -2096,9 +2096,9 @@ window.submitCustomerPayment = async (invoiceId) => {
 
 // ─── Vendor Payment Modal ────────────────────────────────────────
 window.openVendorPaymentModal = (billId) => {
-  const bill = bills.find(b => b.id === billId);
-  if (!bill) return;
-  const v = vendors.find(x => x.id === bill.vendorId);
+  const bill = bills.find(b => (b._id||b.id) == billId);
+  if (!bill) { showToast('Bill not found', 'danger'); return; }
+  const v = vendors.find(x => (x._id||x.id) == (bill.vendorId?._id||bill.vendorId));
   const balance = bill.balance !== undefined ? bill.balance : bill.total;
   const bankOpts = [{ code:'1000', name:'Cash & Cash Equivalents' }, ...bankAccounts]
     .map(b => `<option value="${b.code||'1000'}">${b.name}</option>`).join('');
@@ -2121,13 +2121,13 @@ window.openVendorPaymentModal = (billId) => {
     <div class="form-group" style="margin-bottom:16px;"><label class="form-label">Pay From</label><select class="form-control" id="vpBank">${bankOpts}</select></div>
     <div class="section-label">Payment History</div><div style="max-height:130px;overflow-y:auto;">${payHistory}</div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
-     <button class="btn btn-danger" onclick="submitVendorPayment(${billId})"><i class="fas fa-money-bill-wave"></i> Pay Bill</button>`
+     <button class="btn btn-danger" onclick="submitVendorPayment('${billId}')"><i class="fas fa-money-bill-wave"></i> Pay Bill</button>`
   );
 };
 
 window.submitVendorPayment = async (billId) => {
-  const bill = bills.find(b => b.id === billId);
-  if (!bill) return;
+  const bill = bills.find(b => (b._id||b.id) == billId);
+  if (!bill) { showToast('Bill not found', 'danger'); return; }
   const amount = parseFloat(document.getElementById('vpAmount')?.value);
   const date = document.getElementById('vpDate')?.value;
   const bankCode = document.getElementById('vpBank')?.value || '1000';
