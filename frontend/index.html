@@ -2052,11 +2052,16 @@ async function recordVendorPayment(vendorId, billId, amount, date, bankCode) {
   }
 }
 
-// ─── Customer Payment Modal ──────────────────────────────────────
+// Replace the existing openCustomerPaymentModal
 window.openCustomerPaymentModal = (invoiceId) => {
-  const inv = invoices.find(i => i.id === invoiceId);
-  if (!inv) return;
-  const c = customers.find(x => x.id === inv.customerId);
+  // Try to find invoice by id (normalised) or by _id
+  let inv = invoices.find(i => i.id == invoiceId || i._id == invoiceId);
+  if (!inv) {
+    console.error('Invoice not found:', invoiceId);
+    showToast('Invoice not found. Refresh and try again.', 'danger');
+    return;
+  }
+  const c = customers.find(x => x.id == inv.customerId || x._id == inv.customerId);
   const balance = inv.balance !== undefined ? inv.balance : inv.total;
   const bankOpts = [{ code:'1000', name:'Cash & Cash Equivalents' }, ...bankAccounts]
     .map(b => `<option value="${b.code||'1000'}">${b.name}</option>`).join('');
@@ -2079,22 +2084,52 @@ window.openCustomerPaymentModal = (invoiceId) => {
     <div class="form-group" style="margin-bottom:16px;"><label class="form-label">Deposit To</label><select class="form-control" id="cpBank">${bankOpts}</select></div>
     <div class="section-label">Payment History</div><div style="max-height:130px;overflow-y:auto;">${payHistory}</div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
-     <button class="btn btn-success" onclick="submitCustomerPayment(${invoiceId})"><i class="fas fa-money-bill-wave"></i> Record Payment</button>`
+     <button class="btn btn-success" onclick="submitCustomerPayment('${invoiceId}')"><i class="fas fa-money-bill-wave"></i> Record Payment</button>`
   );
 };
 
+// Replace the existing submitCustomerPayment
 window.submitCustomerPayment = async (invoiceId) => {
-  const inv = invoices.find(i => i.id === invoiceId);
-  if (!inv) return;
+  let inv = invoices.find(i => i.id == invoiceId || i._id == invoiceId);
+  if (!inv) {
+    showToast('Invoice not found. Reload page and try again.', 'danger');
+    return;
+  }
   const amount = parseFloat(document.getElementById('cpAmount')?.value);
   const date = document.getElementById('cpDate')?.value;
   const bankCode = document.getElementById('cpBank')?.value || '1000';
-  if (!amount || amount <= 0) return showToast('Enter a valid amount.', 'danger');
-  if (!date) return showToast('Select a payment date.', 'danger');
+  if (!amount || amount <= 0) {
+    showToast('Enter a valid amount.', 'danger');
+    return;
+  }
+  if (!date) {
+    showToast('Select a payment date.', 'danger');
+    return;
+  }
   closeTopModal();
   await recordCustomerPayment(inv.customerId, invoiceId, amount, date, bankCode);
 };
 
+// Also update recordCustomerPayment to use the correct invoice ID format
+async function recordCustomerPayment(customerId, invoiceId, amount, date, bankCode) {
+  try {
+    const response = await apiFetch(`/invoices/${invoiceId}/pay`, {
+      method: 'PUT',
+      body: JSON.stringify({ amount, date, bankCode: bankCode || '1000' })
+    });
+    // Only reload if the request succeeded
+    if (response) {
+      await loadAllData();
+      renderDashboard();
+      if (currentPage === 'invoices') renderInvoicesView();
+      if (currentPage === 'customers') renderCustomersView();
+      showToast(`Payment of ${fmt(amount)} recorded.`, 'success');
+    }
+  } catch (err) {
+    console.error('Payment failed:', err);
+    showToast(err.message || 'Payment failed. Check console for details.', 'danger');
+  }
+}
 // ─── Vendor Payment Modal ────────────────────────────────────────
 window.openVendorPaymentModal = (billId) => {
   const bill = bills.find(b => (b._id||b.id) == billId);
