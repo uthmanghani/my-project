@@ -3019,24 +3019,29 @@ window.showCustomerStatement = function(customerId) {
     showToast('Customer not found', 'danger');
     return;
   }
-  const custInvoices = [...invoices].filter(i => String(i.customerId) === customerId).sort((a,b)=>a.date>b.date?1:-1);
-  const custPayments = custInvoices.reduce((s,i)=>s+(i.amountPaid||0),0);
-  const custOutstanding = custInvoices.reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
+  // 🔥 FIX: Compare as strings – convert both invoice.customerId and the passed id
+  const custInvoices = [...invoices].filter(i => String(i.customerId) === customerId)
+    .sort((a,b) => (a.date > b.date) ? 1 : -1);
+  const custPayments = custInvoices.reduce((s,i) => s + (i.amountPaid || 0), 0);
+  const custOutstanding = custInvoices.reduce((s,i) => s + (i.balance !== undefined ? i.balance : i.total), 0);
   let runningBal = 0;
-  const rows = custInvoices.map(inv=>{
+  const rows = custInvoices.map(inv => {
     runningBal += inv.total;
-    const paid = inv.amountPaid||0;
+    const paid = inv.amountPaid || 0;
     runningBal -= paid;
-    const statusColor = inv.status==='paid'?'var(--success)':inv.status==='overdue'||inv.dueDate<today()?'var(--danger)':'var(--warning)';
+    const statusColor = inv.status === 'paid' ? 'var(--success)' :
+                        (inv.status === 'overdue' || inv.dueDate < today()) ? 'var(--danger)' : 'var(--warning)';
     return `<tr>
       <td>${inv.date}</td>
       <td class="td-mono">${inv.number}</td>
       <td style="color:var(--text-2);">Invoice</td>
       <td class="td-bold">${fmt(inv.total)}</td>
-      <td style="color:var(--success);">${paid>0?fmt(paid):''}</td>
-      <td class="td-bold" style="color:${statusColor};">${fmt(inv.balance!==undefined?inv.balance:inv.total)}</td>
+      <td style="color:var(--success);">${paid > 0 ? fmt(paid) : ''}</td>
+      <td class="td-bold" style="color:${statusColor};">${fmt(inv.balance !== undefined ? inv.balance : inv.total)}</td>
     </tr>`;
   }).join('');
+
+  // (the rest of the statement window remains unchanged – copy it from your existing function)
   const w = window.open('','_blank','width=800,height=700');
   w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${cust.name}</title>
   <style>body{font-family:Arial,sans-serif;max-width:760px;margin:32px auto;color:#1a1a1a;font-size:13px;}
@@ -3279,10 +3284,19 @@ window.generateWHTCertificate = function(billId) {
 };
  
 window.printInvoice = function(id) {
-  var inv = invoices.find(function(i) { return i.id === invoiceId; });
-  if (!inv) { alert("Invoice not found."); return; }
-  var customer = customers.find(function(c) { return c.id === inv.customerId; });
- const template = settings.invoiceTemplate || 'classic';
+  // Find invoice using the passed id (parameter, not undefined variable)
+  var inv = invoices.find(function(i) { return i.id == id || i._id == id; });
+  if (!inv) { 
+    alert("Invoice not found.");
+    return; 
+  }
+  
+  // Find customer using flexible ID matching
+  var customer = customers.find(function(c) { 
+    return c.id == inv.customerId || c._id == inv.customerId; 
+  });
+  
+  const template = settings.invoiceTemplate || 'classic';
   const logo = settings.companyLogo || localStorage.getItem('at_logo') || '';
   const headerStyle = template === 'modern'
     ? `background:#0a4f45;color:white;padding:28px 32px;`
@@ -3291,96 +3305,97 @@ window.printInvoice = function(id) {
     : `background:#f9f9f9;border-bottom:2px solid #0a4f45;padding:20px 32px;`;
   const logoHtml = logo
     ? `<img src="${logo}" style="height:52px;object-fit:contain;border-radius:4px;">`
-    : `<div style="font-size:22px;font-weight:800;color:${template==='modern'?'white':'#0a4f45'};">${settings.companyName||'My Company'}</div>`;
-  // Build the line items rows
+    : `<div style="font-size:22px;font-weight:800;color:${template==='modern'?'white':'#0a4f45'};">${settings.companyName || 'My Company'}</div>`;
+  
+  // Build line items rows
   var lineRows = inv.lines.map(function(line, index) {
-    return "<tr>"
-      + "<td>" + (index + 1) + "</td>"
-      + "<td>" + line.description + "</td>"
-      + "<td style='text-align:center;'>" + line.quantity + "</td>"
-      + "<td style='text-align:right;'>&#8358;" + Number(line.rate).toLocaleString("en-NG",{minimumFractionDigits:2}) + "</td>"
-      + "<td style='text-align:right;'>&#8358;" + Number(line.amount).toLocaleString("en-NG",{minimumFractionDigits:2}) + "</td>"
-      + "</tr>";
+    return `<tr>
+      <td>${index + 1}</td>
+      <td>${line.description}</td>
+      <td style="text-align:center;">${line.quantity}</td>
+      <td style="text-align:right;">₦${Number(line.rate).toLocaleString("en-NG", {minimumFractionDigits:2})}</td>
+      <td style="text-align:right;">₦${Number(line.amount).toLocaleString("en-NG", {minimumFractionDigits:2})}</td>
+    </tr>`;
   }).join("");
- 
-  var statusStyle = inv.status === "paid"
+  
+  const statusStyle = inv.status === "paid"
     ? "background:#dcfce7;color:#16a34a;padding:4px 12px;border-radius:6px;font-weight:700;"
     : "background:#fef3c7;color:#d97706;padding:4px 12px;border-radius:6px;font-weight:700;";
- 
+  
   // Build the full printable HTML document
-  var html = "<!DOCTYPE html><html><head>"
-    + "<meta charset='UTF-8'>"
-    + "<title>Invoice " + inv.number + "</title>"
-    + "<style>"
-    + "* { margin:0; padding:0; box-sizing:border-box; }"
-    + "body { font-family:Arial,sans-serif; font-size:12px; color:#1a202c; padding:40px; }"
-    + ".header { display:flex; justify-content:space-between; margin-bottom:36px; }"
-    + ".co-name { font-size:24px; font-weight:700; color:#0a4f45; }"
-    + ".co-sub  { font-size:11px; color:#64748b; margin-top:3px; }"
-    + ".inv-meta { text-align:right; }"
-    + ".inv-title{ font-size:22px; font-weight:700; color:#0a4f45; }"
-    + ".bill-to  { margin-bottom:28px; }"
-    + ".bt-label { font-size:10px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.08em; margin-bottom:4px; }"
-    + ".bt-name  { font-weight:700; font-size:15px; }"
-    + "table     { width:100%; border-collapse:collapse; margin-bottom:20px; }"
-    + "th        { background:#0a4f45; color:white; padding:9px 12px; text-align:left; font-size:11px; }"
-    + "td        { padding:8px 12px; border-bottom:1px solid #e2e8f0; }"
-    + "tr:nth-child(even) td { background:#f8fafb; }"
-    + ".totals   { text-align:right; margin-top:8px; }"
-    + ".tot-row  { display:flex; justify-content:flex-end; gap:32px; margin-bottom:6px; font-size:12px; }"
-    + ".grand    { font-size:16px; font-weight:700; color:#0a4f45; margin-top:4px; }"
-    + ".footer   { margin-top:48px; padding-top:12px; border-top:1px solid #e2e8f0; font-size:10px; color:#94a3b8; }"
-    + "@media print { body { padding:16px; } button { display:none; } }"
-    + "</style></head><body>"
-    + `<div style="${headerStyle}">`
-    + `<div style="display:flex;justify-content:space-between;align-items:center;">`
-    + `<div>${logoHtml}<div style="font-size:11px;${template==='modern'?'color:rgba(255,255,255,0.7)':'color:#666'};margin-top:4px;">${settings.companyAddress||''}</div></div>`
-    + `<div style="text-align:right;"><div style="font-size:22px;font-weight:800;${template==='modern'?'color:white':'color:#0a4f45'};">INVOICE</div>`
-    + "    <div class='co-sub'>"  + (settings.companyAddress || "") + "</div>"
-    + "    <div class='co-sub'>"  + (settings.companyEmail   || "") + "&nbsp;&nbsp;" + (settings.companyPhone || "") + "</div>"
-    + (settings.companyTaxId ? "<div class='co-sub'>TIN: " + settings.companyTaxId + "</div>" : "")
-    + "  </div>"
-    + "  <div class='inv-meta'>"
-    + "    <div class='inv-title'>TAX INVOICE</div>"
-    + "    <div style='font-size:18px;font-weight:600;margin-top:4px;'>" + inv.number + "</div>"
-    + "    <div style='margin-top:8px;font-size:11px;'>Date: <strong>" + inv.date + "</strong></div>"
-    + "    <div style='font-size:11px;'>Due:  <strong>" + inv.dueDate + "</strong></div>"
-    + "    <div style='margin-top:8px;'><span style='" + statusStyle + "'>" + inv.status.toUpperCase() + "</span></div>"
-    + "  </div>"
-    + "</div>"
-    + "<div class='bill-to'>"
-    + "  <div class='bt-label'>Bill To</div>"
-    + "  <div class='bt-name'>" + (customer ? customer.name : "—") + "</div>"
-    + (customer && customer.email   ? "<div style='color:#64748b;'>" + customer.email   + "</div>" : "")
-    + (customer && customer.address ? "<div style='color:#64748b;'>" + customer.address + "</div>" : "")
-    + (customer && customer.tin     ? "<div style='color:#64748b;'>TIN: " + customer.tin + "</div>" : "")
-    + "</div>"
-    + "<table><thead><tr>"
-    + "<th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th>"
-    + "</tr></thead><tbody>" + lineRows + "</tbody></table>"
-    + "<div class='totals'>"
-    + "  <div class='tot-row'><span>Subtotal:</span><span>&#8358;" + Number(inv.subtotal || inv.total).toLocaleString("en-NG",{minimumFractionDigits:2}) + "</span></div>"
-    + "  <div class='tot-row'><span>VAT (" + settings.defaultVatRate + "%):</span><span>&#8358;" + Number(inv.vat || 0).toLocaleString("en-NG",{minimumFractionDigits:2}) + "</span></div>"
-    + "  <div class='tot-row grand'><span>TOTAL DUE:</span><span>&#8358;" + Number(inv.total).toLocaleString("en-NG",{minimumFractionDigits:2}) + "</span></div>"
-    + "</div>"
-    + (inv.notes ? "<div style='margin-top:20px;font-size:11px;color:#64748b;'><strong>Notes:</strong> " + inv.notes + "</div>" : "")
-    + "<div style='margin-top:24px;text-align:center;'>"
-    + "  <button onclick='window.print()' style='padding:8px 24px;background:#0a4f45;color:white;border:none;"
-    + "border-radius:6px;cursor:pointer;font-size:13px;'>&#128438; Print / Save as PDF</button>"
-    + "</div>"
-    + "<div class='footer' style='margin-top:32px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;color:#555;'>"
-    + "<div><strong>" + (settings.companyName||'') + "</strong><br>TIN: " + (settings.companyTaxId||'N/A') + "<br>Tel: " + (settings.companyPhone||'') + "</div>"
-    + "<div style='text-align:center;font-size:10px;color:#999;'>Generated by AccounTrack&#8482; Pro<br>NTA 2025 Compliant &middot; " + today() + "</div>"
-    + "<div style='text-align:right;'>Payment Terms: " + (settings.defaultDueDays||30) + " days<br><em>" + (settings.defaultInvoiceNotes||'Thank you for your business.') + "</em></div>"
-    + "</div>"
-    + "</body></html>";
- 
-  // Open a new browser window with the invoice
+  var html = `<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>Invoice ${inv.number}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:Arial,sans-serif; font-size:12px; color:#1a202c; padding:40px; }
+      .header { display:flex; justify-content:space-between; margin-bottom:36px; }
+      .co-name { font-size:24px; font-weight:700; color:#0a4f45; }
+      .co-sub  { font-size:11px; color:#64748b; margin-top:3px; }
+      .inv-meta { text-align:right; }
+      .inv-title{ font-size:22px; font-weight:700; color:#0a4f45; }
+      .bill-to  { margin-bottom:28px; }
+      .bt-label { font-size:10px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.08em; margin-bottom:4px; }
+      .bt-name  { font-weight:700; font-size:15px; }
+      table     { width:100%; border-collapse:collapse; margin-bottom:20px; }
+      th        { background:#0a4f45; color:white; padding:9px 12px; text-align:left; font-size:11px; }
+      td        { padding:8px 12px; border-bottom:1px solid #e2e8f0; }
+      tr:nth-child(even) td { background:#f8fafb; }
+      .totals   { text-align:right; margin-top:8px; }
+      .tot-row  { display:flex; justify-content:flex-end; gap:32px; margin-bottom:6px; font-size:12px; }
+      .grand    { font-size:16px; font-weight:700; color:#0a4f45; margin-top:4px; }
+      .footer   { margin-top:48px; padding-top:12px; border-top:1px solid #e2e8f0; font-size:10px; color:#94a3b8; }
+      @media print { body { padding:16px; } button { display:none; } }
+    </style>
+  </head><body>
+    <div style="${headerStyle}">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>${logoHtml}<div style="font-size:11px;${template==='modern'?'color:rgba(255,255,255,0.7)':'color:#666'};margin-top:4px;">${settings.companyAddress || ''}</div></div>
+        <div style="text-align:right;"><div style="font-size:22px;font-weight:800;${template==='modern'?'color:white':'color:#0a4f45'};">INVOICE</div>
+          <div class="co-sub">${settings.companyAddress || ""}</div>
+          <div class="co-sub">${settings.companyEmail || ""}&nbsp;&nbsp;${settings.companyPhone || ""}</div>
+          ${settings.companyTaxId ? `<div class="co-sub">TIN: ${settings.companyTaxId}</div>` : ""}
+        </div>
+        <div class="inv-meta">
+          <div class="inv-title">TAX INVOICE</div>
+          <div style="font-size:18px;font-weight:600;margin-top:4px;">${inv.number}</div>
+          <div style="margin-top:8px;font-size:11px;">Date: <strong>${inv.date}</strong></div>
+          <div style="font-size:11px;">Due:  <strong>${inv.dueDate}</strong></div>
+          <div style="margin-top:8px;"><span style="${statusStyle}">${inv.status.toUpperCase()}</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="bill-to">
+      <div class="bt-label">Bill To</div>
+      <div class="bt-name">${customer ? customer.name : "—"}</div>
+      ${customer && customer.email ? `<div style="color:#64748b;">${customer.email}</div>` : ""}
+      ${customer && customer.address ? `<div style="color:#64748b;">${customer.address}</div>` : ""}
+      ${customer && customer.tin ? `<div style="color:#64748b;">TIN: ${customer.tin}</div>` : ""}
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
+      <tbody>${lineRows}</tbody>
+    </table>
+    <div class="totals">
+      <div class="tot-row"><span>Subtotal:</span><span>₦${Number(inv.subtotal || inv.total).toLocaleString("en-NG", {minimumFractionDigits:2})}</span></div>
+      <div class="tot-row"><span>VAT (${settings.defaultVatRate}%):</span><span>₦${Number(inv.vat || 0).toLocaleString("en-NG", {minimumFractionDigits:2})}</span></div>
+      <div class="tot-row grand"><span>TOTAL DUE:</span><span>₦${Number(inv.total).toLocaleString("en-NG", {minimumFractionDigits:2})}</span></div>
+    </div>
+    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;"><strong>Notes:</strong> ${inv.notes}</div>` : ""}
+    <div style="margin-top:24px;text-align:center;">
+      <button onclick="window.print()" style="padding:8px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ Print / Save as PDF</button>
+    </div>
+    <div class="footer" style="margin-top:32px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;color:#555;">
+      <div><strong>${settings.companyName || ''}</strong><br>TIN: ${settings.companyTaxId || 'N/A'}<br>Tel: ${settings.companyPhone || ''}</div>
+      <div style="text-align:center;font-size:10px;color:#999;">Generated by AccounTrack™ Pro<br>NTA 2025 Compliant · ${today()}</div>
+      <div style="text-align:right;">Payment Terms: ${settings.defaultDueDays || 30} days<br><em>${settings.defaultInvoiceNotes || 'Thank you for your business.'}</em></div>
+    </div>
+  </body></html>`;
+  
   var printWindow = window.open("", "_blank", "width=850,height=1000");
   printWindow.document.write(html);
   printWindow.document.close();
   printWindow.focus();
-  // Give the window a moment to load, then trigger print dialog
   setTimeout(function() { printWindow.print(); }, 600);
 };
 
@@ -3490,7 +3505,7 @@ window.deleteVendor = (id) => { if(confirm('Delete vendor?')){ vendors=vendors.f
 window.showVendorStatement = function(vendorId) {
   const vendor = vendors.find(v=>(v._id||v.id)==vendorId);
   if (!vendor) return;
-  const vendBills = [...bills].filter(b=>b.vendorId===vendorId).sort((a,b)=>a.date>b.date?1:-1);
+  const vendBills = [...bills].filter(b => String(b.vendorId) === String(vendorId)).sort((a,b)=>a.date>b.date?1:-1);
   const totalBilled = vendBills.reduce((s,b)=>s+b.total,0);
   const totalPaid = vendBills.reduce((s,b)=>s+(b.amountPaid||0),0);
   const totalOwed = vendBills.reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
