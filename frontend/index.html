@@ -1337,9 +1337,10 @@ async function loadAllData() {
   apiFetch('/assets').catch(() => []),
   apiFetch('/company/settings').catch(() => ({}))
 ]);
-    accounts = acc; journalEntries = je; customers = cust; invoices = inv;
-    vendors = vend; bills = bill; products = prod; employees = emp;
-    assets = ast; settings = set;
+    const norm = arr => Array.isArray(arr) ? arr.map(r => ({ ...r, id: r._id || r.id })) : arr;
+    accounts = norm(acc); journalEntries = norm(je); customers = norm(cust); invoices = norm(inv);
+    vendors = norm(vend); bills = norm(bill); products = norm(prod); employees = norm(emp);
+    assets = norm(ast); settings = set;
 
     const [bankAcc, bankTx, budgetData, custPay, vendPay, obData] = await Promise.all([
       apiFetch('/bankaccounts').catch(() => []),
@@ -1349,8 +1350,8 @@ async function loadAllData() {
       apiFetch('/vendorpayments').catch(() => []),
       apiFetch('/openingbalances').catch(() => ({}))
     ]);
-    bankAccounts = bankAcc; bankTransactions = bankTx; budgets = budgetData;
-    customerPayments = custPay; vendorPayments = vendPay; openingBalances = obData;
+    bankAccounts = norm(bankAcc); bankTransactions = norm(bankTx); budgets = norm(budgetData);
+    customerPayments = norm(custPay); vendorPayments = norm(vendPay); openingBalances = obData;
 
     applySettings();
     checkOverdueInvoices();
