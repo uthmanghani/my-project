@@ -2130,11 +2130,19 @@ async function recordCustomerPayment(customerId, invoiceId, amount, date, bankCo
     showToast(err.message || 'Payment failed. Check console for details.', 'danger');
   }
 }
-// ─── Vendor Payment Modal ────────────────────────────────────────
+// ==================== VENDOR PAYMENT (ROBUST ID LOOKUP) ====================
+
 window.openVendorPaymentModal = (billId) => {
-  const bill = bills.find(b => (b._id||b.id) == billId);
-  if (!bill) { showToast('Bill not found', 'danger'); return; }
-  const v = vendors.find(x => (x._id||x.id) == (bill.vendorId?._id||bill.vendorId));
+  // Try to find bill by id (normalised) or by _id
+  let bill = bills.find(b => b.id == billId || b._id == billId);
+  if (!bill) {
+    console.error('Bill not found:', billId);
+    showToast('Bill not found. Refresh and try again.', 'danger');
+    return;
+  }
+
+  // Find vendor with flexible ID matching
+  let vendor = vendors.find(v => v.id == (bill.vendorId?._id || bill.vendorId) || v._id == (bill.vendorId?._id || bill.vendorId));
   const balance = bill.balance !== undefined ? bill.balance : bill.total;
   const bankOpts = [{ code:'1000', name:'Cash & Cash Equivalents' }, ...bankAccounts]
     .map(b => `<option value="${b.code||'1000'}">${b.name}</option>`).join('');
@@ -2144,9 +2152,10 @@ window.openVendorPaymentModal = (billId) => {
           <span style="color:var(--text-3);">${p.date}</span>
           <strong style="color:var(--danger);">${fmt(p.amount)}</strong></div>`).join('')
     : '<div style="font-size:0.78rem;color:var(--text-3);padding:8px 0;">No payments yet.</div>';
+
   showModal('Pay Bill — ' + bill.number,
     `<div style="background:var(--surface2);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:0.82rem;"><span style="color:var(--text-3);">Vendor</span><strong>${v ? v.name : '—'}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:0.82rem;"><span style="color:var(--text-3);">Vendor</span><strong>${vendor ? vendor.name : '—'}</strong></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:0.82rem;"><span style="color:var(--text-3);">Bill Total</span><strong>${fmt(bill.total)}</strong></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:0.82rem;"><span style="color:var(--text-3);">Amount Paid</span><strong style="color:var(--success);">${fmt(bill.amountPaid||0)}</strong></div>
       <div style="display:flex;justify-content:space-between;font-size:0.9rem;padding-top:8px;border-top:1px solid var(--border);"><span style="color:var(--text-3);font-weight:600;">Balance Due</span><strong style="color:var(--danger);font-size:1.05rem;">${fmt(balance)}</strong></div></div>
@@ -2162,16 +2171,52 @@ window.openVendorPaymentModal = (billId) => {
 };
 
 window.submitVendorPayment = async (billId) => {
-  const bill = bills.find(b => (b._id||b.id) == billId);
-  if (!bill) { showToast('Bill not found', 'danger'); return; }
+  let bill = bills.find(b => b.id == billId || b._id == billId);
+  if (!bill) {
+    showToast('Bill not found. Reload page and try again.', 'danger');
+    return;
+  }
   const amount = parseFloat(document.getElementById('vpAmount')?.value);
   const date = document.getElementById('vpDate')?.value;
   const bankCode = document.getElementById('vpBank')?.value || '1000';
-  if (!amount || amount <= 0) return showToast('Enter a valid amount.', 'danger');
-  if (!date) return showToast('Select a payment date.', 'danger');
+  if (!amount || amount <= 0) {
+    showToast('Enter a valid amount.', 'danger');
+    return;
+  }
+  if (!date) {
+    showToast('Select a payment date.', 'danger');
+    return;
+  }
   closeTopModal();
   await recordVendorPayment(bill.vendorId, billId, amount, date, bankCode);
 };
+
+// Update recordVendorPayment to use flexible ID matching
+async function recordVendorPayment(vendorId, billId, amount, date, bankCode) {
+  let bill = bills.find(b => b.id == billId || b._id == billId);
+  if (!bill) {
+    showToast('Bill not found.', 'danger');
+    return;
+  }
+  if (bill.status === 'paid') {
+    showToast('Bill already fully paid.', 'warning');
+    return;
+  }
+  try {
+    await apiFetch(`/bills/${billId}/pay`, {
+      method: 'PUT',
+      body: JSON.stringify({ amount, date, bankCode: bankCode || '1000' })
+    });
+    await loadAllData();
+    renderDashboard();
+    if (currentPage === 'bills') renderBillsView();
+    if (currentPage === 'vendors') renderVendorsView();
+    showToast(`Payment of ${fmt(amount)} recorded.`, 'success');
+  } catch (err) {
+    console.error('Vendor payment failed:', err);
+    showToast(err.message || 'Payment failed. Check console for details.', 'danger');
+  }
+}
 
 
 // ─── OWNER DRAWINGS ──────────────────────────────────────────────────
@@ -2465,18 +2510,19 @@ function renderCustomersView() {
   const filtered = filterItems('customers', customers, ['name','email','phone']);
   const { items: pagedCust, controls: custControls } = paginate('customers', filtered);
   const rows = pagedCust.map(c => {
-    const out = invoices.filter(i=>i.customerId===c.id&&i.status!=='paid').reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
+    const out = invoices.filter(i=>String(i.customerId)===String(c.id)&&i.status!=='paid').reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
+    const safeId = String(c.id);
     return `<tr>
-      <td><input type="checkbox" class="cust-check" value="${c.id}" onchange="updateCustBulkBar()"></td>
+      <td><input type="checkbox" class="cust-check" value="${safeId}" onchange="updateCustBulkBar()"></td>
       <td class="td-bold">${c.name}</td>
       <td>${c.email||'—'}</td>
       <td>${c.phone||'—'}</td>
       <td>${c.address||'—'}</td>
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
-        <div class="action-btn" onclick="openInvoiceModal(${c.id})" title="New Invoice"><i class="fas fa-file-invoice-dollar"></i></div>
-        <div class="action-btn" onclick="showCustomerStatement(${c.id})" title="Account Statement" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-file-alt"></i></div>
-        <div class="action-btn danger" title="Delete" onclick="deleteCustomer(${c.id})"><i class="fas fa-trash"></i></div>
+        <div class="action-btn" onclick="openInvoiceModal('${safeId}')" title="New Invoice"><i class="fas fa-file-invoice-dollar"></i></div>
+        <div class="action-btn" onclick="showCustomerStatement('${safeId}')" title="Account Statement" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-file-alt"></i></div>
+        <div class="action-btn danger" title="Delete" onclick="deleteCustomer('${safeId}')"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
   }).join('');
@@ -2581,7 +2627,17 @@ window.viewCustomerStatement = function(customerId) {
   );
 };
  
-window.deleteCustomer = (id) => { if(confirm('Delete this customer?')){ customers=customers.filter(c=>c.id!==id); saveAllData(); renderCustomersView(); }};
+window.deleteCustomer = (id) => { 
+  id = String(id);
+  const toDelete = customers.filter(c => String(c.id) === id);
+  if (toDelete.length === 0) { showToast('Customer not found', 'danger'); return; }
+  if (confirm(`Delete "${toDelete[0].name}" permanently?`)) {
+    customers = customers.filter(c => String(c.id) !== id);
+    saveAllData();
+    renderCustomersView();
+    showToast('Customer deleted', 'success');
+  }
+};
 
 
 // ════════════════════════════════════════════
@@ -2666,8 +2722,12 @@ function renderInvoicesView() {
 }
 
 window.openInvoiceModal = (presetCustomerId) => {
+  presetCustomerId = presetCustomerId ? String(presetCustomerId) : null;
   if (customers.length===0) return alert('Please add a customer first.');
-  const custOpts = customers.map(c=>`<option value="${c._id||c.id}" ${(c._id||c.id)==presetCustomerId?'selected':''}>${c.name}</option>`).join('');
+  const custOpts = customers.map(c => {
+    const cid = String(c.id);
+    return `<option value="${cid}" ${cid === presetCustomerId ? 'selected' : ''}>${c.name}</option>`;
+  }).join('');
   const prodOpts = products.map(p=>`<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost}">${p.name} (${fmt(p.price)})</option>`).join('');
   const mid = showModal(
     'New Invoice', `
@@ -2953,9 +3013,13 @@ window.exportARAgingCSV = function() {
   link.click();
 };
 window.showCustomerStatement = function(customerId) {
-  const cust = customers.find(c=>c.id===customerId);
-  if (!cust) return;
-  const custInvoices = [...invoices].filter(i=>i.customerId===customerId).sort((a,b)=>a.date>b.date?1:-1);
+  customerId = String(customerId);
+  const cust = customers.find(c => String(c.id) === customerId);
+  if (!cust) {
+    showToast('Customer not found', 'danger');
+    return;
+  }
+  const custInvoices = [...invoices].filter(i => String(i.customerId) === customerId).sort((a,b)=>a.date>b.date?1:-1);
   const custPayments = custInvoices.reduce((s,i)=>s+(i.amountPaid||0),0);
   const custOutstanding = custInvoices.reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
   let runningBal = 0;
@@ -7455,10 +7519,10 @@ function clearCustBulk() {
   if(bar) bar.style.display='none';
 }
 function bulkDeleteCustomers() {
-  const ids=[...document.querySelectorAll('.cust-check:checked')].map(c=>parseInt(c.value));
+  const ids = [...document.querySelectorAll('.cust-check:checked')].map(cb => String(cb.value));
   if(!ids.length) return;
   if(!confirm('Delete '+ids.length+' customer'+(ids.length!==1?'s':'')+' permanently?')) return;
-  customers=customers.filter(c=>!ids.includes(c.id));
+  customers = customers.filter(c => !ids.includes(String(c.id)));
   saveAllData(); renderCustomersView();
   showToast(ids.length+' customer'+(ids.length!==1?'s':'')+' deleted','success');
 }
