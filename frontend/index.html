@@ -3653,7 +3653,7 @@ window.openBillPaymentSelector = () => {
 
 window.openBillModal = (presetVendorId) => {
   if (vendors.length===0) return alert('Please add a vendor first.');
-  const vOpts = vendors.map(v=>`<option value="${v.id}" ${v.id==presetVendorId?'selected':''}>${v.name}</option>`).join('');
+  const vOpts = vendors.map(v=>`<option value="${v._id||v.id}" ${(v._id||v.id)==presetVendorId?'selected':''}>${v.name}</option>`).join('');
     // TASK 3: Inventory Asset listed first for stock/goods purchases
   const inventoryOpt ='<option value="1200">1200 – Inventory Asset (Goods for resale / stock)</option>';
   const accOpts = inventoryOpt + accounts.filter(a => a.type === 'Expense').map(a => '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>').join('');
@@ -6636,7 +6636,7 @@ window.deleteVendor = async function(id) {
 // ─── BILLS ────────────────────────────────────────────────────────────
 window.saveBill = async function() {
   const vendorId = document.getElementById('bVendor').value;
-  if (!vendorId) return showToast('Please select a vendor', 'danger');
+  if (!vendorId || vendorId === 'undefined') return showToast('Please select a vendor', 'danger');
   const bDate = document.getElementById('bDate').value;
   const bDue  = document.getElementById('bDue').value;
   const expCode = document.getElementById('bExpAcc').value;
@@ -7613,7 +7613,7 @@ function renderRecurringBillingView() {
 }
 
 window.openRBModal = () => {
-  const custOpts = customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const cOpts = customers.map(c=>`<option value="${c._id||c.id}">${c.name}</option>`).join('');
   showModal('New Recurring Schedule',`
     <div class="form-group"><label class="form-label required">Schedule Name</label>
       <input class="form-control" id="rbName" placeholder="e.g. Monthly Retainer — Acme Ltd"></div>
