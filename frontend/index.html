@@ -1337,7 +1337,16 @@ async function loadAllData() {
   apiFetch('/assets').catch(() => []),
   apiFetch('/company/settings').catch(() => ({}))
 ]);
-    const norm = arr => Array.isArray(arr) ? arr.map(r => ({ ...r, id: r._id || r.id })) : arr;
+    const norm = arr => Array.isArray(arr) ? arr.map(r => ({
+  ...r,
+  id: r._id || r.id,
+  // Flatten populated sub-documents back to plain IDs
+  customerId: r.customerId?._id ? r.customerId._id : r.customerId,
+  vendorId: r.vendorId?._id ? r.vendorId._id : r.vendorId,
+  // Store populated names for display
+  _customerName: r.customerId?.name || null,
+  _vendorName: r.vendorId?.name || null,
+})) : arr;
     accounts = norm(acc); journalEntries = norm(je); customers = norm(cust); invoices = norm(inv);
     vendors = norm(vend); bills = norm(bill); products = norm(prod); employees = norm(emp);
     assets = norm(ast); settings = set;
@@ -2472,7 +2481,7 @@ if (recurringDue.length > 0) {
           <table>
             <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
             <tbody>${invoices.sort((a,b)=>b.date>a.date?1:-1).slice(0,8).map(inv => {
-              const c = customers.find(c=>c.id===inv.customerId);
+              const c = customers.find(c=>(c._id||c.id)==(inv.customerId?._id||inv.customerId));
               return `<tr>
                 <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
                 <td>${c?.name||'—'}</td>
@@ -2480,8 +2489,8 @@ if (recurringDue.length > 0) {
                 <td class="td-bold">${fmt(inv.total)}</td>
                 <td>${statusBadge(inv.status==='unpaid' && inv.dueDate < today() ? 'overdue' : inv.status)}</td>
                 <td><div class="table-actions">
-                  ${inv.status!=='paid'?`<div class="action-btn" title="Mark Paid" onclick="markInvoicePaid(${inv.id})"><i class="fas fa-check"></i></div>`:''}
-                  <div class="action-btn danger" title="Delete" onclick="deleteInvoice(${inv.id})"><i class="fas fa-trash"></i></div>
+                  ${inv.status!=='paid'?`<div class="action-btn" title="Mark Paid" onclick="markInvoicePaid('${inv.id}')"><i class="fas fa-check"></i></div>`:''}
+                  <div class="action-btn danger" title="Delete" onclick="deleteInvoice('${inv.id}')"><i class="fas fa-trash"></i></div>
                 </div></td>
               </tr>`;
             }).join('')}</tbody>
@@ -2953,14 +2962,14 @@ window.markInvoicePaid = (id) => {
   if (remaining <= 0) return showToast('Invoice already fully paid.', 'warning');
   openCustomerPaymentModal(id); // Open modal — never silently post full amount
 };
-window.deleteInvoice = (id) => { if(confirm('Delete this invoice?')){ invoices=invoices.filter(i=>i.id!==id); recalcBalances(); if(currentPage==='invoices') renderInvoicesView(); renderDashboard(); }};
+window.deleteInvoice = (id) => { if(confirm('Delete this invoice?')){ invoices=invoices.filter(i=>String(i._id||i.id)!==String(id)); recalcBalances(); if(currentPage==='invoices') renderInvoicesView(); renderDashboard(); }};
 // ════ AR AGING ════════════════════════════════════════
 function calculateARAging() {
   var todayDate = today(); // uses your existing today() helper
   return customers.map(function(customer) {
     // Get only UNPAID invoices for this customer
     var unpaidInvoices = invoices.filter(function(inv) {
-      return inv.customerId === customer.id && inv.status !== "paid";
+      return String(inv.customerId?._id||inv.customerId) === String(customer._id||customer.id) && inv.status !== "paid";
     });
  
     // Set up empty buckets
@@ -3020,7 +3029,7 @@ window.showCustomerStatement = function(customerId) {
     return;
   }
   // 🔥 FIX: Compare as strings – convert both invoice.customerId and the passed id
-  const custInvoices = [...invoices].filter(i => String(i.customerId) === customerId)
+  const custInvoices = [...invoices].filter(i => (i._customerName && String(i.customerId) === String(customerId)) || String(i.customerId?._id||i.customerId) === String(customerId))
     .sort((a,b) => (a.date > b.date) ? 1 : -1);
   const custPayments = custInvoices.reduce((s,i) => s + (i.amountPaid || 0), 0);
   const custOutstanding = custInvoices.reduce((s,i) => s + (i.balance !== undefined ? i.balance : i.total), 0);
@@ -3159,9 +3168,9 @@ window.showARAgingPanel = function() {
 };
 
 window.viewInvoice = (id) => {
-  const inv = invoices.find(i=>i.id===id);
+  const inv = invoices.find(i=>String(i._id||i.id)===String(id));
   if (!inv) return;
-  const c = customers.find(x=>x.id===inv.customerId);
+  const c = customers.find(x=>(x._id||x.id)==(inv._customerName?inv.customerId:(inv.customerId?._id||inv.customerId)));
   showModal(`Invoice ${inv.number}`,`
     <div style="display:flex;justify-content:space-between;margin-bottom:16px;">
       <div><div style="font-size:0.8rem;color:var(--text-3);">Bill To</div><strong>${c?.name||'—'}</strong><div style="font-size:0.78rem;color:var(--text-3);">${c?.email||''}</div></div>
@@ -3174,7 +3183,7 @@ window.viewInvoice = (id) => {
       <div>VAT: <strong>${fmt(inv.vat||0)}</strong></div>
       <div style="font-size:1rem;font-weight:700;color:var(--brand);margin-top:6px;">Total: ${fmt(inv.total)}</div>
     </div>`,
-    `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button><button class="btn btn-secondary" onclick="printInvoice(${inv.id});closeTopModal()"><i class="fas fa-print"></i> Print Invoice</button>${inv.status!=='paid'?`<button class="btn btn-success" onclick="closeTopModal();openCustomerPaymentModal(${inv.id})"><i class="fas fa-money-bill-wave"></i> Record Payment</button>`:''}'`
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button><button class="btn btn-secondary" onclick="printInvoice('${inv.id}');closeTopModal()"><i class="fas fa-print"></i> Print Invoice</button>${inv.status!=='paid'?`<button class="btn btn-success" onclick="closeTopModal();openCustomerPaymentModal('${inv.id}')"><i class="fas fa-money-bill-wave"></i> Record Payment</button>`:''}'`
   );
 };
 // ════ INVOICE PRINT ════════════════════════════════════
@@ -3450,14 +3459,14 @@ function renderVendorsView() {
   const filteredVend = filterItems('vendors', vendors, ['name','email','phone']);
   const { items: pagedVend, controls: vendControls } = paginate('vendors', filteredVend);
   const rows = pagedVend.map(v => {
-    const out = bills.filter(b=>b.vendorId===v.id&&b.status!=='paid').reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
+    const out = bills.filter(b=>String(b.vendorId?._id||b.vendorId)===String(v._id||v.id)&&b.status!=='paid').reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
     return `<tr>
       <td class="td-bold">${v.name}${v.notes?`<div style="font-size:0.7rem;color:var(--text-3);margin-top:2px;"><i class="fas fa-sticky-note"></i> ${v.notes.substring(0,40)}${v.notes.length>40?'...':''}</div>`:''}</td><td>${v.email||'—'}</td><td>${v.phone||'—'}</td>
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
-        <div class="action-btn" title="New Bill" onclick="openBillModal(${v.id})"><i class="fas fa-file-invoice"></i></div>
+        <div class="action-btn" title="New Bill" onclick="openBillModal('${v.id}')"><i class="fas fa-file-invoice"></i></div>
         <div class="action-btn" title="Account Statement" onclick="showVendorStatement('${v._id||v.id}')" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-file-alt"></i></div>
-        <div class="action-btn danger" onclick="deleteVendor(${v.id})"><i class="fas fa-trash"></i></div>
+        <div class="action-btn danger" onclick="deleteVendor('${v.id}')"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
   }).join('');
@@ -3500,7 +3509,7 @@ window.saveVendor = () => {
   saveAllData(); closeTopModal(); renderVendorsView();
   showToast('Vendor added successfully.', 'success');
 };
-window.deleteVendor = (id) => { if(confirm('Delete vendor?')){ vendors=vendors.filter(v=>v.id!==id); saveAllData(); renderVendorsView(); }};
+window.deleteVendor = (id) => { if(confirm('Delete vendor?')){ vendors=vendors.filter(v=>String(v._id||v.id)!==String(id)); saveAllData(); renderVendorsView(); }};
 
 window.showVendorStatement = function(vendorId) {
   const vendor = vendors.find(v=>(v._id||v.id)==vendorId);
@@ -3589,7 +3598,7 @@ function calculateAPAging() {
   var todayDate = today();
   return vendors.map(function(vendor) {
     var unpaidBills = bills.filter(function(bill) {
-      return bill.vendorId === vendor.id && bill.status !== "paid";
+      return String(bill.vendorId?._id||bill.vendorId) === String(vendor._id||vendor.id) && bill.status !== "paid";
     });
  
     var buckets = { current:0, d1_30:0, d31_60:0, d61_90:0, d90plus:0 };
@@ -3754,7 +3763,7 @@ window.openBillPaymentSelector = () => {
     return showToast('No outstanding bills to pay.', 'info');
 
   const opts = unpaidBills.map(b => {
-    const v   = vendors.find(x => x.id === b.vendorId);
+    const v   = vendors.find(x => (x._id||x.id) == b.vendorId);
     const bal = b.balance !== undefined ? b.balance : b.total;
     return '<option value="' + b.id + '">' +
            b.number + ' — ' + (v ? v.name : '?') +
@@ -3968,7 +3977,7 @@ window.markBillPaid = (id) => {
   if (!b || b.status === 'paid') return;
   openVendorPaymentModal(id); // Opens modal — never silently posts full amount
 };
-window.deleteBill = (id) => { if(confirm('Delete bill?')){ bills=bills.filter(b=>b.id!==id); recalcBalances(); if(currentPage==='bills') renderBillsView(); }};
+window.deleteBill = (id) => { if(confirm('Delete bill?')){ bills=bills.filter(b=>String(b._id||b.id)!==String(id)); recalcBalances(); if(currentPage==='bills') renderBillsView(); }};
 
 // ════════════════════════════════════════════
 // ─── EMPLOYEES & PAYROLL ───
@@ -3980,8 +3989,8 @@ function renderEmployeesView() {
       <td class="td-bold">${e.name}</td><td>${e.position||'—'}</td><td>${e.department||'—'}</td>
       <td>${fmt(e.annualSalary)}</td><td>${fmt(c.monthlyPAYE)}</td><td>${fmt(c.monthlyNet)}</td>
       <td><div class="table-actions">
-        <div class="action-btn" title="Payslip" onclick="openPayslip(${e.id})"><i class="fas fa-receipt"></i></div>
-        <div class="action-btn danger" onclick="deleteEmployee(${e.id})"><i class="fas fa-trash"></i></div>
+        <div class="action-btn" title="Payslip" onclick="openPayslip('${e.id}')"><i class="fas fa-receipt"></i></div>
+        <div class="action-btn danger" onclick="deleteEmployee('${e.id}')"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
   }).join('');
@@ -4047,10 +4056,10 @@ window.saveEmployee = () => {
  recalcBalances(); saveAllData();   showToast('Payroll for ' + periodLabel + ' saved and posted to ledger.', 'success');   
  navigateTo('employees');
 };
-window.deleteEmployee = (id) => { if(confirm('Delete employee?')){ employees=employees.filter(e=>e.id!==id); saveAllData(); renderEmployeesView(); }};
+window.deleteEmployee = (id) => { if(confirm('Delete employee?')){ employees=employees.filter(e=>String(e._id||e.id)!==String(id)); saveAllData(); renderEmployeesView(); }};
 let _payEmpId = null;
 window.openPayslip = (id) => {
-  const emp = employees.find(e=>e.id===id); if(!emp) return;
+  const emp = employees.find(e=>String(e._id||e.id)===String(id)); if(!emp) return;
   _payEmpId = id;
   const c = calculatePAYE(emp.annualSalary, emp.annualRent||0);
   showModal(`Payslip — ${emp.name}`,`
@@ -4071,7 +4080,7 @@ window.openPayslip = (id) => {
     </div>
     <div class="form-group" style="margin-top:16px;"><label class="form-label">Payment Date</label><input type="date" class="form-control" id="payDate" value="${today()}"></div>
     <div style="margin-top:12px;text-align:right;">
-      <button onclick="printPayslipFull(${emp.id})" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print Payslip</button>
+      <button onclick="printPayslipFull('${emp.id}')" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print Payslip</button>
     </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>
      <button class="btn btn-secondary" onclick="printPayslip(${`_payEmpId`})"><i class="fas fa-print"></i> Print Payslip</button>
@@ -4701,9 +4710,9 @@ function renderBankingView() {
             <div style="font-size:0.75rem;color:rgba(255,255,255,0.7);">${b.name} · ${b.accountNumber||''}</div>
           </div>
           <div style="padding:12px 18px;display:flex;gap:8px;">
-            <button class="btn btn-secondary btn-sm" onclick="openBankTxModal(${b.id})"><i class="fas fa-plus"></i> Transaction</button>
-            <button class="btn btn-secondary btn-sm" onclick="openReconcileView(${b.id})" style="color:var(--brand);"><i class="fas fa-check-double"></i> Reconcile</button>
-            <button class="btn btn-ghost btn-sm" onclick="deleteBankAccount(${b.id})"><i class="fas fa-trash"></i></button>
+            <button class="btn btn-secondary btn-sm" onclick="openBankTxModal('${b.id}')"><i class="fas fa-plus"></i> Transaction</button>
+            <button class="btn btn-secondary btn-sm" onclick="openReconcileView('${b.id}')" style="color:var(--brand);"><i class="fas fa-check-double"></i> Reconcile</button>
+            <button class="btn btn-ghost btn-sm" onclick="deleteBankAccount('${b.id}')"><i class="fas fa-trash"></i></button>
           </div>
         </div>`;
       }).join('') || `<div class="empty-state" style="grid-column:1/-1;padding:32px"><i class="fas fa-university"></i><p>No bank accounts added yet.</p></div>`}
@@ -4743,7 +4752,7 @@ window.saveBankAccount = () => {
   saveAllData(); closeTopModal(); renderBankingView();
   showToast('Bank account added successfully.', 'success');
 };
-window.deleteBankAccount = (id) => { if(confirm('Delete bank account?')){ bankAccounts=bankAccounts.filter(b=>b.id!==id); saveAllData(); renderBankingView(); }};
+window.deleteBankAccount = (id) => { if(confirm('Delete bank account?')){ bankAccounts=bankAccounts.filter(b=>String(b._id||b.id)!==String(id)); saveAllData(); renderBankingView(); }};
 window.openBankTxModal = (bankId) => {
   showModal('New Bank Transaction',`
     <div class="form-row cols-2">
@@ -5021,7 +5030,7 @@ window.exportVATReturn = function() {
   const outputRows = invoices
     .filter(i => (i.vat||0) > 0)
     .map(inv => {
-      const c = customers.find(x=>x.id===inv.customerId);
+      const c = customers.find(x=>(x._id||x.id)==(inv._customerName?inv.customerId:(inv.customerId?._id||inv.customerId)));
       return [
         inv.number||'', '"'+(c?.name||'')+'"', c?.tin||'',
         inv.date, (inv.subtotal||inv.total).toFixed(2), '7.5',
@@ -5376,7 +5385,7 @@ window.showRpt = (type, btn) => {
     invoices.filter(i=>i.status!=='paid').forEach(inv => {
       const due  = inv.dueDate ? new Date(inv.dueDate) : new Date(inv.date);
       const diff = Math.floor((todayMs - due) / 86400000);
-      const c = customers.find(x=>x.id===inv.customerId);
+      const c = customers.find(x=>(x._id||x.id)==(inv._customerName?inv.customerId:(inv.customerId?._id||inv.customerId)));
       const balance = inv.balance !== undefined ? inv.balance : inv.total;
       const row = { customer:c?.name||'Unknown', invoice:inv.number, dueDate:inv.dueDate||inv.date, amount:balance };
       if (diff <= 0) buckets.current.push(row);
@@ -5454,7 +5463,7 @@ window.showRpt = (type, btn) => {
       return `<tr><td>${i.number}</td><td>${c?.name||'—'}</td><td>${i.date}</td><td>${fmt(i.subtotal||i.total)}</td><td style="color:var(--danger);font-weight:600;">${fmt(i.vat)}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px;">No invoices with VAT found</td></tr>';
     const vatBillRows = bills.filter(b => (b.vat||0) > 0).map(b => {
-      const v = vendors.find(x => x.id === b.vendorId);
+      const v = vendors.find(x => (x._id||x.id) == b.vendorId);
       return `<tr><td>${b.number}</td><td>${v?.name||'—'}</td><td>${b.date}</td><td>${fmt(b.subtotal||b.total)}</td><td style="color:var(--success);font-weight:600;">${fmt(b.vat)}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px;">No bills with VAT found</td></tr>';
     cont.innerHTML = `<div style="font-size:1rem;font-weight:700;margin-bottom:16px;">VAT Summary — NRS Monthly Return</div>
@@ -5519,7 +5528,7 @@ function renderProductsView() {
     <td><span class="badge ${p.stock<=5?'badge-danger':p.stock<=20?'badge-warning':'badge-success'}">${p.stock} units</span></td>
     <td>${fmt(p.stock*p.cost)}</td>
     <td><div class="table-actions">
-      <div class="action-btn danger" onclick="deleteProduct(${p.id})"><i class="fas fa-trash"></i></div>
+      <div class="action-btn danger" onclick="deleteProduct('${p.id}')"><i class="fas fa-trash"></i></div>
     </div></td>
   </tr>`).join('');
   const totalInv = products.reduce((s,p)=>s+(p.stock*p.cost),0);
@@ -5583,7 +5592,7 @@ window.saveProduct = () => {
   recalcBalances(); closeTopModal(); renderProductsView();
   showToast('Product added to inventory.', 'success');
 };
-window.deleteProduct = (id) => { if(confirm('Delete product?')){ products=products.filter(p=>p.id!==id); recalcBalances(); renderProductsView(); }};
+window.deleteProduct = (id) => { if(confirm('Delete product?')){ products=products.filter(p=>String(p._id||p.id)!==String(id)); recalcBalances(); renderProductsView(); }};
 window.openStockModal = () => {
   if (!products.length) return alert('No products to adjust.');
   const opts = products.map(p=>`<option value="${p.id}">${p.name} (${p.stock} units)</option>`).join('');
@@ -7624,7 +7633,7 @@ function bulkExportInvoices() {
   if(!ids.length) return;
   const selected=invoices.filter(i=>ids.includes(i.id));
   const csv='Invoice#,Customer,Date,Due,Amount,Paid,Balance,Status\n'+selected.map(inv=>{
-    const c=customers.find(x=>x.id===inv.customerId);
+    const c=customers.find(x=>(x._id||x.id)==inv.customerId);
     return [inv.number,c?.name||'',inv.date,inv.dueDate,inv.total,inv.amountPaid||0,inv.balance||inv.total,inv.status].join(',');
   }).join('\n');
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'invoices_export_'+today()+'.csv'});
@@ -7634,7 +7643,7 @@ function bulkExportInvoices() {
 
 // ─── ATTACHMENTS ─────────────────────────────────────────────
 window.viewAttachment = function(id, type) {
-  const record = type==='bill' ? bills.find(b=>b.id===id) : invoices.find(i=>i.id===id);
+  const record = type==='bill' ? bills.find(b=>String(b._id||b.id)===String(id)) : invoices.find(i=>String(i._id||i.id)===String(id));
   if (!record?.attachment) return showToast('No attachment found','info');
   const att = record.attachment;
   if (att.type?.startsWith('image/')) {
@@ -7714,11 +7723,11 @@ function renderRecurringBillingView() {
       <td>${rb.nextDate||'—'}</td>
       <td><span class="badge ${rb.active?'badge-success':'badge-neutral'}">${rb.active?'Active':'Paused'}</span></td>
       <td><div class="table-actions">
-        <div class="action-btn" onclick="toggleRB(${rb.id})" title="${rb.active?'Pause':'Resume'}"
+        <div class="action-btn" onclick="toggleRB('${rb.id}')" title="${rb.active?'Pause':'Resume'}"
           style="color:${rb.active?'var(--warning)':'var(--success)'};border-color:${rb.active?'var(--warning)':'var(--success)'};">
           <i class="fas fa-${rb.active?'pause':'play'}"></i></div>
-        <div class="action-btn" onclick="runRB(${rb.id})" title="Generate Now" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-bolt"></i></div>
-        <div class="action-btn danger" onclick="deleteRB(${rb.id})"><i class="fas fa-trash"></i></div>
+        <div class="action-btn" onclick="runRB('${rb.id}')" title="Generate Now" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-bolt"></i></div>
+        <div class="action-btn danger" onclick="deleteRB('${rb.id}')"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
   }).join('');
@@ -7849,8 +7858,8 @@ function renderPurchaseOrdersView() {
       <td class="td-bold">${fmt(po.total)}</td>
       <td><span class="badge ${sc}">${po.status}</span></td>
       <td><div class="table-actions">
-        ${po.status!=='received'&&po.status!=='cancelled'?`<div class="action-btn" title="Convert to Bill" onclick="convertPOtoBill(${po.id})" style="color:var(--success);border-color:var(--success);"><i class="fas fa-file-invoice"></i></div>`:''}
-        <div class="action-btn danger" onclick="deletePO(${po.id})"><i class="fas fa-trash"></i></div>
+        ${po.status!=='received'&&po.status!=='cancelled'?`<div class="action-btn" title="Convert to Bill" onclick="convertPOtoBill('${po.id}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-file-invoice"></i></div>`:''}
+        <div class="action-btn danger" onclick="deletePO('${po.id}')"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
   }).join('');
