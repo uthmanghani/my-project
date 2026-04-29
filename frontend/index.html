@@ -1302,6 +1302,15 @@ const PAGE_LABELS = {
   recurringbilling:'Recurring Billing',
 };
 
+// STORAGE_KEYS for legacy backup functions (kept for compatibility)
+const STORAGE_KEYS = {
+  customers: 'at_customers', invoices: 'at_invoices', vendors: 'at_vendors',
+  bills: 'at_bills', products: 'at_products', employees: 'at_employees',
+  accounts: 'at_accounts', journal: 'at_journal', settings: 'at_settings',
+  bankAccounts: 'at_bankAccounts', bankTransactions: 'at_bankTransactions',
+  budgets: 'at_budgets', assets: 'at_assets', openingBalances: 'at_ob'
+};
+
 window._dashPeriod = 'This Month';
 function setDashPeriod(p) {
   window._dashPeriod = p;
@@ -2737,7 +2746,7 @@ window.openInvoiceModal = (presetCustomerId) => {
     const cid = String(c.id);
     return `<option value="${cid}" ${cid === presetCustomerId ? 'selected' : ''}>${c.name}</option>`;
   }).join('');
-  const prodOpts = products.map(p=>`<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost}">${p.name} (${fmt(p.price)})</option>`).join('');
+  const prodOpts = products.map(p=>`<option value="${p._id||p.id}" data-price="${p.price}" data-cost="${p.cost}">${p.name} (${fmt(p.price)})</option>`).join('');
   const mid = showModal(
     'New Invoice', `
     <div class="form-row cols-3">
@@ -2810,7 +2819,7 @@ window.openInvoiceModal = (presetCustomerId) => {
 };
 window.addInvLine = (prodOpts) => {
   if (!prodOpts) prodOpts = products.map(p =>
-    '<option value="'+p.id+'" data-price="'+p.price+'">'+p.name+' ('+fmt(p.price)+')</option>').join('');
+    '<option value="'+(p._id||p.id)+'" data-price="'+p.price+'">'+p.name+' ('+fmt(p.price)+')</option>').join('');
   const c = document.getElementById('invLines');
   if (!c) return;
   const d = document.createElement('div');
@@ -3229,7 +3238,14 @@ function updateInvCurrency() {
   if (rateRow) rateRow.style.display = cur === 'NGN' ? 'none' : 'block';
   if (label) label.textContent = cur;
   const rateInput = document.getElementById('invExRate');
-  if (rateInput && cur !== 'NGN') rateInput.value = exchangeRates[cur] || '';
+  if (rateInput) {
+    if (cur !== 'NGN') {
+      rateInput.value = exchangeRates[cur] || '';
+      rateInput.placeholder = `e.g. ${exchangeRates[cur] || '1580'}`;
+    } else {
+      rateInput.value = '';
+    }
+  }
 }
 
 function toggle2FA() {
@@ -3843,7 +3859,7 @@ window.addBillLine = () => {
   const isInv = document.getElementById('bExpAcc')?.value === '1200';
   const prodOpts = '<option value="">— no link —</option>' +
     products.map(p =>
-      '<option value="' + p.id + '">' +
+      '<option value="' + (p._id||p.id) + '">' +
       p.name + ' (' + p.stock + ' in stock)</option>'
     ).join('');
   const d = document.createElement('div');
@@ -3853,13 +3869,13 @@ window.addBillLine = () => {
     '<input class="form-control" placeholder="Description" value="Goods">' +
     '<div class="bill-prod-col" style="display:' +
       (isInv ? '' : 'none') + ';">' +
-      '<select class="form-control bill-product"        style="font-size:0.75rem;padding:7px 6px;">' +
+      '<select class="form-control bill-product" style="font-size:0.75rem;padding:7px 6px;">' +
         prodOpts + '</select>' +
     '</div>' +
     '<input class="form-control qty" type="number" value="1" min="1" oninput="billLineCalc(this)">' +
     '<input class="form-control rate" type="number" value="0" step="0.01" oninput="billLineCalc(this)">' +
     '<input class="form-control amt" readonly>' +
-    '<button class="btn btn-icon btn-ghost" onclick="this.closest(chr39 + .bill-line + chr39).remove();updateBillTotal()"><i class="fas fa-times"></i></button>';
+    '<button class="btn btn-icon btn-ghost" onclick="this.closest(\'.bill-line\').remove();updateBillTotal()"><i class="fas fa-times"></i></button>';
   c.appendChild(d);
 };
 window.billLineCalc = (el) => {
@@ -4039,22 +4055,8 @@ window.saveEmployee = () => {
   const sal = parseFloat(document.getElementById('eSal')?.value);
   if (!name || !sal || sal <= 0) return alert('Name and valid salary required.');
   employees.push({ id:genId(), name, employeeId:document.getElementById('eId')?.value, position:document.getElementById('ePos')?.value, department:document.getElementById('eDept')?.value, annualSalary:sal, annualRent:parseFloat(document.getElementById('eRent')?.value)||0 });
- // ✓ ENTERPRISE FIX: Post payroll journal entries to General Ledger   
- var totalGross   = lines.reduce(function(s,l){ return s+l.gross;   }, 0);   
- var totalPAYE    = lines.reduce(function(s,l){ return s+l.paye;    }, 0);   
- var totalPension = lines.reduce(function(s,l){ return s+l.pension; }, 0);   
- var totalNet     = lines.reduce(function(s,l){ return s+l.net;     }, 0);    
- journalEntries.push({     id: genId(), date: today(),     description: 'Payroll run — ' + periodLabel + ' (' + lines.length + ' employees)',     type: 'payroll',     lines: [       { accountCode: '6000', amount: totalGross,   type: 'debit'  },  
- // Dr Salary Expense (gross)       
- { accountCode: '2200', amount: totalPAYE,    type: 'credit' },  
- // Cr PAYE Payable       
- { accountCode: '2300', amount: totalPension, type: 'credit' },  
- // Cr Pension Payable       
- { accountCode: '1000', amount: totalNet,     type: 'credit' }   
- // Cr Cash (net pay)     
- ]   });   logAction('PAYROLL_RUN', 'Payroll run for ' + periodLabel + ': ' + lines.length + ' employees, gross ' + fmt(totalGross) + ', net ' + fmt(totalNet));   
- recalcBalances(); saveAllData();   showToast('Payroll for ' + periodLabel + ' saved and posted to ledger.', 'success');   
- navigateTo('employees');
+  recalcBalances(); closeTopModal(); renderEmployeesView();
+  showToast('Employee added.', 'success');
 };
 window.deleteEmployee = (id) => { if(confirm('Delete employee?')){ employees=employees.filter(e=>String(e._id||e.id)!==String(id)); saveAllData(); renderEmployeesView(); }};
 let _payEmpId = null;
@@ -5490,15 +5492,14 @@ window.showRpt = (type, btn) => {
     return;
   }
   let tDebits=0, tCredits=0;
-    var tbBalanced = Math.abs(tDebits - tCredits) < 0.01;     cont.innerHTML = `       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">         <div>           <div style="font-size:1rem;font-weight:700;color:var(--text-1);">Trial Balance</div>           <div style="font-size:0.78rem;color:var(--text-3);">As at ${today()} · ${settings.companyName||'My Company'}</div>         </div>         <div style="display:flex;align-items:center;gap:10px;">           <div style="padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;             background:${tbBalanced?'#f0fdf4':'#fef2f2'};color:${tbBalanced?'#16a34a':'#dc2626'};             border:1px solid ${tbBalanced?'#86efac':'#fca5a5'};">             ${tbBalanced?'✓ BALANCED':'✗ UNBALANCED — CHECK ENTRIES'}           </div>           <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>         </div>       </div>`     + `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead>
-      <div class="table-wrap"><table><thead><tr><th>Account Code</th><th>Account Name</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead>
-      <tbody>${accounts.filter(function(a){         // Show account if: (1) non-zero balance, OR (2) has any journal entry lines         
-      if (a.balance !== 0) return true;         
-      var hasActivity = journalEntries.some(function(je){           
-        return je.lines && je.lines.some(function(l){ return l.accountCode === a.code; });         
-      });         
-      var hasOB = openingBalances && openingBalances[a.code] && openingBalances[a.code] !== 0;         
-      return hasActivity || hasOB;       }).map(a=>{
+  const tbRows = accounts.filter(function(a){
+    if (a.balance !== 0) return true;
+    var hasActivity = journalEntries.some(function(je){
+      return je.lines && je.lines.some(function(l){ return l.accountCode === a.code; });
+    });
+    var hasOB = openingBalances && openingBalances[a.code] && openingBalances[a.code] !== 0;
+    return hasActivity || hasOB;
+  }).map(a=>{
         // Drawings is an Equity contra-account with DEBIT normal balance
         const isDrawings = a.name.toLowerCase().includes('drawings') || a.name.toLowerCase().includes('drawing');
         const isDebit = ['Asset','Expense'].includes(a.type) || isDrawings;
@@ -5510,7 +5511,11 @@ window.showRpt = (type, btn) => {
         const finalC = !isDebit ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);         
         tDebits+=finalD; tCredits+=finalC;
         return `<tr><td class="td-mono">${a.code}</td><td>${a.name}</td><td><span class="badge badge-neutral">${a.type}${isDrawings?' <span style="font-size:0.6rem;background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:4px;">contra</span>':''}</span></td><td style="color:var(--brand);font-weight:600;">${finalD?fmt(finalD):''}</td><td style="color:var(--info);font-weight:600;">${finalC?fmt(finalC):''}</td></tr>`;
-      }).join('')}
+      }).join('');
+  var tbBalanced = Math.abs(tDebits - tCredits) < 0.01;
+  cont.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;"><div><div style="font-size:1rem;font-weight:700;color:var(--text-1);">Trial Balance</div><div style="font-size:0.78rem;color:var(--text-3);">As at ${today()} · ${settings.companyName||'My Company'}</div></div><div style="display:flex;align-items:center;gap:10px;"><div style="padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;background:${tbBalanced?'#f0fdf4':'#fef2f2'};color:${tbBalanced?'#16a34a':'#dc2626'};border:1px solid ${tbBalanced?'#86efac':'#fca5a5'};">${tbBalanced?'✓ BALANCED':'✗ UNBALANCED — CHECK ENTRIES'}</div><button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button></div></div>`
+    + `<div class="table-wrap"><table><thead><tr><th>Account Code</th><th>Account Name</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead>
+      <tbody>${tbRows}
       <tr style="font-weight:700;background:var(--surface2);"><td colspan="3">TOTALS</td><td style="color:var(--brand);">${fmt(tDebits)}</td><td style="color:var(--info);">${fmt(tCredits)}</td></tr>
       </tbody></table></div>`;
   }
@@ -5595,7 +5600,7 @@ window.saveProduct = () => {
 window.deleteProduct = (id) => { if(confirm('Delete product?')){ products=products.filter(p=>String(p._id||p.id)!==String(id)); recalcBalances(); renderProductsView(); }};
 window.openStockModal = () => {
   if (!products.length) return alert('No products to adjust.');
-  const opts = products.map(p=>`<option value="${p.id}">${p.name} (${p.stock} units)</option>`).join('');
+  const opts = products.map(p=>`<option value="${p._id||p.id}">${p.name} (${p.stock} units)</option>`).join('');
   showModal('Stock Adjustment',`
     <div class="form-group"><label class="form-label required">Product</label><select class="form-control" id="saProduct">${opts}</select></div>
     <div class="form-row cols-2">
@@ -5784,7 +5789,7 @@ function renderSettingsView() {
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-secondary" onclick="exportData()"><i class="fas fa-download"></i> Export Backup</button>
             <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()"><i class="fas fa-upload"></i> Import Backup</button>
-            <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importData(this)">
+            <input type="file" id="importFile" accept=".json" style="display:none;" onchange="window.importData(this)">
             <button class="btn btn-danger" onclick="clearData()"><i class="fas fa-trash"></i> Clear All Data</button>
           </div>
         </div>
@@ -5842,13 +5847,8 @@ function renderSettingsView() {
     </div>`;
   loadTeamMembers();
 }
-window.exportData = () => {
-  const data = {};
-  Object.entries(STORAGE_KEYS).forEach(([k,v])=>data[k]=JSON.parse(localStorage.getItem(v)||'null'));
-  localStorage.setItem('at_ob', JSON.stringify(openingBalances));  // ADD THIS LINE
-  const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),download:`accounTrack_backup_${today()}.json`});
-  a.click();
-};
+// Legacy export removed – use the async version below
+window.exportData = async () => { await apiFetch('/export').catch(() => showToast('Export failed', 'danger')); };
 window.importData = (input) => {
   const file = input.files[0]; if(!file) return;
   const r = new FileReader();
@@ -6286,47 +6286,7 @@ window.toggleDark = () => {
 
 // ─── GLOBAL SEARCH ───
 // ════════════════════════════════════════════
-function globalSearch(query) {
-  if (!query || query.length < 2) {
-    showToast('Type at least 2 characters to search', 'info'); return;
-  }
-  var q = query.toLowerCase();
-  var results = [];
-
-  // Search customers
-  customers.filter(function(c){ return c.name.toLowerCase().includes(q); })
-    .forEach(function(c){ results.push({ type:'Customer', label:c.name, page:'customers' }); });
-
-  // Search invoices
-  invoices.filter(function(i){ return (i.number||"").toLowerCase().includes(q); })
-    .forEach(function(i){ results.push({ type:'Invoice', label:i.number+" — "+fmt(i.total), page:'invoices' }); });
-
-  // Search vendors
-  vendors.filter(function(v){ return v.name.toLowerCase().includes(q); })
-    .forEach(function(v){ results.push({ type:'Vendor', label:v.name, page:'vendors' }); });
-
-  // Search products
-  products.filter(function(p){ return p.name.toLowerCase().includes(q); })
-    .forEach(function(p){ results.push({ type:'Product', label:p.name+" (Stock: "+p.stock+")", page:'products' }); });
-
-  // Search employees
-  employees.filter(function(e){ return e.name.toLowerCase().includes(q); })
-    .forEach(function(e){ results.push({ type:'Employee', label:e.name, page:'employees' }); });
-
-  if (results.length === 0) {
-    showToast('No results found for "'+query+'"', 'info'); return;
-  }
-  var rows = results.slice(0,15).map(function(r) {
-    return '<div onclick="navigateTo(\''+ r.page +'\');closeTopModal();" '
-      + 'style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;'
-      + 'display:flex;gap:10px;align-items:center;font-size:0.82rem;">'
-      + '<span style="background:var(--brand);color:white;font-size:0.65rem;font-weight:700;'
-      + 'padding:2px 7px;border-radius:8px;flex-shrink:0;">' + r.type + '</span>'
-      + r.label + '</div>';
-  }).join('');
-  showModal('Search Results for "'+query+'"',
-    '<div>' + rows + '</div>', '');
-}
+// globalSearch is defined later – this duplicate removed
 // ════════════════════════════════════════════
 // ─── NAVIGATION ───
 // ════════════════════════════════════════════
@@ -6543,9 +6503,9 @@ window.sendInvoiceReminder = function(invoiceId) {
     + '<textarea class="form-control" id="reminderMsg" rows="10" style="font-size:0.78rem;line-height:1.6;">' + msg + '</textarea>'
     + '<div style="margin-top:10px;font-size:0.75rem;color:var(--text-3);">Copy this message and send via WhatsApp, Email, or SMS to the customer.</div>',
     '<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>'
-    + '<button class="btn btn-warning" style="background:var(--warning);color:white;" onclick="navigator.clipboard.writeText(document.getElementById(\reminderMsg\').value);showToast(\'Reminder copied to clipboard!\',\'success\');">'
+    + '<button class="btn btn-warning" style="background:var(--warning);color:white;" onclick="navigator.clipboard.writeText(document.getElementById(\'reminderMsg\').value);showToast(\'Reminder copied to clipboard!\',\'success\');">'
     + '<i class="fas fa-copy"></i> Copy Message</button>'
-    + '<button class="btn btn-success" onclick="logAction(\'INVOICE_REMINDER\',\'Reminder sent for\ '+'' + inv.number + '');closeTopModal();showToast('Reminder logged for ' + '' + inv.number + '','\success\');"> '
+    + '<button class="btn btn-success" onclick="logAction(\'INVOICE_REMINDER\',\'Reminder sent for ' + inv.number + '\');closeTopModal();showToast(\'Reminder logged for ' + inv.number + '\',\'success\');">'
     + '<i class="fas fa-bell"></i> Log as Sent</button>'
   );
 };
@@ -6603,43 +6563,7 @@ function renderRecentlyViewed() {
     </div>`).join('');
 }
 
-// ─── KEYBOARD SHORTCUTS ───
-document.addEventListener('keydown', function(e) {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-  if (document.querySelector('.modal-overlay')) return;
-  switch(e.key) {
-    case '1': navigateTo('dashboard');    break;
-    case '2': navigateTo('invoices');     break;
-    case '3': navigateTo('customers');    break;
-    case '4': navigateTo('bills');        break;
-    case '5': navigateTo('accounting');   break;
-    case '6': navigateTo('reports');      break;
-    case '7': navigateTo('employees');    break;
-    case '8': navigateTo('products');     break;
-    case '?': showKeyboardHelp();         break;
-  }
-});
-function showKeyboardHelp() {
-  showModal('Keyboard Shortcuts', `
-    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-      <thead><tr style="background:var(--surface2);">
-        <th style="padding:8px 12px;text-align:left;">Key</th>
-        <th style="padding:8px 12px;text-align:left;">Action</th>
-      </tr></thead><tbody>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">1</kbd></td><td>Dashboard</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">2</kbd></td><td>Invoices</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">3</kbd></td><td>Customers</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">4</kbd></td><td>Bills</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">5</kbd></td><td>Chart of Accounts</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">6</kbd></td><td>Reports</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">7</kbd></td><td>Payroll</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">8</kbd></td><td>Products & Inventory</td></tr>
-      <tr><td style="padding:8px 12px;"><kbd style="background:#e2e8f0;padding:2px 7px;border-radius:4px;">?</kbd></td><td>This help screen</td></tr>
-    </tbody></table>`,
-  '', {width:'380px'});
-}
-
-// ════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // ─── API CRUD OVERRIDES — Replace all localStorage-based saves ─────
 // All functions below override the versions defined above in the
 // render section. JavaScript last-write wins, so these API versions
@@ -6689,10 +6613,11 @@ window.saveInvoice = async function() {
   const recurring   = document.getElementById('invRecurring')?.checked || false;
   const recurFreq   = document.getElementById('invRecurFreq')?.value || 'monthly';
   const lines = []; let subtotal = 0; let vatAmt = 0;
+  const productLines = []; // track product lines for COGS + inventory
 
   document.querySelectorAll('#invLines .invoice-line').forEach(l => {
     const sel = l.querySelector('.prod-sel');
-    const prodId = sel.value ? +sel.value : null;
+    const prodId = sel.value ? sel.value : null; // keep as string to match MongoDB _id
     const desc = sel.options[sel.selectedIndex]?.text || 'Item';
     const q = parseFloat(l.querySelector('.qty').value) || 0;
     const r = parseFloat(l.querySelector('.rate').value) || 0;
@@ -6701,38 +6626,89 @@ window.saveInvoice = async function() {
     const vatApplicable = vatChk ? vatChk.checked : true;
     const lineVat = parseFloat((a * (vatApplicable ? (settings.defaultVatRate || 7.5) / 100 : 0)).toFixed(2));
     lines.push({ productId:prodId, description:desc, quantity:q, rate:r, amount:a, vatApplicable, lineVat });
+    // collect product lines so COGS + inventory can be posted
+    if (prodId) {
+      const p = products.find(x => String(x._id||x.id) === String(prodId));
+      if (p) productLines.push({ product: p, quantity: q });
+    }
     subtotal += a; vatAmt += lineVat;
   });
   if (subtotal <= 0) return alert('Invoice total must be > 0.');
+
+  // Pre-flight stock check
+  for (const { product, quantity } of productLines) {
+    if (product.stock < quantity) {
+      return alert('Insufficient stock for: ' + product.name + ' (available: ' + product.stock + ', required: ' + quantity + ')');
+    }
+  }
+
   vatAmt = parseFloat(vatAmt.toFixed(2));
   const total = parseFloat((subtotal + vatAmt).toFixed(2));
   const currency = document.getElementById('invCurrency')?.value || 'NGN';
-    const exRate = currency !== 'NGN' ? (parseFloat(document.getElementById('invExRate')?.value)||exchangeRates[currency]||1) : 1;
-    const invoiceData = {
-      customerId: custId,
-      currency: currency,
-      exchangeRate: exRate,
-      internalNote: document.getElementById('invInternalNote')?.value || '', date: invDate, dueDate, lines, recurring, recurringFreq: recurFreq,
+  const exRate = currency !== 'NGN' ? (parseFloat(document.getElementById('invExRate')?.value)||exchangeRates[currency]||1) : 1;
+  const invoiceData = {
+    customerId: custId,
+    currency: currency,
+    exchangeRate: exRate,
+    internalNote: document.getElementById('invInternalNote')?.value || '',
+    date: invDate, dueDate, lines, recurring, recurringFreq: recurFreq,
     subtotal, vat: vatAmt, total, status: 'unpaid', payments: [], amountPaid: 0, balance: total
   };
   try {
-    await apiFetch('/invoices', { method:'POST', body: JSON.stringify(invoiceData) });
-    logAction('INVOICE_CREATED', 'Invoice created — Customer: ' + (customers.find(c=>c._id===invoiceData.customerId||c.id==invoiceData.customerId)?.name||'') + ' — Total: ₦' + (invoiceData.total||0).toLocaleString());
+    const savedInv = await apiFetch('/invoices', { method:'POST', body: JSON.stringify(invoiceData) });
+    const invNumber = savedInv?.number || '';
+
+    // ── COGS + Inventory reduction: post journal entries per product line ──
+    for (const { product, quantity } of productLines) {
+      const cost = parseFloat((product.cost * quantity).toFixed(2));
+      try {
+        await apiFetch('/journals', {
+          method: 'POST',
+          body: JSON.stringify({
+            date: invDate,
+            description: 'COGS — ' + product.name + (invNumber ? ' (' + invNumber + ')' : ''),
+            type: 'cogs',
+            lines: [
+              { accountCode: '5000', amount: cost, type: 'debit'  }, // Dr COGS
+              { accountCode: '1200', amount: cost, type: 'credit' }  // Cr Inventory
+            ]
+          })
+        });
+        // Reduce stock locally for immediate UI update (backend also updates)
+        product.stock -= quantity;
+        // Record inventory movement via API
+        await apiFetch('/products/adjust', {
+          method: 'POST',
+          body: JSON.stringify({ productId: String(product._id||product.id), quantity, type: 'out', reference: 'Invoice ' + invNumber })
+        }).catch(() => {}); // non-fatal if endpoint not available
+      } catch(cogsErr) {
+        console.warn('COGS journal post failed for ' + product.name, cogsErr);
+      }
+    }
+
+    logAction('INVOICE_CREATED', 'Invoice created — Customer: ' + (customers.find(c=>String(c._id||c.id)===custId)?.name||'') + ' — Total: ₦' + total.toLocaleString());
     closeTopModal();
     await loadAllData();
+    recalcBalances();
     renderInvoicesView();
     renderDashboard();
-    showToast('Invoice created and posted to ledger.', 'success');
+    showToast('Invoice ' + invNumber + ' created and posted to ledger.', 'success');
   } catch (err) { showToast(err.message || 'Save failed.', 'danger'); }
 };
 
 window.deleteInvoice = async function(id) {
-  if (!confirm('Delete this invoice?')) return;
+  const inv = invoices.find(i => i.id === id || i._id === id);
+  if (!inv) return;
+  let msg = 'Delete this invoice?';
+  if (inv.status === 'paid') msg += ' This invoice is already paid. Deleting will not reverse payments or COGS.';
+  if (inv.lines && inv.lines.some(l => l.productId)) msg += ' Stock and COGS will NOT be automatically restored.';
+  if (!confirm(msg)) return;
   try {
     await apiFetch(`/invoices/${id}`, { method:'DELETE' });
     await loadAllData();
     if (currentPage === 'invoices') renderInvoicesView();
     renderDashboard();
+    showToast('Invoice deleted. Note: stock/COGS not auto-reversed.', 'warning');
   } catch (err) { showToast(err.message || 'Delete failed.', 'danger'); }
 };
 
@@ -6774,25 +6750,72 @@ window.saveBill = async function() {
   const expCode = document.getElementById('bExpAcc').value;
   const whtRate = parseFloat(document.getElementById('bWht')?.value) || 0;
   const lines = []; let total = 0;
+  const productLines = []; // collect productId, quantity, cost for inventory
+  const isInventoryPurchase = (expCode === '1200');
+
   document.querySelectorAll('#billLines .bill-line').forEach(l => {
     const q = parseFloat(l.querySelector('.qty').value) || 0;
     const r = parseFloat(l.querySelector('.rate').value) || 0;
     const a = q * r;
-    lines.push({ description:l.querySelector('input').value, quantity:q, rate:r, amount:a });
+    const desc = l.querySelector('input').value || 'Item';
+    lines.push({ description: desc, quantity: q, rate: r, amount: a });
     total += a;
+
+    if (isInventoryPurchase) {
+      const prodSelect = l.querySelector('.bill-product');
+      if (prodSelect && prodSelect.value) {
+        const prodId = prodSelect.value;
+        productLines.push({ productId: prodId, quantity: q, cost: r });
+      }
+    }
   });
   if (total <= 0) return alert('Bill total must be > 0.');
-  const isInventoryPurchase = (expCode === '1200');
-  const billData = { vendorId, date:bDate, dueDate:bDue, lines, total, whtRate, expenseAccount:expCode, isInventoryPurchase, status:'unpaid', payments:[], amountPaid:0, balance:total };
+
+  const whtAmount = parseFloat((total * (whtRate / 100)).toFixed(2));
+  const netPay = total - whtAmount;
+
+  const billData = {
+    vendorId, date: bDate, dueDate: bDue, lines, total,
+    whtRate, whtAmount, netPayable: netPay,
+    expenseAccount: expCode, isInventoryPurchase,
+    status: 'unpaid', payments: [], amountPaid: 0, balance: total
+  };
+
   try {
-    await apiFetch('/bills', { method:'POST', body:JSON.stringify(billData) });
-    logAction('BILL_CREATED', 'Bill created — Vendor: ' + (vendors.find(v=>v._id===vendorId||v.id==vendorId)?.name||vendorId) + ' — Total: ₦' + total.toLocaleString());
+    const createdBill = await apiFetch('/bills', { method:'POST', body: JSON.stringify(billData) });
+    const billNumber = createdBill?.number || 'BILL';
+
+    // Update stock if inventory purchase
+    if (isInventoryPurchase && productLines.length) {
+      for (const pl of productLines) {
+        try {
+          await apiFetch('/products/adjust', {
+            method: 'POST',
+            body: JSON.stringify({
+              productId: String(pl.productId),
+              quantity: pl.quantity,
+              type: 'in',
+              reference: `Bill ${billNumber}`
+            })
+          });
+          // Also optionally post journal entry (backend should already do Dr Inventory, Cr AP)
+        } catch (stockErr) {
+          console.warn(`Stock update failed for product ${pl.productId}`, stockErr);
+        }
+      }
+      showToast(`Inventory updated: ${productLines.length} product(s) stock increased.`, 'success');
+    }
+
+    logAction('BILL_CREATED', 'Bill created — Vendor: ' + (vendors.find(v=>String(v._id||v.id)===String(vendorId))?.name||vendorId) + ' — Total: ₦' + total.toLocaleString());
     closeTopModal();
     await loadAllData();
+    recalcBalances();
     renderBillsView();
     renderDashboard();
-    showToast('Bill entered and posted to ledger.', 'success');
-  } catch (err) { showToast(err.message || 'Save failed.', 'danger'); }
+    showToast(`Bill ${billNumber} entered and posted to ledger.`, 'success');
+  } catch (err) {
+    showToast(err.message || 'Save failed.', 'danger');
+  }
 };
 
 window.deleteBill = async function(id) {
@@ -6986,15 +7009,15 @@ window.deleteProduct = async function(id) {
 };
 
 window.saveStockAdj = async function() {
-  const pId  = +document.getElementById('saProduct').value;
+  const pId  = document.getElementById('saProduct').value; // keep as string (MongoDB _id)
   const qty  = parseInt(document.getElementById('saQty').value) || 0;
   const type = document.getElementById('saType').value;
   const ref  = document.getElementById('saRef')?.value;
-  const p = products.find(x => x.id === pId);
+  const p = products.find(x => String(x._id||x.id) === String(pId));
   if (!p) return;
   if (type === 'out' && p.stock < qty) return alert('Insufficient stock.');
   try {
-    await apiFetch('/products/adjust', { method:'POST', body:JSON.stringify({ productId:pId, quantity:qty, type, reference:ref }) });
+    await apiFetch('/products/adjust', { method:'POST', body:JSON.stringify({ productId: String(pId), quantity:qty, type, reference:ref }) });
     closeTopModal();
     await loadAllData();
     renderProductsView();
@@ -7296,49 +7319,11 @@ function toggleSidebarCollapse() {
   }
 })();
 
-// ════════════════════════════════════════════════════════════
-// ─── PAGINATION HELPER ───────────────────────────────────────
-// ════════════════════════════════════════════════════════════
+// ─── PAGE SIZE CONSTANT ──────────────────────────────────────────────────────
 const PAGE_SIZE = 20;
 const pageState = {};
 const searchState = {};
- 
-function filterItems(key, items, fields) {
-  const q = (searchState[key] || '').toLowerCase().trim();
-  if (!q) return items;
-  return items.filter(item => fields.some(f => (item[f] || '').toLowerCase().includes(q)));
-}
- 
-function searchBar(key, placeholder, renderFn) {
-  return `<div style="position:relative;margin-bottom:14px;">
-    <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-4);font-size:0.8rem;"></i>
-    <input type="text" placeholder="${placeholder}" value="${searchState[key]||''}"
-      oninput="searchState['${key}']=this.value;pageState['${key}']=1;${renderFn}()"
-      style="width:100%;padding:9px 14px 9px 34px;border:1px solid var(--border);border-radius:8px;font-size:0.82rem;background:var(--surface2);color:var(--text-1);outline:none;">
-  </div>`;
-}
 
- 
-function paginate(key, items) {
-  if (!pageState[key]) pageState[key] = 1;
-  const total = items.length;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-  pageState[key] = Math.min(pageState[key], Math.max(1, totalPages));
-  const start = (pageState[key] - 1) * PAGE_SIZE;
-  return {
-    items: items.slice(start, start + PAGE_SIZE),
-    controls: totalPages <= 1 ? '' : `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);font-size:0.78rem;color:var(--text-3);">
-        <span>Showing ${start+1}–${Math.min(start+PAGE_SIZE,total)} of ${total}</span>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-secondary btn-sm" onclick="goPage('${key}',${pageState[key]-1})" ${pageState[key]<=1?'disabled':''}>Prev</button>
-          <span style="padding:6px 10px;background:var(--brand);color:white;border-radius:6px;font-weight:600;">${pageState[key]}</span>
-          <button class="btn btn-secondary btn-sm" onclick="goPage('${key}',${pageState[key]+1})" ${pageState[key]>=totalPages?'disabled':''}>Next</button>
-        </div>
-      </div>`
-  };
-}
- 
 function goPage(key, page) {
   pageState[key] = page;
   const renders = { customers: renderCustomersView, invoices: renderInvoicesView,
@@ -7812,32 +7797,38 @@ window.toggleRB = (id) => {
   showToast(rb.name+' '+(rb.active?'resumed':'paused'),'success');
 };
 
-window.runRB = (id) => {
+window.runRB = async (id) => {
   const rb = recurringBillings.find(r=>r.id===id); if(!rb) return;
-  if (rb.type==='invoice') {
-    invoices.push({ id:genId(), customerId:rb.entityId,
-      number:'INV-'+String(invoices.length+1).padStart(4,'0'),
-      date:today(), dueDate:futureDate(settings.defaultDueDays||30),
-      lines:[{description:rb.description||rb.name,quantity:1,unitPrice:rb.amount,amount:rb.amount}],
-      subtotal:rb.amount, vat:0, total:rb.amount, status:'unpaid',
-      amountPaid:0, balance:rb.amount, payments:[], recurringId:rb.id });
-  } else {
-    bills.push({ id:genId(), vendorId:rb.entityId,
-      number:'BILL-'+String(bills.length+1).padStart(4,'0'),
-      date:today(), dueDate:futureDate(30),
-      lines:[{description:rb.description||rb.name,quantity:1,unitPrice:rb.amount,amount:rb.amount}],
-      total:rb.amount, status:'unpaid', amountPaid:0, balance:rb.amount, payments:[],
-      expenseAccount:'6000', whtRate:0, whtAmount:0, netPayable:rb.amount, recurringId:rb.id });
-  }
-  const next = new Date(rb.nextDate);
-  if (rb.frequency==='weekly') next.setDate(next.getDate()+7);
-  else if (rb.frequency==='monthly') next.setMonth(next.getMonth()+1);
-  else if (rb.frequency==='quarterly') next.setMonth(next.getMonth()+3);
-  else next.setFullYear(next.getFullYear()+1);
-  rb.nextDate = next.toISOString().split('T')[0];
-  localStorage.setItem('at_recurring', JSON.stringify(recurringBillings));
-  saveAllData(); renderRecurringBillingView();
-  showToast((rb.type==='invoice'?'Invoice':'Bill')+' generated from schedule: '+rb.name,'success');
+  try {
+    if (rb.type==='invoice') {
+      await apiFetch('/invoices', { method:'POST', body: JSON.stringify({
+        customerId: rb.entityId,
+        date: today(), dueDate: futureDate(settings.defaultDueDays||30),
+        lines:[{description:rb.description||rb.name, quantity:1, rate:rb.amount, amount:rb.amount, vatApplicable:false, lineVat:0}],
+        subtotal: rb.amount, vat: 0, total: rb.amount,
+        status:'unpaid', payments:[], amountPaid:0, balance:rb.amount, recurringId: rb.id
+      })});
+    } else {
+      await apiFetch('/bills', { method:'POST', body: JSON.stringify({
+        vendorId: rb.entityId,
+        date: today(), dueDate: futureDate(30),
+        lines:[{description:rb.description||rb.name, quantity:1, rate:rb.amount, amount:rb.amount}],
+        total: rb.amount, status:'unpaid', amountPaid:0, balance:rb.amount, payments:[],
+        expenseAccount:'6000', whtRate:0, whtAmount:0, netPayable:rb.amount, recurringId: rb.id
+      })});
+    }
+    const next = new Date(rb.nextDate);
+    if (rb.frequency==='weekly') next.setDate(next.getDate()+7);
+    else if (rb.frequency==='monthly') next.setMonth(next.getMonth()+1);
+    else if (rb.frequency==='quarterly') next.setMonth(next.getMonth()+3);
+    else next.setFullYear(next.getFullYear()+1);
+    rb.nextDate = next.toISOString().split('T')[0];
+    localStorage.setItem('at_recurring', JSON.stringify(recurringBillings));
+    await loadAllData();
+    recalcBalances();
+    renderRecurringBillingView();
+    showToast((rb.type==='invoice'?'Invoice':'Bill')+' generated from schedule: '+rb.name,'success');
+  } catch(err) { showToast(err.message||'Failed to generate recurring entry','danger'); }
 };
 
 window.deleteRB = (id) => {
@@ -7967,16 +7958,24 @@ window.convertPOtoBill = async (poId) => {
       reader.readAsDataURL(attFile);
     });
   }
-  bills.push({id:genId(),number:'BILL-'+String(bills.length+1).padStart(4,'0'),
-    vendorId:po.vendorId,date:today(),dueDate:futureDate(30),
-    lines:po.lines,total:po.total,status:'unpaid',
-    amountPaid:0,balance:po.total,payments:[],
-    expenseAccount:po.expenseAccount,isInventoryPurchase:false,
-    whtRate:0,whtAmount:0,netPayable:po.total,poRef:po.number});
-  po.status='received';
-  localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
-  saveAllData();renderPurchaseOrdersView();
-  showToast('Bill created from '+po.number+'. Go to Bills to pay.','success');
+  try {
+    await apiFetch('/bills', { method:'POST', body: JSON.stringify({
+      vendorId: String(po.vendorId),
+      date: today(), dueDate: futureDate(30),
+      lines: po.lines, total: po.total, status: 'unpaid',
+      amountPaid: 0, balance: po.total, payments: [],
+      expenseAccount: po.expenseAccount || '6000',
+      isInventoryPurchase: false,
+      whtRate: 0, whtAmount: 0, netPayable: po.total, poRef: po.number,
+      ...(attachment ? { attachment } : {})
+    })});
+    po.status = 'received';
+    localStorage.setItem('at_pos', JSON.stringify(purchaseOrders));
+    await loadAllData();
+    recalcBalances();
+    renderPurchaseOrdersView();
+    showToast('Bill created from '+po.number+'. Go to Bills to pay.','success');
+  } catch(err) { showToast(err.message||'Failed to create bill from PO','danger'); }
 };
 
 window.deletePO = (id) => {
