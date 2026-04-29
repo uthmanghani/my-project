@@ -5202,132 +5202,112 @@ function renderReportsView() {
       <button class="report-tab" onclick="showRpt('vat',this)">VAT Summary</button>
       <button class="report-tab" onclick="showRpt('aging',this)">AR Aging</button>
       <button class="report-tab" onclick="showRpt('dept',this)">By Department</button>
+      <button class="report-tab" onclick="showRpt('health',this)">Financial Health</button>
     </div>
     <div id="rptContent" class="report-panel"></div>`;
   showRpt('pl');
 }
 window.showRpt = (type, btn) => {
-  document.querySelectorAll('.report-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.report-tab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  const revenue  = accounts.filter(a=>a.type==='Revenue').reduce((s,a)=>s+a.balance,0);
-  const expenses = accounts.filter(a=>a.type==='Expense').reduce((s,a)=>s+a.balance,0);
-  const netIncome= revenue - expenses;
-  const assets   = accounts.filter(a=>a.type==='Asset').reduce((s,a)=>s+a.balance,0);
-  const liabs    = accounts.filter(a=>a.type==='Liability').reduce((s,a)=>s+Math.abs(a.balance),0);
-  // ✓ Drawings reduces equity (it is a contra-equity account with debit balance)   
-  const equityCore = accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).reduce((s,a)=>s+a.balance,0);   
-  const drawingsTotal = accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing')).reduce((s,a)=>s+a.balance,0);   
-  const equity   = equityCore - drawingsTotal + netIncome;
+  const revenue  = accounts.filter(a => a.type === 'Revenue').reduce((s,a) => s + a.balance, 0);
+  const expenses = accounts.filter(a => a.type === 'Expense').reduce((s,a) => s + a.balance, 0);
+  const netIncome = revenue - expenses;
+  const assets   = accounts.filter(a => a.type === 'Asset').reduce((s,a) => s + a.balance, 0);
+  const liabs    = accounts.filter(a => a.type === 'Liability').reduce((s,a) => s + Math.abs(a.balance), 0);
+  const equityCore = accounts.filter(a => a.type === 'Equity' && !a.name.toLowerCase().includes('drawing')).reduce((s,a) => s + a.balance, 0);
+  const drawingsTotal = accounts.filter(a => a.type === 'Equity' && a.name.toLowerCase().includes('drawing')).reduce((s,a) => s + a.balance, 0);
+  const equity = equityCore - drawingsTotal + netIncome;
   const cont = document.getElementById('rptContent');
-  if (type==='pl') {
+
+  if (type === 'pl') {
     cont.innerHTML = `
       <div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:16px;">Statement of Profit or Loss</div>
       <div class="report-section"><h4>Revenue</h4>${accounts.filter(a=>a.type==='Revenue').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Revenue</span><span>${fmt(revenue)}</span></div></div>
       <div class="report-section"><h4>Expenses</h4>${accounts.filter(a=>a.type==='Expense').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Expenses</span><span>${fmt(expenses)}</span></div></div>
       <div class="report-row ${netIncome>=0?'net-income':'net-loss'}"><span>${netIncome>=0?'Net Profit':'Net Loss'}</span><span>${fmt(Math.abs(netIncome))}</span></div>`;
-  } else if (type==='bs') {
+    return;
+  }
+  if (type === 'bs') {
     cont.innerHTML = `
       <div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:16px;">Statement of Financial Position<span style="float:right;font-size:0.78rem;font-weight:400;color:var(--text-3);">${today()}</span></div>
       <div class="report-section"><h4>Assets</h4>${accounts.filter(a=>a.type==='Asset').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Assets</span><span>${fmt(assets)}</span></div></div>
       <div class="report-section"><h4>Liabilities</h4>${accounts.filter(a=>a.type==='Liability').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(Math.abs(a.balance))}</span></div>`).join('')}<div class="report-row total"><span>Total Liabilities</span><span>${fmt(liabs)}</span></div></div>
-      <div class="report-section"><h4>Equity</h4>         ${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}         <div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>         ${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>           `<div class="report-row" style="color:var(--danger);"><span>${a.name} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}         <div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
+      <div class="report-section"><h4>Equity</h4>${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>`<div class="report-row" style="color:var(--danger);"><span>${a.name} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}<div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
       <div class="report-row total" style="font-size:0.95rem;"><span>Total Liabilities + Equity</span><span>${fmt(liabs+equity)}</span></div>`;
-  } else if (type==='gl') {
-    // Build per-account ledger with running balance
+    return;
+  }
+  if (type === 'gl') {
     var glAccFilter = (document.getElementById('glAccFilter') ? document.getElementById('glAccFilter').value : 'all');
     var glDateFrom  = (document.getElementById('glDateFrom')  ? document.getElementById('glDateFrom').value  : '');
     var glDateTo    = (document.getElementById('glDateTo')    ? document.getElementById('glDateTo').value    : '');
-
-    var accOpts = '<option value="all">All Accounts</option>'
-      + accounts.map(function(a){ return '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>'; }).join('');
-
-    var glSections = accounts.filter(function(a){
+    var accOpts = '<option value="all">All Accounts</option>' + accounts.map(a => '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>').join('');
+    var glSections = accounts.filter(a => {
       if (glAccFilter !== 'all' && a.code !== glAccFilter) return false;
-      // Only show accounts that have at least one transaction OR an opening balance
-      var hasTx = journalEntries.some(function(je){ return je.lines.some(function(l){ return l.accountCode===a.code; }); });
+      var hasTx = journalEntries.some(je => je.lines.some(l => l.accountCode === a.code));
       var hasOB = !!(openingBalances && openingBalances[a.code]);
       return hasTx || hasOB;
-    }).map(function(acc) {
+    }).map(acc => {
       var ob = (openingBalances && openingBalances[acc.code]) || 0;
-      var isDebitNormal = ['Asset','Expense'].includes(acc.type)
-                       || acc.name.toLowerCase().includes('drawings');
+      var isDebitNormal = ['Asset','Expense'].includes(acc.type) || acc.name.toLowerCase().includes('drawings');
       var runBal = ob;
       var txRows = '';
-
-      // Opening balance row
       if (ob !== 0) {
         txRows += '<tr style="background:var(--accent-lt);">'
           + '<td style="padding:7px 10px;font-size:0.78rem;color:var(--text-3);">—</td>'
           + '<td style="padding:7px 10px;font-size:0.78rem;font-style:italic;color:var(--text-3);">Opening Balance</td>'
           + '<td style="padding:7px 10px;font-size:0.78rem;"></td>'
           + '<td style="padding:7px 10px;font-size:0.78rem;font-weight:600;color:var(--brand);">' + (isDebitNormal && ob>0 ? fmt(ob) : (isDebitNormal && ob<0 ? fmt(Math.abs(ob))+' Cr' : '')) + '</td>'
-          + '<td style="padding:7px 10px;font-size:0.78rem;font-weight:600;color:var(--info);">'  + (!isDebitNormal && ob>0 ? fmt(ob) : (!isDebitNormal && ob<0 ? fmt(Math.abs(ob))+' Dr' : '')) + '</td>'
+          + '<td style="padding:7px 10px;font-size:0.78rem;font-weight:600;color:var(--info);">' + (!isDebitNormal && ob>0 ? fmt(ob) : (!isDebitNormal && ob<0 ? fmt(Math.abs(ob))+' Dr' : '')) + '</td>'
           + '<td style="padding:7px 10px;font-size:0.78rem;font-weight:700;color:var(--text-1);">' + fmt(ob) + '</td></tr>';
       }
-
-      // Build sorted transactions for this account
       var accTx = [];
-      journalEntries.forEach(function(je) {
-        je.lines.forEach(function(l) {
+      journalEntries.forEach(je => {
+        je.lines.forEach(l => {
           if (l.accountCode !== acc.code) return;
           if (glDateFrom && je.date < glDateFrom) return;
-          if (glDateTo   && je.date > glDateTo)   return;
+          if (glDateTo && je.date > glDateTo) return;
           accTx.push({ date: je.date, desc: je.description, type: l.type, amount: l.amount, jeId: je.id });
         });
       });
-      accTx.sort(function(a,b){ return a.date > b.date ? 1 : -1; });
-
-      accTx.forEach(function(tx) {
-        var drAmt = tx.type==='debit' ? tx.amount : 0;
-        var crAmt = tx.type==='credit' ? tx.amount : 0;
-        if (isDebitNormal) {
-          runBal += drAmt - crAmt;
-        } else {
-          runBal += crAmt - drAmt;
-        }
+      accTx.sort((a,b) => a.date > b.date ? 1 : -1);
+      accTx.forEach(tx => {
+        var drAmt = tx.type === 'debit' ? tx.amount : 0;
+        var crAmt = tx.type === 'credit' ? tx.amount : 0;
+        if (isDebitNormal) runBal += drAmt - crAmt;
+        else runBal += crAmt - drAmt;
         var balClass = runBal >= 0 ? 'var(--text-1)' : 'var(--danger)';
         txRows += '<tr style="border-bottom:1px solid var(--border);">'
           + '<td style="padding:7px 10px;font-size:0.78rem;color:var(--text-2);">' + tx.date + '</td>'
           + '<td style="padding:7px 10px;font-size:0.78rem;">' + tx.desc + '</td>'
           + '<td style="padding:7px 10px;font-size:0.72rem;"><span class="badge badge-neutral">' + tx.type + '</span></td>'
           + '<td style="padding:7px 10px;font-size:0.82rem;font-weight:600;color:var(--brand);">' + (drAmt ? fmt(drAmt) : '') + '</td>'
-          + '<td style="padding:7px 10px;font-size:0.82rem;font-weight:600;color:var(--info);">'  + (crAmt ? fmt(crAmt) : '') + '</td>'
+          + '<td style="padding:7px 10px;font-size:0.82rem;font-weight:600;color:var(--info);">' + (crAmt ? fmt(crAmt) : '') + '</td>'
           + '<td style="padding:7px 10px;font-size:0.82rem;font-weight:700;color:' + balClass + ';">' + fmt(runBal) + '</td></tr>';
       });
-
-      if (!txRows) return '';  // skip if no rows
-      var typeColors = {Asset:'var(--brand)',Liability:'var(--warning)',Equity:'var(--info)',Revenue:'var(--success)',Expense:'var(--danger)'};
-
+      if (!txRows) return '';
       return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:16px;overflow:hidden;">'
-        // Account header
         + '<div style="padding:11px 16px;background:var(--brand);display:flex;align-items:center;gap:12px;">'
         + '<div style="font-family:monospace;font-size:0.78rem;font-weight:700;background:rgba(255,255,255,0.15);color:white;padding:2px 8px;border-radius:4px;">' + acc.code + '</div>'
         + '<div style="font-size:0.9rem;font-weight:700;color:white;flex:1;">' + acc.name + '</div>'
         + '<span style="font-size:0.68rem;font-weight:700;background:rgba(255,255,255,0.15);color:white;padding:2px 8px;border-radius:10px;">' + acc.type + '</span>'
         + '<div style="text-align:right;color:rgba(255,255,255,0.85);font-size:0.75rem;">Balance: <strong>' + fmt(runBal) + '</strong></div>'
         + '</div>'
-        // Transaction table
         + '<table style="width:100%;border-collapse:collapse;">'
         + '<thead><tr style="background:var(--surface2);border-bottom:2px solid var(--border);">'
-        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;color:var(--text-3);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Date</th>'
-        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;color:var(--text-3);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Description</th>'
-        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;color:var(--text-3);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">DC</th>'
-        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;color:var(--brand);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Debit</th>'
-        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;color:var(--info);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Credit</th>'
-        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;color:var(--text-2);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Running Balance</th>'
+        + '<th style="padding:7px 10px;font-size:0.68rem;text-align:left;">Date</th><th>Description</th><th>DC</th><th>Debit</th><th>Credit</th><th>Balance</th>'
         + '</tr></thead><tbody>' + txRows + '</tbody></table></div>';
     }).join('');
-
     cont.innerHTML = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;">'
       + '<div style="font-size:1rem;font-weight:700;color:var(--text-1);">General Ledger</div>'
       + '<div style="flex:1;"></div>'
       + '<select id="glAccFilter" onchange="showRpt(\'gl\')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:0.8rem;background:var(--surface);color:var(--text-1);">' + accOpts + '</select>'
       + '<input type="date" id="glDateFrom" value="'+glDateFrom+'" onchange="showRpt(\'gl\')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:0.8rem;background:var(--surface);color:var(--text-1);" title="From date">'
       + '<input type="date" id="glDateTo"   value="'+glDateTo+'"   onchange="showRpt(\'gl\')" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:0.8rem;background:var(--surface);color:var(--text-1);" title="To date">'
-      + '</div>'
-      + (glSections.trim() ? glSections : '<div class="empty-state" style="padding:48px;"><i class="fas fa-book-open"></i><p>No transactions found for the selected filters.</p></div>');
-  } else {
-    if (type === 'dept') {
+      + '</div>' + (glSections.trim() ? glSections : '<div class="empty-state" style="padding:48px;"><i class="fas fa-book-open"></i><p>No transactions found for the selected filters.</p></div>');
+    return;
+  }
+  if (type === 'dept') {
     const depts = [...new Set(employees.map(e=>e.department||'General'))].sort();
     const allDepts = ['All', ...depts];
     const selDept = window._selectedDept || 'All';
@@ -5345,42 +5325,19 @@ window.showRpt = (type, btn) => {
         <span style="font-size:0.78rem;font-weight:600;color:var(--text-3);">DEPARTMENT:</span>
         ${allDepts.map(d=>`<button onclick="window._selectedDept='${d}';showRpt('dept')" class="btn btn-sm ${selDept===d?'btn-primary':'btn-secondary'}">${d}</button>`).join('')}
       </div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Department</th><th>Headcount</th><th>Monthly Gross</th><th>PAYE</th><th>Net Pay</th><th>% of Total Payroll</th></tr></thead>
-        <tbody>
-          ${Object.entries(deptExpenses)
-            .filter(([dept])=>selDept==='All'||dept===selDept)
-            .map(([dept,d])=>`<tr>
-              <td class="td-bold">${dept}</td>
-              <td>${d.headcount} employee${d.headcount!==1?'s':''}</td>
-              <td class="td-bold">${fmt(d.salary)}</td>
-              <td style="color:var(--danger);">${fmt(d.paye)}</td>
-              <td style="color:var(--success);">${fmt(d.net)}</td>
-              <td>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="flex:1;height:8px;background:var(--border);border-radius:4px;">
-                    <div style="width:${totalAll>0?Math.round((d.salary/totalAll)*100):0}%;height:100%;background:var(--brand);border-radius:4px;"></div>
-                  </div>
-                  <span style="font-size:0.78rem;font-weight:600;">${totalAll>0?Math.round((d.salary/totalAll)*100):0}%</span>
-                </div>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-        <tfoot>
-          <tr style="background:var(--surface2);font-weight:700;">
-            <td>TOTAL</td>
-            <td>${employees.length} employees</td>
-            <td>${fmt(totalAll)}</td>
-            <td style="color:var(--danger);">${fmt(Object.values(deptExpenses).reduce((s,d)=>s+d.paye,0))}</td>
-            <td style="color:var(--success);">${fmt(Object.values(deptExpenses).reduce((s,d)=>s+d.net,0))}</td>
-            <td>100%</td>
-          </tr>
-        </tfoot>
-      </table></div>
+      <div class="table-wrap"><table><thead><tr><th>Department</th><th>Headcount</th><th>Monthly Gross</th><th>PAYE</th><th>Net Pay</th><th>% of Total Payroll</th></tr></thead>
+      <tbody>${Object.entries(deptExpenses).filter(([dept])=>selDept==='All'||dept===selDept).map(([dept,d])=>`
+        <tr><td class="td-bold">${dept}</td><td>${d.headcount} employee${d.headcount!==1?'s':''}</td>
+        <td class="td-bold">${fmt(d.salary)}</td><td style="color:var(--danger);">${fmt(d.paye)}</td>
+        <td style="color:var(--success);">${fmt(d.net)}</td>
+        <td><div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:8px;background:var(--border);border-radius:4px;"><div style="width:${totalAll>0?Math.round((d.salary/totalAll)*100):0}%;height:100%;background:var(--brand);border-radius:4px;"></div></div><span style="font-size:0.78rem;font-weight:600;">${totalAll>0?Math.round((d.salary/totalAll)*100):0}%</span></div></td></tr>
+      `).join('')}</tbody>
+      <tfoot><tr style="background:var(--surface2);font-weight:700;"><td>TOTAL</td><td>${employees.length} employees</td>
+      <td>${fmt(totalAll)}</td><td style="color:var(--danger);">${fmt(Object.values(deptExpenses).reduce((s,d)=>s+d.paye,0))}</td>
+      <td style="color:var(--success);">${fmt(Object.values(deptExpenses).reduce((s,d)=>s+d.net,0))}</td><td>100%</td></tr></tfoot></table></div>
       ${depts.length===0?'<div style="text-align:center;padding:32px;color:var(--text-3);"><i class="fas fa-chart-pie" style="font-size:2rem;margin-bottom:8px;"></i><p>Add departments to employees to see department breakdown.</p></div>':''}`;
     return;
   }
-
   if (type === 'aging') {
     const todayMs = new Date();
     const buckets = { current:[], d1_30:[], d31_60:[], d61_90:[], d90plus:[] };
@@ -5411,113 +5368,220 @@ window.showRpt = (type, btn) => {
       ${bucket('31 – 60 Days Overdue', buckets.d31_60, '#f97316')}
       ${bucket('61 – 90 Days Overdue', buckets.d61_90, 'var(--danger)')}
       ${bucket('Over 90 Days Overdue', buckets.d90plus, '#7f1d1d')}
-      ${grand===0?'<div class="empty-state" style="padding:32px"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No outstanding receivables.</p></div>':
-        `<div class="report-row total" style="font-size:0.95rem;margin-top:16px;"><span>Total Outstanding Receivables</span><span>${fmt(grand)}</span></div>`}`;
+      ${grand===0?'<div class="empty-state" style="padding:32px"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No outstanding receivables.</p></div>': `<div class="report-row total" style="font-size:0.95rem;margin-top:16px;"><span>Total Outstanding Receivables</span><span>${fmt(grand)}</span></div>`}`;
     return;
   }
   if (type === 'cf') {
-    // ── CASH FLOW STATEMENT (IAS 7 Indirect Method) ──────────────────
     const totalRevenue  = accounts.filter(a => a.type === 'Revenue').reduce((s,a) => s + a.balance, 0);
     const totalExpense  = accounts.filter(a => a.type === 'Expense').reduce((s,a) => s + a.balance, 0);
-    const netIncome     = totalRevenue - totalExpense;
+    const netIncomeCF   = totalRevenue - totalExpense;
     const arChange      = -(accounts.find(a => a.code === '1100')?.balance || 0);
     const apChange      =  (accounts.find(a => a.code === '2000')?.balance || 0);
     const invChange     = -(accounts.find(a => a.code === '1200')?.balance || 0);
-    const operatingCF   = netIncome + arChange + apChange + invChange;
+    const operatingCF   = netIncomeCF + arChange + apChange + invChange;
     const fixedAssets   = accounts.filter(a => a.type === 'Asset' && (a.code.startsWith('14') || a.code.startsWith('15'))).reduce((s,a) => s + a.balance, 0);
     const investingCF   = -fixedAssets;
-    const equity        = accounts.filter(a => a.type === 'Equity').reduce((s,a) => s + a.balance, 0);
-    const financingCF   = equity;
+    const equityCF      = accounts.filter(a => a.type === 'Equity').reduce((s,a) => s + a.balance, 0);
+    const financingCF   = equityCF;
     const netCash       = operatingCF + investingCF + financingCF;
-    const cfRow = (label, amt, indent) =>
-      `<div style="display:flex;justify-content:space-between;padding:7px ${indent?'32px':'12px'} 7px 12px;font-size:0.82rem;border-bottom:1px solid var(--border);">
-        <span style="color:var(--text-2);${indent?'padding-left:16px;':''}">${label}</span>
-        <strong style="color:${amt>=0?'var(--success)':'var(--danger)'};">${fmt(amt)}</strong></div>`;
+    const cfRow = (label, amt, indent) => `<div style="display:flex;justify-content:space-between;padding:7px ${indent?'32px':'12px'} 7px 12px;font-size:0.82rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-2);${indent?'padding-left:16px;':''}">${label}</span><strong style="color:${amt>=0?'var(--success)':'var(--danger)'};">${fmt(amt)}</strong></div>`;
     cont.innerHTML = `<div style="font-size:1rem;font-weight:700;margin-bottom:16px;color:var(--text-1);">Statement of Cash Flows — Indirect Method (IAS 7)</div>
       <div class="report-panel" style="padding:0;">
         <div style="padding:10px 12px;background:var(--brand);border-radius:var(--radius-md) var(--radius-md) 0 0;color:white;font-size:0.82rem;font-weight:700;">A. Operating Activities</div>
-        ${cfRow('Net Income', netIncome, false)}
+        ${cfRow('Net Income', netIncomeCF, false)}
         ${cfRow('Decrease / (Increase) in Accounts Receivable', arChange, true)}
         ${cfRow('Increase / (Decrease) in Accounts Payable', apChange, true)}
         ${cfRow('Decrease / (Increase) in Inventory', invChange, true)}
-        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid var(--brand);background:var(--surface2);">
-          <span>Net Cash from Operating Activities</span><span style="color:${operatingCF>=0?'var(--success)':'var(--danger)'};">${fmt(operatingCF)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid var(--brand);background:var(--surface2);"><span>Net Cash from Operating Activities</span><span style="color:${operatingCF>=0?'var(--success)':'var(--danger)'};">${fmt(operatingCF)}</span></div>
         <div style="padding:10px 12px;background:var(--info);color:white;font-size:0.82rem;font-weight:700;">B. Investing Activities</div>
         ${cfRow('Purchase of Fixed Assets / Capital Expenditure', investingCF, true)}
-        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid var(--info);background:var(--surface2);">
-          <span>Net Cash from Investing Activities</span><span style="color:${investingCF>=0?'var(--success)':'var(--danger)'};">${fmt(investingCF)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid var(--info);background:var(--surface2);"><span>Net Cash from Investing Activities</span><span style="color:${investingCF>=0?'var(--success)':'var(--danger)'};">${fmt(investingCF)}</span></div>
         <div style="padding:10px 12px;background:#7c3aed;color:white;font-size:0.82rem;font-weight:700;">C. Financing Activities</div>
         ${cfRow('Net Equity / Owner Contributions', financingCF, true)}
-        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid #7c3aed;background:var(--surface2);">
-          <span>Net Cash from Financing Activities</span><span style="color:${financingCF>=0?'var(--success)':'var(--danger)'};">${fmt(financingCF)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:12px 12px;font-size:1rem;font-weight:800;background:var(--brand);color:white;border-radius:0 0 var(--radius-md) var(--radius-md);">
-          <span>NET CHANGE IN CASH POSITION</span><span>${fmt(netCash)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid #7c3aed;background:var(--surface2);"><span>Net Cash from Financing Activities</span><span style="color:${financingCF>=0?'var(--success)':'var(--danger)'};">${fmt(financingCF)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:12px 12px;font-size:1rem;font-weight:800;background:var(--brand);color:white;border-radius:0 0 var(--radius-md) var(--radius-md);"><span>NET CHANGE IN CASH POSITION</span><span>${fmt(netCash)}</span></div>
       </div>`;
     return;
   }
   if (type === 'vat') {
-    // ── VAT SUMMARY (FIRS Monthly Return) ────────────────────────────
     const outputVAT = invoices.reduce((s, i) => s + (i.vat || 0), 0);
     const inputVAT  = bills.reduce((s, b) => s + (b.vat || 0), 0);
     const netVAT    = outputVAT - inputVAT;
     const vatInvRows = invoices.filter(i => (i.vat||0) > 0).map(i => {
       const c = customers.find(x => x.id === i.customerId);
-      return `<tr><td>${i.number}</td><td>${c?.name||'—'}</td><td>${i.date}</td><td>${fmt(i.subtotal||i.total)}</td><td style="color:var(--danger);font-weight:600;">${fmt(i.vat)}</td></tr>`;
+      return `<tr><td class="td-mono">${i.number}</td><td>${c?.name||'—'}</td><td>${i.date}</td><td>${fmt(i.subtotal||i.total)}</td><td style="color:var(--danger);font-weight:600;">${fmt(i.vat)}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px;">No invoices with VAT found</td></tr>';
     const vatBillRows = bills.filter(b => (b.vat||0) > 0).map(b => {
       const v = vendors.find(x => (x._id||x.id) == b.vendorId);
-      return `<tr><td>${b.number}</td><td>${v?.name||'—'}</td><td>${b.date}</td><td>${fmt(b.subtotal||b.total)}</td><td style="color:var(--success);font-weight:600;">${fmt(b.vat)}</td></tr>`;
+      return `<tr><td class="td-mono">${b.number}</td><td>${v?.name||'—'}</td><td>${b.date}</td><td>${fmt(b.subtotal||b.total)}</td><td style="color:var(--success);font-weight:600;">${fmt(b.vat)}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px;">No bills with VAT found</td></tr>';
     cont.innerHTML = `<div style="font-size:1rem;font-weight:700;margin-bottom:16px;">VAT Summary — NRS Monthly Return</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
-        <div class="card" style="padding:16px;text-align:center;border-top:4px solid var(--danger);">
-          <div style="font-size:0.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Output VAT Collected</div>
-          <div style="font-size:1.6rem;font-weight:800;color:var(--danger);">${fmt(outputVAT)}</div>
-          <div style="font-size:0.72rem;color:var(--text-4);">From customer invoices</div></div>
-        <div class="card" style="padding:16px;text-align:center;border-top:4px solid var(--success);">
-          <div style="font-size:0.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Input VAT Paid</div>
-          <div style="font-size:1.6rem;font-weight:800;color:var(--success);">${fmt(inputVAT)}</div>
-          <div style="font-size:0.72rem;color:var(--text-4);">On vendor bills</div></div>
-        <div class="card" style="padding:16px;text-align:center;border-top:4px solid ${netVAT>=0?'var(--danger)':'var(--success)'};">
-          <div style="font-size:0.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Net VAT Payable to NRS</div>
-          <div style="font-size:1.6rem;font-weight:800;color:${netVAT>=0?'var(--danger)':'var(--success)'};">${fmt(netVAT)}</div>
-          <div style="font-size:0.72rem;color:var(--text-4);">${netVAT>=0?'Amount owed to NRS':'VAT credit carried forward'}</div></div>
+        <div class="card" style="padding:16px;text-align:center;border-top:4px solid var(--danger);"><div style="font-size:0.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Output VAT Collected</div><div style="font-size:1.6rem;font-weight:800;color:var(--danger);">${fmt(outputVAT)}</div><div style="font-size:0.72rem;color:var(--text-4);">From customer invoices</div></div>
+        <div class="card" style="padding:16px;text-align:center;border-top:4px solid var(--success);"><div style="font-size:0.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Input VAT Paid</div><div style="font-size:1.6rem;font-weight:800;color:var(--success);">${fmt(inputVAT)}</div><div style="font-size:0.72rem;color:var(--text-4);">On vendor bills</div></div>
+        <div class="card" style="padding:16px;text-align:center;border-top:4px solid ${netVAT>=0?'var(--danger)':'var(--success)'};"><div style="font-size:0.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Net VAT Payable to NRS</div><div style="font-size:1.6rem;font-weight:800;color:${netVAT>=0?'var(--danger)':'var(--success)'};">${fmt(netVAT)}</div><div style="font-size:0.72rem;color:var(--text-4);">${netVAT>=0?'Amount owed to NRS':'VAT credit carried forward'}</div></div>
       </div>
-      <div style="margin-bottom:16px;"><div class="section-label">Output VAT — Customer Invoices</div>
-        <div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Net Amount</th><th>VAT Charged</th></tr></thead>
-        <tbody>${vatInvRows}</tbody></table></div></div>
-      <div><div class="section-label">Input VAT — Vendor Bills</div>
-        <div class="table-wrap"><table><thead><tr><th>Bill</th><th>Vendor</th><th>Date</th><th>Net Amount</th><th>VAT Paid</th></tr></thead>
-        <tbody>${vatBillRows}</tbody></table></div></div>`;
+      <div class="table-wrap"><div class="section-label">Output VAT — Customer Invoices</div><table><thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Net Amount</th><th>VAT Charged</th></tr></thead><tbody>${vatInvRows}</tbody></table></div>
+      <div class="table-wrap" style="margin-top:16px;"><div class="section-label">Input VAT — Vendor Bills</div><table><thead><tr><th>Bill</th><th>Vendor</th><th>Date</th><th>Net Amount</th><th>VAT Paid</th></tr></thead><tbody>${vatBillRows}</tbody></table></div>`;
     return;
   }
-  let tDebits=0, tCredits=0;
-  const tbRows = accounts.filter(function(a){
-    if (a.balance !== 0) return true;
-    var hasActivity = journalEntries.some(function(je){
-      return je.lines && je.lines.some(function(l){ return l.accountCode === a.code; });
-    });
-    var hasOB = openingBalances && openingBalances[a.code] && openingBalances[a.code] !== 0;
-    return hasActivity || hasOB;
-  }).map(a=>{
-        // Drawings is an Equity contra-account with DEBIT normal balance
-        const isDrawings = a.name.toLowerCase().includes('drawings') || a.name.toLowerCase().includes('drawing');
-        const isDebit = ['Asset','Expense'].includes(a.type) || isDrawings;
-        const dAmt = isDebit && a.balance>0 ? a.balance : (isDebit && a.balance<0 ? 0 : 0);
-        const cAmt = !isDebit && a.balance>0 ? a.balance : (!isDebit && a.balance<0 ? 0 : (isDebit && a.balance<0 ? Math.abs(a.balance) : 0));
-        // Drawings: debit balance reduces equity — must show in DEBIT column        
-        //  // Negative balance means credit-side overshoot; show in credit column         
-        const finalD = isDebit  ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);         
-        const finalC = !isDebit ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);         
-        tDebits+=finalD; tCredits+=finalC;
-        return `<tr><td class="td-mono">${a.code}</td><td>${a.name}</td><td><span class="badge badge-neutral">${a.type}${isDrawings?' <span style="font-size:0.6rem;background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:4px;">contra</span>':''}</span></td><td style="color:var(--brand);font-weight:600;">${finalD?fmt(finalD):''}</td><td style="color:var(--info);font-weight:600;">${finalC?fmt(finalC):''}</td></tr>`;
-      }).join('');
-  var tbBalanced = Math.abs(tDebits - tCredits) < 0.01;
-  cont.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;"><div><div style="font-size:1rem;font-weight:700;color:var(--text-1);">Trial Balance</div><div style="font-size:0.78rem;color:var(--text-3);">As at ${today()} · ${settings.companyName||'My Company'}</div></div><div style="display:flex;align-items:center;gap:10px;"><div style="padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;background:${tbBalanced?'#f0fdf4':'#fef2f2'};color:${tbBalanced?'#16a34a':'#dc2626'};border:1px solid ${tbBalanced?'#86efac':'#fca5a5'};">${tbBalanced?'✓ BALANCED':'✗ UNBALANCED — CHECK ENTRIES'}</div><button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button></div></div>`
-    + `<div class="table-wrap"><table><thead><tr><th>Account Code</th><th>Account Name</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead>
-      <tbody>${tbRows}
-      <tr style="font-weight:700;background:var(--surface2);"><td colspan="3">TOTALS</td><td style="color:var(--brand);">${fmt(tDebits)}</td><td style="color:var(--info);">${fmt(tCredits)}</td></tr>
-      </tbody></table></div>`;
+  if (type === 'tb') {
+    let tDebits=0, tCredits=0;
+    const tbRows = accounts.filter(a => {
+      if (a.balance !== 0) return true;
+      var hasActivity = journalEntries.some(je => je.lines && je.lines.some(l => l.accountCode === a.code));
+      var hasOB = openingBalances && openingBalances[a.code] && openingBalances[a.code] !== 0;
+      return hasActivity || hasOB;
+    }).map(a => {
+      const isDrawings = a.name.toLowerCase().includes('drawings') || a.name.toLowerCase().includes('drawing');
+      const isDebit = ['Asset','Expense'].includes(a.type) || isDrawings;
+      const finalD = isDebit  ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);
+      const finalC = !isDebit ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);
+      tDebits += finalD; tCredits += finalC;
+      return `<tr><td class="td-mono">${a.code}</td><td>${a.name}</td><td><span class="badge badge-neutral">${a.type}${isDrawings?' <span style="font-size:0.6rem;background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:4px;">contra</span>':''}</span></td><td style="color:var(--brand);font-weight:600;">${finalD?fmt(finalD):''}</td><td style="color:var(--info);font-weight:600;">${finalC?fmt(finalC):''}</td></tr>`;
+    }).join('');
+    const tbBalanced = Math.abs(tDebits - tCredits) < 0.01;
+    cont.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;"><div><div style="font-size:1rem;font-weight:700;color:var(--text-1);">Trial Balance</div><div style="font-size:0.78rem;color:var(--text-3);">As at ${today()} · ${settings.companyName||'My Company'}</div></div><div style="display:flex;align-items:center;gap:10px;"><div style="padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;background:${tbBalanced?'#f0fdf4':'#fef2f2'};color:${tbBalanced?'#16a34a':'#dc2626'};border:1px solid ${tbBalanced?'#86efac':'#fca5a5'};">${tbBalanced?'✓ BALANCED':'✗ UNBALANCED — CHECK ENTRIES'}</div><button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button></div></div>`
+      + `<div class="table-wrap"><table><thead><tr><th>Account Code</th><th>Account Name</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${tbRows}<tr style="font-weight:700;background:var(--surface2);"><td colspan="3">TOTALS</td><td style="color:var(--brand);">${fmt(tDebits)}</td><td style="color:var(--info);">${fmt(tCredits)}</td></tr></tbody></table></div>`;
+    return;
+  }
+  if (type === 'health') {
+    // FINANCIAL HEALTH DASHBOARD - Corrected version
+    const revenueHealth  = accounts.filter(a => a.type === 'Revenue').reduce((s,a) => s + a.balance, 0);
+    const expensesHealth = accounts.filter(a => a.type === 'Expense').reduce((s,a) => s + a.balance, 0);
+    const cogs = accounts.find(a => a.code === '5000')?.balance || 0;
+    const grossProfit = revenueHealth - cogs;
+    const netIncomeHealth = revenueHealth - expensesHealth;
+    const grossProfitMargin = revenueHealth > 0 ? (grossProfit / revenueHealth) * 100 : 0;
+    const netProfitMargin = revenueHealth > 0 ? (netIncomeHealth / revenueHealth) * 100 : 0;
+
+    const currentAssets = accounts.filter(a => a.type === 'Asset').reduce((s,a) => s + a.balance, 0);
+    const inventory = accounts.find(a => a.code === '1200')?.balance || 0;
+    const currentLiabilities = accounts.filter(a => a.type === 'Liability').reduce((s,a) => s + Math.abs(a.balance), 0);
+    const quickAssets = currentAssets - inventory;
+    const currentRatio = currentLiabilities !== 0 ? currentAssets / currentLiabilities : (currentAssets > 0 ? Infinity : 0);
+    const quickRatio = currentLiabilities !== 0 ? quickAssets / currentLiabilities : (quickAssets > 0 ? Infinity : 0);
+
+    const totalLiabilities = currentLiabilities;
+    const totalEquity = accounts.filter(a => a.type === 'Equity').reduce((s,a) => s + a.balance, 0);
+    const debtToEquity = totalEquity !== 0 ? totalLiabilities / totalEquity : (totalLiabilities > 0 ? Infinity : 0);
+
+    const workingCapital = currentAssets - currentLiabilities;
+    const cash = accounts.find(a => a.code === '1000')?.balance || 0;
+    const ar = accounts.find(a => a.code === '1100')?.balance || 0;
+
+    // Monthly trend data
+    const months = [];
+    const monthlyRevenue = [];
+    const monthlyExpenses = [];
+    const monthlyProfit = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const key = `${year}-${month}`;
+      months.push(d.toLocaleString('default', { month: 'short', year: '2-digit' }));
+      const monthRevenue = invoices.filter(inv => inv.date && inv.date.startsWith(key)).reduce((s,inv) => s + (inv.total || 0), 0);
+      const monthExpenses = bills.filter(bill => bill.date && bill.date.startsWith(key)).reduce((s,bill) => s + (bill.total || 0), 0);
+      monthlyRevenue.push(monthRevenue);
+      monthlyExpenses.push(monthExpenses);
+      monthlyProfit.push(monthRevenue - monthExpenses);
+    }
+
+    const profitScore = netProfitMargin >= 20 ? 100 : netProfitMargin >= 10 ? 70 : netProfitMargin >= 5 ? 40 : 15;
+    const liquidityScore = currentRatio >= 2 ? 100 : currentRatio >= 1.5 ? 70 : currentRatio >= 1 ? 40 : 20;
+    const leverageScore = debtToEquity <= 0.5 ? 100 : debtToEquity <= 1 ? 70 : debtToEquity <= 2 ? 40 : 10;
+    const efficiencyScore = ar > 0 ? Math.min(100, (revenueHealth / ar) * 10) : 70;
+    const overallScore = Math.round((profitScore * 0.35) + (liquidityScore * 0.25) + (leverageScore * 0.2) + (efficiencyScore * 0.2));
+
+    const getScoreColor = (score) => score >= 80 ? 'var(--success)' : score >= 60 ? 'var(--warning)' : 'var(--danger)';
+    const getScoreLabel = (score) => score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : 'Critical';
+    const formatRatio = (ratio) => ratio === Infinity ? '∞' : ratio.toFixed(2);
+    const cashRatio = currentLiabilities !== 0 ? cash / currentLiabilities : (cash > 0 ? Infinity : 0);
+    const roe = totalEquity !== 0 ? (netIncomeHealth / totalEquity) * 100 : 0;
+
+    cont.innerHTML = `
+      <div style="font-size:1.1rem;font-weight:700;margin-bottom:20px;color:var(--text-1);">Financial Health Dashboard</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
+        <div class="card" style="padding:20px;text-align:center;border-top:5px solid ${getScoreColor(overallScore)};">
+          <div style="font-size:0.7rem;text-transform:uppercase;color:var(--text-3);">Overall Health Score</div>
+          <div style="font-size:2.2rem;font-weight:800;color:${getScoreColor(overallScore)};">${overallScore}<span style="font-size:1rem;">/100</span></div>
+          <div style="margin-top:8px;height:8px;background:var(--border);border-radius:4px;"><div style="width:${overallScore}%;height:100%;background:${getScoreColor(overallScore)};border-radius:4px;"></div></div>
+          <div style="margin-top:8px;font-weight:600;color:${getScoreColor(overallScore)};">${getScoreLabel(overallScore)}</div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:12px;"><span style="font-size:0.7rem;text-transform:uppercase;color:var(--text-3);">Profitability</span><span style="font-weight:700;">${profitScore}/100</span></div>
+          <div style="height:6px;background:var(--border);border-radius:3px;"><div style="width:${profitScore}%;height:100%;background:${getScoreColor(profitScore)};border-radius:3px;"></div></div>
+          <div style="margin-top:12px;"><span style="color:var(--text-3);">Gross Margin:</span> <strong>${grossProfitMargin.toFixed(1)}%</strong></div>
+          <div><span style="color:var(--text-3);">Net Margin:</span> <strong>${netProfitMargin.toFixed(1)}%</strong></div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:12px;"><span style="font-size:0.7rem;text-transform:uppercase;color:var(--text-3);">Liquidity</span><span style="font-weight:700;">${liquidityScore}/100</span></div>
+          <div style="height:6px;background:var(--border);border-radius:3px;"><div style="width:${liquidityScore}%;height:100%;background:${getScoreColor(liquidityScore)};border-radius:3px;"></div></div>
+          <div style="margin-top:12px;"><span style="color:var(--text-3);">Current Ratio:</span> <strong>${formatRatio(currentRatio)}</strong></div>
+          <div><span style="color:var(--text-3);">Quick Ratio:</span> <strong>${formatRatio(quickRatio)}</strong></div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:12px;"><span style="font-size:0.7rem;text-transform:uppercase;color:var(--text-3);">Leverage</span><span style="font-weight:700;">${leverageScore}/100</span></div>
+          <div style="height:6px;background:var(--border);border-radius:3px;"><div style="width:${leverageScore}%;height:100%;background:${getScoreColor(leverageScore)};border-radius:3px;"></div></div>
+          <div style="margin-top:12px;"><span style="color:var(--text-3);">Debt/Equity:</span> <strong>${formatRatio(debtToEquity)}</strong></div>
+          <div><span style="color:var(--text-3);">Working Capital:</span> <strong>${fmt(workingCapital)}</strong></div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:12px;"><span style="font-size:0.7rem;text-transform:uppercase;color:var(--text-3);">Efficiency</span><span style="font-weight:700;">${efficiencyScore}/100</span></div>
+          <div style="height:6px;background:var(--border);border-radius:3px;"><div style="width:${efficiencyScore}%;height:100%;background:${getScoreColor(efficiencyScore)};border-radius:3px;"></div></div>
+          <div style="margin-top:12px;"><span style="color:var(--text-3);">AR Turnover:</span> <strong>${ar > 0 ? (revenueHealth / ar).toFixed(2) : '∞'}</strong></div>
+          <div><span style="color:var(--text-3);">Cash Balance:</span> <strong>${fmt(cash)}</strong></div>
+        </div>
+        <div class="card" style="padding:20px;background:linear-gradient(135deg, var(--surface), var(--surface2));">
+          <div style="font-size:0.7rem;text-transform:uppercase;color:var(--text-3);">At a Glance</div>
+          <div style="margin-top:8px;"><span style="color:var(--text-3);">Total Revenue:</span> <strong>${fmt(revenueHealth)}</strong></div>
+          <div><span style="color:var(--text-3);">Net Income:</span> <strong style="color:${netIncomeHealth>=0?'var(--success)':'var(--danger)'};">${fmt(netIncomeHealth)}</strong></div>
+          <div><span style="color:var(--text-3);">Cash Ratio:</span> <strong>${formatRatio(cashRatio)}</strong></div>
+          <div><span style="color:var(--text-3);">ROE:</span> <strong>${roe.toFixed(1)}%</strong></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:8px;">
+        <div class="card-header"><span class="card-title">6-Month Trend (Revenue vs Expenses)</span></div>
+        <div class="card-body"><canvas id="healthTrendChart" style="max-height:280px;"></canvas></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header"><span class="card-title">Profitability Trend</span></div>
+        <div class="card-body"><canvas id="healthProfitChart" style="max-height:200px;"></canvas></div>
+      </div>
+    `;
+
+    setTimeout(() => {
+      const ctx1 = document.getElementById('healthTrendChart');
+      const ctx2 = document.getElementById('healthProfitChart');
+      if (ctx1 && typeof Chart !== 'undefined') {
+        if (window._healthTrendChart) window._healthTrendChart.destroy();
+        window._healthTrendChart = new Chart(ctx1, {
+          type: 'line',
+          data: {
+            labels: months,
+            datasets: [
+              { label: 'Revenue', data: monthlyRevenue, borderColor: '#0a4f45', backgroundColor: 'rgba(10,79,69,0.1)', fill: true, tension: 0.3 },
+              { label: 'Expenses', data: monthlyExpenses, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.1)', fill: true, tension: 0.3 }
+            ]
+          },
+          options: { responsive: true, plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } } }
+        });
+      }
+      if (ctx2 && typeof Chart !== 'undefined') {
+        if (window._healthProfitChart) window._healthProfitChart.destroy();
+        window._healthProfitChart = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: months,
+            datasets: [{ label: 'Net Profit / (Loss)', data: monthlyProfit, backgroundColor: monthlyProfit.map(v => v >= 0 ? '#16a34a' : '#dc2626'), borderRadius: 6 }]
+          },
+          options: { responsive: true, plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } } }
+        });
+      }
+    }, 50);
+    return;
   }
 };
 
@@ -5846,14 +5910,95 @@ function renderSettingsView() {
       </div>
     </div>`;
   loadTeamMembers();
+
+  // Add Year-End Closing card (if not already present)
+  if (!document.getElementById('yearEndCard')) {
+    const closingCard = document.createElement('div');
+    closingCard.id = 'yearEndCard';
+    closingCard.className = 'card';
+    closingCard.style.marginTop = '20px';
+    closingCard.innerHTML = `
+      <div class="card-header">
+        <span class="card-title"><i class="fas fa-calendar-alt" style="color:var(--brand);margin-right:8px;"></i>Year-End Closing</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size:0.82rem;color:var(--text-3);margin-bottom:14px;">
+          Close the current fiscal year. This will:
+        </p>
+        <ul style="font-size:0.78rem;color:var(--text-3);margin-bottom:16px;margin-left:20px;">
+          <li>Post closing entries to Retained Earnings</li>
+          <li>Zero out all Revenue, Expense, and COGS accounts</li>
+          <li>Lock the closed year to prevent further changes</li>
+          <li>Generate an audit trail of the closing</li>
+        </ul>
+        <button class="btn btn-primary" onclick="openYearEndWizard()">
+          <i class="fas fa-lock"></i> Start Year-End Closing
+        </button>
+      </div>
+    `;
+    const settingsContainer = document.getElementById('settingsView');
+    const lastCard = settingsContainer.querySelector('.card:last-child');
+    lastCard.insertAdjacentElement('afterend', closingCard);
+  }
 }
 // Legacy export removed – use the async version below
 window.exportData = async () => { await apiFetch('/export').catch(() => showToast('Export failed', 'danger')); };
-window.importData = (input) => {
-  const file = input.files[0]; if(!file) return;
-  const r = new FileReader();
-  r.onload = e => { try { const d=JSON.parse(e.target.result); Object.entries(d).forEach(([k,v])=>localStorage.setItem(STORAGE_KEYS[k],JSON.stringify(v))); location.reload(); } catch { alert('Invalid backup file.'); } };
-  r.readAsText(file);
+// Year-End Closing Wizard
+window.openYearEndWizard = async function() {
+  const currentYear = new Date().getFullYear();
+  const yearToClose = currentYear - 1;
+  
+  showModal(
+    'Year-End Closing Wizard',
+    `<div style="background:var(--surface2);border-radius:var(--radius-md);padding:16px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <i class="fas fa-info-circle" style="color:var(--brand);font-size:1.2rem;"></i>
+        <div><strong>Fiscal year to close:</strong> ${yearToClose}</div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="lockPeriod" checked>
+          <span>Lock the closed period (prevent new transactions with dates in ${yearToClose})</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>New fiscal year start date</label>
+        <input type="date" class="form-control" id="newYearStart" value="${yearToClose + 1}-01-01">
+      </div>
+    </div>
+    <div style="background:#fef3c7;border-radius:8px;padding:12px;font-size:0.78rem;color:#92400e;">
+      <i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>
+      <strong>Warning:</strong> This action cannot be undone. Ensure all transactions for ${yearToClose} are complete and reconciled.
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
+     <button class="btn btn-danger" onclick="confirmYearEndClose(${yearToClose})">
+       <i class="fas fa-check-circle"></i> Close Year ${yearToClose}
+     </button>`,
+    { width: '520px' }
+  );
+};
+
+window.confirmYearEndClose = async function(yearToClose) {
+  const lockPeriod = document.getElementById('lockPeriod')?.checked || true;
+  const newYearStart = document.getElementById('newYearStart')?.value;
+  if (!newYearStart) return showToast('Please select a start date for the new fiscal year.', 'danger');
+  
+  if (!confirm(`Are you ABSOLUTELY sure you want to close year ${yearToClose}? This will zero out all income and expense accounts and post the net result to Retained Earnings.`)) return;
+  
+  try {
+    showToast('Processing year-end close...', 'info');
+    await apiFetch('/company/close-year', {
+      method: 'POST',
+      body: JSON.stringify({ yearToClose, newYearStartDate: newYearStart, lockPeriod })
+    });
+    showToast(`Year ${yearToClose} closed successfully.`, 'success');
+    closeTopModal();
+    await loadAllData();
+    recalcBalances();
+    navigateTo('settings');
+  } catch (err) {
+    showToast(err.message || 'Year-end closing failed.', 'danger');
+  }
 };
 window.clearData = () => { if(confirm('⚠️ This will delete ALL company data. Are you absolutely sure?')&&confirm('Last warning: all invoices, transactions and records will be permanently deleted.')){ Object.values(STORAGE_KEYS).forEach(k=>localStorage.removeItem(k)); location.reload(); }};
 
@@ -6613,11 +6758,10 @@ window.saveInvoice = async function() {
   const recurring   = document.getElementById('invRecurring')?.checked || false;
   const recurFreq   = document.getElementById('invRecurFreq')?.value || 'monthly';
   const lines = []; let subtotal = 0; let vatAmt = 0;
-  const productLines = []; // track product lines for COGS + inventory
 
   document.querySelectorAll('#invLines .invoice-line').forEach(l => {
     const sel = l.querySelector('.prod-sel');
-    const prodId = sel.value ? sel.value : null; // keep as string to match MongoDB _id
+    const prodId = sel.value ? sel.value : null;
     const desc = sel.options[sel.selectedIndex]?.text || 'Item';
     const q = parseFloat(l.querySelector('.qty').value) || 0;
     const r = parseFloat(l.querySelector('.rate').value) || 0;
@@ -6625,23 +6769,10 @@ window.saveInvoice = async function() {
     const vatChk = l.querySelector('.vat-check');
     const vatApplicable = vatChk ? vatChk.checked : true;
     const lineVat = parseFloat((a * (vatApplicable ? (settings.defaultVatRate || 7.5) / 100 : 0)).toFixed(2));
-    lines.push({ productId:prodId, description:desc, quantity:q, rate:r, amount:a, vatApplicable, lineVat });
-    // collect product lines so COGS + inventory can be posted
-    if (prodId) {
-      const p = products.find(x => String(x._id||x.id) === String(prodId));
-      if (p) productLines.push({ product: p, quantity: q });
-    }
+    lines.push({ productId: prodId, description: desc, quantity: q, rate: r, amount: a, vatApplicable, lineVat });
     subtotal += a; vatAmt += lineVat;
   });
   if (subtotal <= 0) return alert('Invoice total must be > 0.');
-
-  // Pre-flight stock check
-  for (const { product, quantity } of productLines) {
-    if (product.stock < quantity) {
-      return alert('Insufficient stock for: ' + product.name + ' (available: ' + product.stock + ', required: ' + quantity + ')');
-    }
-  }
-
   vatAmt = parseFloat(vatAmt.toFixed(2));
   const total = parseFloat((subtotal + vatAmt).toFixed(2));
   const currency = document.getElementById('invCurrency')?.value || 'NGN';
@@ -6655,45 +6786,17 @@ window.saveInvoice = async function() {
     subtotal, vat: vatAmt, total, status: 'unpaid', payments: [], amountPaid: 0, balance: total
   };
   try {
-    const savedInv = await apiFetch('/invoices', { method:'POST', body: JSON.stringify(invoiceData) });
-    const invNumber = savedInv?.number || '';
-
-    // ── COGS + Inventory reduction: post journal entries per product line ──
-    for (const { product, quantity } of productLines) {
-      const cost = parseFloat((product.cost * quantity).toFixed(2));
-      try {
-        await apiFetch('/journals', {
-          method: 'POST',
-          body: JSON.stringify({
-            date: invDate,
-            description: 'COGS — ' + product.name + (invNumber ? ' (' + invNumber + ')' : ''),
-            type: 'cogs',
-            lines: [
-              { accountCode: '5000', amount: cost, type: 'debit'  }, // Dr COGS
-              { accountCode: '1200', amount: cost, type: 'credit' }  // Cr Inventory
-            ]
-          })
-        });
-        // Reduce stock locally for immediate UI update (backend also updates)
-        product.stock -= quantity;
-        // Record inventory movement via API
-        await apiFetch('/products/adjust', {
-          method: 'POST',
-          body: JSON.stringify({ productId: String(product._id||product.id), quantity, type: 'out', reference: 'Invoice ' + invNumber })
-        }).catch(() => {}); // non-fatal if endpoint not available
-      } catch(cogsErr) {
-        console.warn('COGS journal post failed for ' + product.name, cogsErr);
-      }
-    }
-
+    await apiFetch('/invoices', { method: 'POST', body: JSON.stringify(invoiceData) });
     logAction('INVOICE_CREATED', 'Invoice created — Customer: ' + (customers.find(c=>String(c._id||c.id)===custId)?.name||'') + ' — Total: ₦' + total.toLocaleString());
     closeTopModal();
     await loadAllData();
     recalcBalances();
     renderInvoicesView();
     renderDashboard();
-    showToast('Invoice ' + invNumber + ' created and posted to ledger.', 'success');
-  } catch (err) { showToast(err.message || 'Save failed.', 'danger'); }
+    showToast('Invoice created and posted to ledger (COGS & stock handled by backend).', 'success');
+  } catch (err) {
+    showToast(err.message || 'Save failed.', 'danger');
+  }
 };
 
 window.deleteInvoice = async function(id) {

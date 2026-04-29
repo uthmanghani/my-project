@@ -5,7 +5,8 @@ const invoiceController = require('../controllers/invoiceController');
 
 router.get('/', authenticateToken, invoiceController.getAll);
 router.get('/:id', authenticateToken, invoiceController.getOne);
-router.post('/', authenticateToken, invoiceController.create);
+const { checkPeriodLock } = require('../middleware/periodLock');
+router.post('/', authenticateToken, checkPeriodLock, invoiceController.create);
 router.put('/:id', authenticateToken, invoiceController.update);
 router.put('/:id/pay', authenticateToken, invoiceController.recordPayment);
 router.delete('/:id', authenticateToken, invoiceController.delete);

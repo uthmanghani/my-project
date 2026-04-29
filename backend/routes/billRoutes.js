@@ -5,7 +5,8 @@ const billController = require('../controllers/billController');
 
 router.get('/', authenticateToken, billController.getAll);
 router.get('/:id', authenticateToken, billController.getOne);
-router.post('/', authenticateToken, billController.create);
+const { checkPeriodLock } = require('../middleware/periodLock');
+router.post('/', authenticateToken, checkPeriodLock, billController.create);
 router.put('/:id', authenticateToken, billController.update);
 router.put('/:id/pay', authenticateToken, billController.recordPayment);
 router.delete('/:id', authenticateToken, billController.delete);
