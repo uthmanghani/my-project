@@ -21,6 +21,9 @@ router.post('/invite', authenticateToken, authController.inviteUser);
 router.get('/users', authenticateToken, authController.getUsers);
 router.delete('/users/:id', authenticateToken, authController.removeUser);
 
+router.get('/my-companies', authenticateToken, authController.getMyCompanies);
+router.post('/switch-company', authenticateToken, authController.switchCompany);
+router.post('/add-to-company', authenticateToken, authController.addUserToCompany);
 router.post('/send-otp', authController.sendOTP);
 router.post('/verify-otp', authController.verifyOTP);
 router.post('/forgot-password', authController.forgotPassword);

@@ -43,7 +43,8 @@ exports.register = async (req, res) => {
       lastName: admin.lastName,
       email: admin.email,
       password: admin.password,
-      role: 'admin'
+      role: 'admin',
+      companies: [newCompany._id]
     });
     await newUser.save();
 
@@ -223,6 +224,51 @@ exports.resetPassword = async (req, res) => {
   }
 };
  
+exports.getMyCompanies = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).populate('companies', 'name industry createdAt');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user.companies || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.switchCompany = async (req, res) => {
+  try {
+    const { companyId } = req.body;
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const hasAccess = user.companies.some(c => c.toString() === companyId) ||
+                      user.companyId.toString() === companyId;
+    if (!hasAccess) return res.status(403).json({ error: 'No access to this company' });
+    const token = jwt.sign(
+      { userId: user._id, companyId, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+    );
+    res.json({ token, companyId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.addUserToCompany = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.companies.includes(req.user.companyId)) {
+      user.companies.push(req.user.companyId);
+      await user.save();
+    }
+    res.json({ message: 'User added to company' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.removeUser = async (req, res) => {
 
   try {
