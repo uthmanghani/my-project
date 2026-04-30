@@ -1060,11 +1060,12 @@
     <div class="logo-icon"><i class="fas fa-chart-line"></i></div>
     <div class="logo-text">AccounTrack™ <span>Nigerian Business ERP</span></div>
   </div>
-  <div class="sidebar-company">
+  <div class="sidebar-company" onclick="showCompanySwitcher()" style="cursor:pointer;" title="Switch Company">
     <div class="company-name" id="sidebarCompanyName">My Company</div>
     <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
       <div class="company-sub" id="sidebarIndustrySub" style="margin:0;">Pro Edition</div>
       <span style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#0a1628;font-size:0.55rem;font-weight:800;padding:1px 5px;border-radius:8px;letter-spacing:0.05em;">PRO</span>
+      <i class="fas fa-chevron-down" style="font-size:0.55rem;color:rgba(255,255,255,0.5);margin-left:2px;"></i>
     </div>
   </div>
   <div class="nav-scroll">
@@ -1373,6 +1374,9 @@ async function loadAllData() {
 
     applySettings();
     checkOverdueInvoices();
+    checkBudgetAlerts();
+    renderRecentlyViewed();
+    loadMyCompanies();
   } catch (err) {
     console.error('Failed to load data', err);
   }
@@ -1583,6 +1587,21 @@ async function obSignIn() {
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
     // Save user profile for Settings page
     localStorage.setItem('at_user_profile', JSON.stringify({
   ...data.user,
@@ -1680,6 +1699,26 @@ async function verify2FA() {
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
     localStorage.setItem('at_user_profile', JSON.stringify({ ...data.user, role: data.user.role }));
     try {
       const cp = await apiFetch('/company/profile');
@@ -1748,6 +1787,21 @@ async function obFinishSetup() {
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
+    // If registering additional company, no invite needed
+    if (window._registeringAdditionalCompany) {
+      window._registeringAdditionalCompany = false;
+      showToast('New company registered! You can now switch between companies.', 'success');
+    }
     // Store user profile
     localStorage.setItem('at_user_profile', JSON.stringify(admin));
     localStorage.setItem('at_industry', industry);
@@ -1781,7 +1835,13 @@ async function obFinishSetup() {
 function obUpdateSidebarUser(user, company) {
   if (!user || !company) return;
   const nameEl = document.getElementById('sidebarCompanyName');
-  if (nameEl) nameEl.textContent = company.companyName || settings.companyName || 'My Company';
+    if (nameEl) nameEl.textContent = settings.companyName || 'My Company';
+    loadMyCompanies().then(() => {
+      if (_myCompanies.length > 1) {
+        const sub = document.getElementById('sidebarIndustrySub');
+        if (sub) sub.textContent = _myCompanies.length + ' companies';
+      }
+    });
   const initials = ((user.firstName||'')[0]||'A').toUpperCase() + ((user.lastName||'')[0]||'T').toUpperCase();
   const av = document.getElementById('upgradeProBtn');
   if (av) av.textContent = initials;
@@ -1843,7 +1903,13 @@ function addDaysToDate(dateStr, n) {
 
 function applySettings() {
   const nameEl = document.getElementById('sidebarCompanyName');
-  if (nameEl) nameEl.textContent = settings.companyName || 'My Company';
+    if (nameEl) nameEl.textContent = settings.companyName || 'My Company';
+    loadMyCompanies().then(() => {
+      if (_myCompanies.length > 1) {
+        const sub = document.getElementById('sidebarIndustrySub');
+        if (sub) sub.textContent = _myCompanies.length + ' companies';
+      }
+    });
   const av = document.getElementById('topbarAvatar');
   if (av) av.textContent = (settings.companyName||'AT').slice(0,2).toUpperCase();
   const upBtn = document.getElementById('upgradeProBtn');
@@ -7793,6 +7859,71 @@ function showKeyboardShortcutsHelp() {
     </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>`
   );
+}
+
+// ─── MULTI-COMPANY ────────────────────────────────────────────
+let _myCompanies = [];
+
+async function loadMyCompanies() {
+  try {
+    _myCompanies = await apiFetch('/auth/my-companies');
+  } catch(e) { _myCompanies = []; }
+}
+
+async function showCompanySwitcher() {
+  await loadMyCompanies();
+  const currentId = JSON.parse(atob(authToken.split('.')[1])).companyId;
+  const list = _myCompanies.map(c => `
+    <div onclick="switchToCompany('${c._id}')"
+      style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:8px;cursor:pointer;margin-bottom:6px;
+             background:${c._id===currentId?'var(--brand)':'var(--surface2)'};
+             color:${c._id===currentId?'white':'var(--text-1)'};
+             transition:background 0.15s;"
+      onmouseover="if('${c._id}'!=='${currentId}')this.style.background='var(--border)'"
+      onmouseout="if('${c._id}'!=='${currentId}')this.style.background='var(--surface2)'">
+      <div>
+        <div style="font-weight:700;font-size:0.88rem;">${c.name}</div>
+        <div style="font-size:0.72rem;opacity:0.7;margin-top:2px;">${c.industry||'General'}</div>
+      </div>
+      ${c._id===currentId?'<span style="font-size:0.72rem;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;">Active</span>':'<i class="fas fa-chevron-right" style="font-size:0.75rem;opacity:0.5;"></i>'}
+    </div>`).join('');
+
+  showModal('My Companies', `
+    <div style="margin-bottom:16px;">${list||'<div style="color:var(--text-3);text-align:center;padding:20px;">No other companies found.</div>'}</div>
+    <div style="border-top:1px solid var(--border);padding-top:14px;">
+      <button onclick="closeTopModal();showRegisterNewCompany()" class="btn btn-secondary" style="width:100%;">
+        <i class="fas fa-plus"></i> Register New Company
+      </button>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>`
+  );
+}
+
+async function switchToCompany(companyId) {
+  try {
+    const data = await apiFetch('/auth/switch-company', {
+      method: 'POST',
+      body: JSON.stringify({ companyId })
+    });
+    authToken = data.token;
+    localStorage.setItem('at_token', authToken);
+    closeTopModal();
+    showToast('Switching company...', 'info');
+    await loadAllData();
+    applySettings();
+    navigateTo('dashboard');
+    showToast('Switched to ' + settings.companyName, 'success');
+  } catch(err) {
+    showToast('Failed to switch company: ' + err.message, 'danger');
+  }
+}
+
+function showRegisterNewCompany() {
+  // Redirect to onboarding with flag to add to existing user
+  window._registeringAdditionalCompany = true;
+  document.getElementById('onboardingRoot').classList.remove('hidden');
+  obSwitchTab('register');
+  showToast('Register your new company. You will be able to switch between them.', 'info');
 }
 
 // ─── RECURRING BILLING ───────────────────────────────────────
