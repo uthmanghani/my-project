@@ -1192,6 +1192,16 @@ function fmtCurrency(amount, currency='NGN') {
   const cur = CURRENCIES[currency]||CURRENCIES.NGN;
   return cur.symbol + Number(amount||0).toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+function normId(id) {
+  if (!id) return '';
+  if (typeof id === 'object') return id._id || id.id || '';
+  return String(id);
+}
+function normId(id) {
+  if (!id) return '';
+  if (typeof id === 'object') return id._id || id.id || '';
+  return String(id);
+}
 async function fetchLiveRates() {
   try {
     const res = await fetch('https://api.exchangerate-api.com/v4/latest/NGN');
@@ -1347,6 +1357,9 @@ async function loadAllData() {
   apiFetch('/assets').catch(() => []),
   apiFetch('/company/settings').catch(() => ({}))
 ]);
+  const payrollData = await apiFetch('/payroll/runs').catch(() => []);
+  payrollRuns = payrollData;
+  localStorage.setItem('at_payroll', JSON.stringify(payrollRuns));
     const norm = arr => Array.isArray(arr) ? arr.map(r => ({
   ...r,
   id: r._id || r.id,
@@ -1405,6 +1418,22 @@ function checkOverdueInvoices() {
       showToast(`${overdue.length} invoice${overdue.length>1?'s are':' is'} overdue — check Invoices`, 'danger');
     }, 2000);
   }
+}
+function checkBudgetAlerts() {
+  const year = new Date().getFullYear().toString();
+  budgets.forEach(b => {
+    if (b.year !== year) return;
+    const acc = accounts.find(a => a.code === b.accountCode);
+    if (!acc) return;
+    const actual = Math.abs(acc.balance);
+    const budget = b.amount;
+    if (actual > budget) {
+      const percent = Math.round((actual / budget) * 100);
+      if (percent > 100) {
+        showToast(`⚠️ Budget exceeded: ${acc.name} is ${fmt(actual - budget)} over budget (${percent}%).`, 'warning');
+      }
+    }
+  });
 }
 
 // ─── SAVE ALL DATA — no-op in full-stack mode (saves go via API) ──────
@@ -2018,8 +2047,16 @@ function paginate(module, items, pageSize = 10) {
 function changePage(module, newPage) {
   if (!paginationState[module]) paginationState[module] = {};
   paginationState[module].currentPage = newPage;
-  if (module === 'invoices') renderInvoicesView();
-  // Add other modules (customers, vendors, etc.) if needed
+  const renderMap = {
+    invoices: renderInvoicesView,
+    customers: renderCustomersView,
+    vendors: renderVendorsView,
+    bills: renderBillsView,
+    products: renderProductsView,
+    employees: renderEmployeesView,
+    journal: renderJournalView
+  };
+  if (renderMap[module]) renderMap[module]();
 }
 
 function searchBar(module, placeholder, renderFunction) {
@@ -2365,8 +2402,13 @@ function renderDashboard() {
     existing.innerHTML = filterBar;
   }
 
-  const revenue  = accounts.filter(a=>a.type==='Revenue').reduce((s,a)=>s+a.balance,0);
-  const expenses = accounts.filter(a=>a.type==='Expense').reduce((s,a)=>s+a.balance,0);
+  const { start, end } = getDashDates();
+  const periodInvoices = invoices.filter(inv => inv.date >= start && inv.date <= end);
+  const periodBills = bills.filter(b => b.date >= start && b.date <= end);
+  const revenuePeriod = periodInvoices.reduce((s, inv) => s + inv.total, 0);
+  const expensesPeriod = periodBills.reduce((s, bill) => s + bill.total, 0);
+  const revenue  = revenuePeriod;
+  const expenses = expensesPeriod;
   const netIncome = revenue - expenses;
   const ar = accounts.find(a=>a.code==='1100')?.balance || 0;
   const ap = accounts.find(a=>a.code==='2000')?.balance || 0;
@@ -2551,25 +2593,31 @@ if (recurringDue.length > 0) {
           <span class="card-title"><i class="fas fa-chart-bar" style="color:var(--brand); margin-right:6px;"></i>Revenue Overview</span>
           <div class="mini-bars">${minibarHtml}</div>
         </div>
+        <div class="card-body">
+          <canvas id="revenueChart" style="max-height:220px; width:100%;"></canvas>
+        </div>
+      </div>
+      <div class="card section-gap">
+        <div class="card-header">
+          <span class="card-title"><i class="fas fa-file-invoice-dollar" style="color:var(--brand); margin-right:6px;"></i>Recent Invoices</span>
+        </div>
         <div class="card-body" style="padding:0;">
-          ${invoices.length === 0 ? `<div class="empty-state"><i class="fas fa-file-invoice-dollar"></i><p><canvas id="revenueChart" style="max-height:220px;"></canvas></p></div>` : `
-          <table>
-            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
-            <tbody>${invoices.sort((a,b)=>b.date>a.date?1:-1).slice(0,8).map(inv => {
-              const c = customers.find(c=>(c._id||c.id)==(inv.customerId?._id||inv.customerId));
-              return `<tr>
-                <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
-                <td>${c?.name||'—'}</td>
-                <td>${inv.date}</td>
-                <td class="td-bold">${fmt(inv.total)}</td>
-                <td>${statusBadge(inv.status==='unpaid' && inv.dueDate < today() ? 'overdue' : inv.status)}</td>
-                <td><div class="table-actions">
-                  ${inv.status!=='paid'?`<div class="action-btn" title="Mark Paid" onclick="markInvoicePaid('${inv.id}')"><i class="fas fa-check"></i></div>`:''}
-                  <div class="action-btn danger" title="Delete" onclick="deleteInvoice('${inv.id}')"><i class="fas fa-trash"></i></div>
-                </div></td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table>`}
+          <div class="table-wrap">
+            <table style="width:100%">
+              <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+              <tbody>${invoices.sort((a,b)=>b.date>a.date?1:-1).slice(0,8).map(inv => {
+                const c = customers.find(c=>(c._id||c.id)==(inv.customerId?._id||inv.customerId));
+                return `<tr>
+                  <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
+                  <td>${c?.name||'—'}</td>
+                  <td>${inv.date}</td>
+                  <td class="td-bold">${fmt(inv.total)}</td>
+                  <td>${statusBadge(inv.status==='unpaid' && inv.dueDate < today() ? 'overdue' : inv.status)}</td>
+                  <td><div class="table-actions">${inv.status!=='paid'?`<div class="action-btn" title="Mark Paid" onclick="markInvoicePaid('${inv.id}')"><i class="fas fa-check"></i></div>`:''}<div class="action-btn danger" title="Delete" onclick="deleteInvoice('${inv.id}')"><i class="fas fa-trash"></i></div></div></td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -2594,7 +2642,7 @@ function renderCustomersView() {
   const filtered = filterItems('customers', customers, ['name','email','phone']);
   const { items: pagedCust, controls: custControls } = paginate('customers', filtered);
   const rows = pagedCust.map(c => {
-    const out = invoices.filter(i=>String(i.customerId)===String(c.id)&&i.status!=='paid').reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
+    const out = invoices.filter(i => String(normId(i.customerId)) === String(normId(c.id)) && i.status !== 'paid').reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
     const safeId = String(c.id);
     return `<tr>
       <td><input type="checkbox" class="cust-check" value="${safeId}" onchange="updateCustBulkBar()"></td>
@@ -2650,7 +2698,9 @@ window.openCustomerModal = (id) => {
       <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="custPhone" value="${c?.phone||''}" placeholder="+234..."></div>
       <div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="custTin" value="${c?.tin||''}" placeholder="TIN number"></div>
     </div>
-    <div class="form-group"><label class="form-label">Billing Address</label><textarea class="form-control" id="custAddress" rows="2" placeholder="Street, City, State">${c?.address||''}</textarea></div>`,
+    <div class="form-group"><label class="form-label">Billing Address</label><textarea class="form-control" id="custAddress" rows="2" placeholder="Street, City, State">${c?.address||''}</textarea></div>
+    <div class="form-group"><label class="form-label"><i class="fas fa-paperclip"></i> Attachment (Contract/ID)</label>
+    <input type="file" class="form-control" id="custAttachment" accept=".pdf,.jpg,.png"></div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveCustomer(${c?.id||'null'})"><i class="fas fa-save"></i> Save Customer</button>`
   );
@@ -3579,7 +3629,9 @@ window.openVendorModal = () => {
       <div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="vTin"></div>
     </div>
     <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="vAddr" rows="2"></textarea></div>
-    <div class="form-group"><label class="form-label"><i class="fas fa-sticky-note" style="margin-right:4px;color:var(--brand);"></i>Internal Notes</label><textarea class="form-control" id="vNotes" rows="2" placeholder="Private notes visible only to your team..."></textarea></div>`,
+    <div class="form-group"><label class="form-label"><i class="fas fa-sticky-note" style="margin-right:4px;color:var(--brand);"></i>Internal Notes</label><textarea class="form-control" id="vNotes" rows="2" placeholder="Private notes visible only to your team..."></textarea></div>
+    <div class="form-group"><label class="form-label"><i class="fas fa-paperclip"></i> Attachment (Contract/Certificate)</label>
+    <input type="file" class="form-control" id="vendorAttachment" accept=".pdf,.jpg,.png"></div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveVendor()"><i class="fas fa-save"></i> Save</button>`
   );
@@ -3956,7 +4008,7 @@ window.updateBillTotal = () => {
   document.querySelectorAll('#billLines .bill-line').forEach(l => t += parseFloat(l.querySelector('.amt')?.value)||0);
   document.getElementById('bTotal').textContent = fmt(t);
 };
-window.saveBill = () => {
+window.saveBill = async () => {
   const vendorId = +document.getElementById('bVendor').value;
   const bDate    = document.getElementById('bDate').value;
   const bDue     = document.getElementById('bDue').value;
@@ -3973,6 +4025,25 @@ window.saveBill = () => {
   });
   if (total <= 0) return alert('Bill total must be > 0.');
 
+  // Process attachment file
+  const attFile = document.getElementById('billAttachment')?.files[0];
+  let attachment = null;
+  if (attFile) {
+    if (attFile.size > 5 * 1024 * 1024) {
+      showToast('File too large. Max 5MB.', 'danger');
+      return;
+    }
+    attachment = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve({
+        name: attFile.name,
+        type: attFile.type,
+        data: e.target.result
+      });
+      reader.readAsDataURL(attFile);
+    });
+  }
+
   // TASK 3: detect if this is an inventory purchase
   const isInventoryPurchase = (expCode === '1200');
 
@@ -3987,9 +4058,10 @@ window.saveBill = () => {
     vendorId, date: bDate, dueDate: bDue, lines, total,
     whtRate, whtAmount: whtAmt, netPayable: netPay,
     status: 'unpaid',
-    payments: [], amountPaid: 0, balance: total,   // TASK 1
+    payments: [], amountPaid: 0, balance: total,
     expenseAccount: expCode,
-    isInventoryPurchase                             // TASK 3
+    isInventoryPurchase,
+    ...(attachment ? { attachment } : {})
   };
   bills.push(bill);
 if (isInventoryPurchase) {
@@ -4027,8 +4099,11 @@ if (isInventoryPurchase) {
     // COGS is NEVER posted here — only posts at sale (saveInvoice)
     let whtAcc = accounts.find(a=>a.code==='2250');
     if (!whtAcc && whtAmt > 0) {
-      whtAcc = { code:'2250', name:'WHT Payable (NRS)', type:'Liability', balance:0 };
-      accounts.push(whtAcc);
+      try {
+        await apiFetch('/accounts', { method: 'POST', body: JSON.stringify({ code: '2250', name: 'WHT Payable (NRS)', type: 'Liability' }) });
+        await loadAllData(); // reload accounts to include the new one
+      } catch(e) { console.warn('Could not create WHT account', e); }
+      whtAcc = accounts.find(a=>a.code==='2250');
     }
     const jeLines = [{ accountCode: expCode, amount: total, type: 'debit' }];
     if (whtAmt > 0 && whtAcc) {
@@ -4898,13 +4973,21 @@ window.openReconcileView = function(bankId) {
   );
 };
 
-window.markSelectedReconciled = function(bankId) {
-  const txs = bankTransactions.filter(t=>t.bankId===bankId&&!t.reconciled);
-  let count=0;
-  txs.forEach(t=>{const cb=document.getElementById('rec_'+t.id);if(cb&&cb.checked){t.reconciled=true;t.reconciledAt=today();count++;}});
-  if (!count) return showToast('Select at least one transaction','info');
-  saveAllData();closeTopModal();renderBankingView();
-  showToast(count+' transaction'+(count!==1?'s':'')+' marked as reconciled','success');
+window.markSelectedReconciled = async function(bankId) {
+  const txs = bankTransactions.filter(t => t.bankId === bankId && !t.reconciled);
+  const ids = [];
+  txs.forEach(t => {
+    const cb = document.getElementById('rec_' + t.id);
+    if (cb && cb.checked) ids.push(t.id);
+  });
+  if (!ids.length) return showToast('Select at least one transaction', 'info');
+  try {
+    await apiFetch('/banktransactions/reconcile/bulk', { method: 'PATCH', body: JSON.stringify({ ids }) });
+    await loadAllData();
+    closeTopModal();
+    renderBankingView();
+    showToast(ids.length + ' transaction' + (ids.length !== 1 ? 's' : '') + ' marked as reconciled', 'success');
+  } catch (err) { showToast(err.message, 'danger'); }
 };
 
 window.importBankStatement = function() {
@@ -5905,6 +5988,14 @@ function renderSettingsView() {
             <div class="form-group"><label class="form-label">Invoice Prefix</label><input class="form-control" id="sPrefix" value="${settings.invoicePrefix}"></div>
             <div class="form-group"><label class="form-label">Next Invoice #</label><input type="number" class="form-control" id="sNextInv" value="${settings.nextInvoiceNumber}"></div>
           </div>
+                    <div class="form-row cols-2">
+            <div class="form-group"><label class="form-label">Default Currency</label>
+              <select class="form-control" id="sCurrency">
+                ${Object.entries(CURRENCIES).map(([code, v]) => `<option value="${code}" ${(settings.currency||'NGN')===code?'selected':''}>${v.symbol} ${code} — ${v.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group"><label class="form-label">Default Due (days)</label><input type="number" class="form-control" id="sDue" value="${settings.defaultDueDays}"></div>
+          </div>
           <div class="form-row cols-2">
             <div class="form-group"><label class="form-label">Default Due (days)</label><input type="number" class="form-control" id="sDue" value="${settings.defaultDueDays}"></div>
             <div class="form-group"><label class="form-label">VAT Rate (%)</label><input type="number" class="form-control" id="sVat" value="${settings.defaultVatRate}" step="0.1"></div>
@@ -5921,22 +6012,6 @@ function renderSettingsView() {
             <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()"><i class="fas fa-upload"></i> Import Backup</button>
             <input type="file" id="importFile" accept=".json" style="display:none;" onchange="window.importData(this)">
             <button class="btn btn-danger" onclick="clearData()"><i class="fas fa-trash"></i> Clear All Data</button>
-          </div>
-        </div>
-      </div>
-      <div class="card" style="grid-column:1/-1;">
-        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <span class="card-title"><i class="fas fa-coins" style="margin-right:8px;color:var(--brand);"></i>Exchange Rates (to NGN)</span>
-          <button class="btn btn-secondary btn-sm" onclick="refreshExchangeRates()"><i class="fas fa-rotate"></i> Refresh</button>
-        </div>
-        <div class="card-body">
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-            ${Object.entries(CURRENCIES).filter(([k])=>k!=='NGN').map(([k,v])=>`
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.8rem;font-weight:600;min-width:36px;">${k}</span>
-                <input type="number" class="form-control" id="rate_${k}" value="${exchangeRates[k]||''}" step="0.01" onchange="exchangeRates['${k}']=parseFloat(this.value)||1">
-                <span style="font-size:0.75rem;color:var(--text-3);">NGN</span>
-              </div>`).join('')}
           </div>
         </div>
       </div>
@@ -6792,6 +6867,24 @@ window.saveCustomer = async function(editId) {
     address: document.getElementById('custAddress')?.value,
     tin:     document.getElementById('custTin')?.value
   };
+    const attFile = document.getElementById('custAttachment')?.files[0];
+  let attachment = null;
+  if (attFile) {
+    if (attFile.size > 5 * 1024 * 1024) {
+      showToast('File too large. Max 5MB.', 'danger');
+      return;
+    }
+    attachment = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve({
+        name: attFile.name,
+        type: attFile.type,
+        data: e.target.result
+      });
+      reader.readAsDataURL(attFile);
+    });
+  }
+  if (attachment) data.attachment = attachment;
   try {
     if (editId && editId !== 'null') {
       await apiFetch(`/customers/${editId}`, { method:'PUT', body:JSON.stringify(data) });
@@ -6892,6 +6985,24 @@ window.saveVendor = async function() {
   const name = document.getElementById('vName')?.value.trim();
   if (!name) return alert('Vendor name required.');
   const data = { name, email:document.getElementById('vEmail')?.value, phone:document.getElementById('vPhone')?.value, tin:document.getElementById('vTin')?.value, address:document.getElementById('vAddr')?.value };
+  const attFile = document.getElementById('vendorAttachment')?.files[0];
+  let attachment = null;
+  if (attFile) {
+    if (attFile.size > 5 * 1024 * 1024) {
+      showToast('File too large. Max 5MB.', 'danger');
+      return;
+    }
+    attachment = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve({
+        name: attFile.name,
+        type: attFile.type,
+        data: e.target.result
+      });
+      reader.readAsDataURL(attFile);
+    });
+  }
+  if (attachment) data.attachment = attachment;
   try {
     await apiFetch('/vendors', { method:'POST', body:JSON.stringify(data) });
     closeTopModal();
@@ -6947,7 +7058,8 @@ window.saveBill = async function() {
     vendorId, date: bDate, dueDate: bDue, lines, total,
     whtRate, whtAmount, netPayable: netPay,
     expenseAccount: expCode, isInventoryPurchase,
-    status: 'unpaid', payments: [], amountPaid: 0, balance: total
+    status: 'unpaid', payments: [], amountPaid: 0, balance: total,
+    ...(attachment ? { attachment } : {})
   };
 
   try {
@@ -7409,17 +7521,24 @@ window.generateAnnualTaxReport = function() {
 };
  
 window.exportData = async function() {
-
-
   try {
-    const data = await apiFetch('/export');
-    const a = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'})),
-      download: `accounTrack_backup_${today()}.json`
+    const response = await fetch(`${API_BASE}/export`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
     });
+    if (!response.ok) throw new Error('Export failed');
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `accounTrack_backup_${today()}.json`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     showToast('Data exported successfully.', 'success');
-  } catch (err) { showToast(err.message || 'Export failed.', 'danger'); }
+  } catch (err) {
+    showToast(err.message || 'Export failed.', 'danger');
+  }
 };
 
 window.importData = function(input) {
@@ -7696,14 +7815,18 @@ function clearCustBulk() {
   const bar=document.getElementById('custBulkBar');
   if(bar) bar.style.display='none';
 }
-function bulkDeleteCustomers() {
+window.bulkDeleteCustomers = async function() {
   const ids = [...document.querySelectorAll('.cust-check:checked')].map(cb => String(cb.value));
-  if(!ids.length) return;
-  if(!confirm('Delete '+ids.length+' customer'+(ids.length!==1?'s':'')+' permanently?')) return;
-  customers = customers.filter(c => !ids.includes(String(c.id)));
-  saveAllData(); renderCustomersView();
-  showToast(ids.length+' customer'+(ids.length!==1?'s':'')+' deleted','success');
-}
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' customer' + (ids.length !== 1 ? 's' : '') + ' permanently?')) return;
+  try {
+    await apiFetch('/customers/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) });
+    await loadAllData();
+    renderCustomersView();
+    showToast(ids.length + ' customer' + (ids.length !== 1 ? 's' : '') + ' deleted', 'success');
+    logAction('BULK_DELETE', 'Deleted ' + ids.length + ' customers');
+  } catch (err) { showToast(err.message || 'Delete failed.', 'danger'); }
+};
 function updateBillBulkBar() {
   const checked=document.querySelectorAll('.bill-check:checked');
   const bar=document.getElementById('billBulkBar');
@@ -7720,14 +7843,19 @@ function clearBillBulk() {
   const bar=document.getElementById('billBulkBar');
   if(bar) bar.style.display='none';
 }
-function bulkDeleteBills() {
-  const ids=[...document.querySelectorAll('.bill-check:checked')].map(c=>parseInt(c.value));
-  if(!ids.length) return;
-  if(!confirm('Delete '+ids.length+' bill'+(ids.length!==1?'s':'')+' permanently?')) return;
-  bills=bills.filter(b=>!ids.includes(b.id));
-  recalcBalances(); renderBillsView();
-  showToast(ids.length+' bill'+(ids.length!==1?'s':'')+' deleted','success');
-}
+window.bulkDeleteBills = async function() {
+  const ids = [...document.querySelectorAll('.bill-check:checked')].map(cb => String(cb.value));
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' bill' + (ids.length !== 1 ? 's' : '') + ' permanently?')) return;
+  try {
+    await apiFetch('/bills/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) });
+    await loadAllData();
+    recalcBalances();
+    renderBillsView();
+    showToast(ids.length + ' bill' + (ids.length !== 1 ? 's' : '') + ' deleted', 'success');
+    logAction('BULK_DELETE', 'Deleted ' + ids.length + ' bills');
+  } catch (err) { showToast(err.message || 'Delete failed.', 'danger'); }
+};
 function bulkExportCustomers() {
   const ids=[...document.querySelectorAll('.cust-check:checked')].map(c=>parseInt(c.value));
   if(!ids.length) return;
@@ -7739,6 +7867,7 @@ function bulkExportCustomers() {
     href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),
     download:'customers_'+today()+'.csv'
   });
+  logAction('EXPORT', 'Exported ' + selected.length + ' customers to CSV');
   a.click();
   showToast(selected.length+' customers exported','success');
 }
@@ -7759,14 +7888,18 @@ function clearBulkSelection() {
   const bar=document.getElementById('bulkActionsBar');
   if(bar) bar.style.display='none';
 }
-function bulkDeleteInvoices() {
-  const ids=[...document.querySelectorAll('.inv-check:checked')].map(c=>parseInt(c.value));
-  if(!ids.length) return;
-  if(!confirm('Delete '+ids.length+' invoice'+( ids.length!==1?'s':'')+' permanently?')) return;
-  invoices=invoices.filter(i=>!ids.includes(i.id));
-  saveAllData();renderInvoicesView();
-  showToast(ids.length+' invoice'+(ids.length!==1?'s':'')+' deleted','success');
-}
+window.bulkDeleteInvoices = async function() {
+  const ids = [...document.querySelectorAll('.inv-check:checked')].map(cb => String(cb.value));
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' invoice' + (ids.length !== 1 ? 's' : '') + ' permanently?')) return;
+  try {
+    await apiFetch('/invoices/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) });
+    await loadAllData();
+    renderInvoicesView();
+    showToast(ids.length + ' invoice' + (ids.length !== 1 ? 's' : '') + ' deleted', 'success');
+    logAction('BULK_DELETE', 'Deleted ' + ids.length + ' invoices');
+  } catch (err) { showToast(err.message || 'Delete failed.', 'danger'); }
+};
 function bulkExportBills() {
   const ids=[...document.querySelectorAll('.bill-check:checked')].map(c=>parseInt(c.value));
   if(!ids.length) return;
@@ -7779,6 +7912,7 @@ function bulkExportBills() {
     href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),
     download:'bills_'+today()+'.csv'
   });
+  logAction('EXPORT', 'Exported ' + selected.length + ' bills to CSV');
   a.click();
   showToast(selected.length+' bills exported','success');
 }
@@ -7791,6 +7925,7 @@ function bulkExportInvoices() {
     return [inv.number,c?.name||'',inv.date,inv.dueDate,inv.total,inv.amountPaid||0,inv.balance||inv.total,inv.status].join(',');
   }).join('\n');
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'invoices_export_'+today()+'.csv'});
+  logAction('EXPORT', 'Exported ' + selected.length + ' invoices to CSV');
   a.click();
   showToast(selected.length+' invoices exported','success');
 }
@@ -8181,7 +8316,6 @@ window.convertPOtoBill = async (poId) => {
       showToast('File too large. Max 5MB.', 'danger');
       return;
     }
-
     attachment = await new Promise(resolve => {
       const reader = new FileReader();
       reader.onload = e => resolve({
@@ -8192,6 +8326,8 @@ window.convertPOtoBill = async (poId) => {
       reader.readAsDataURL(attFile);
     });
   }
+
+  if (total <= 0) return alert('Bill total must be > 0.');
   try {
     await apiFetch('/bills', { method:'POST', body: JSON.stringify({
       vendorId: String(po.vendorId),
