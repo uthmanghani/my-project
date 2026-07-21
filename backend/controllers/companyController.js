@@ -24,6 +24,7 @@ exports.getSettings = async (req, res) => {
       defaultDueDays:      company.settings?.defaultDueDays      || 30,
       defaultVatRate:      company.settings?.defaultVatRate       || 7.5,
       defaultInvoiceNotes: company.settings?.defaultInvoiceNotes || 'Thank you for your business.',
+      invoiceTemplate:     company.settings?.invoiceTemplate     || 'classic',
       currency:            company.settings?.currency             || '₦',
       darkMode:            company.settings?.darkMode             || false,
     });
@@ -46,7 +47,7 @@ exports.updateSettings = async (req, res) => {
     if (req.body.companyAddress) company.address = req.body.companyAddress;
     // Update settings sub-object
     const settingsFields = ['invoicePrefix','nextInvoiceNumber','defaultDueDays',
-      'defaultVatRate','defaultInvoiceNotes','currency','darkMode'];
+      'defaultVatRate','defaultInvoiceNotes','invoiceTemplate','currency','darkMode'];
     settingsFields.forEach(f => { if (req.body[f] !== undefined) company.settings[f] = req.body[f]; });
     company.markModified('settings');
     await company.save();

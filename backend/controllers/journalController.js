@@ -12,7 +12,7 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { date, description, lines } = req.body;
+    const { date, description, lines, type } = req.body;
     let debits = 0, credits = 0;
     for (const line of lines) {
       if (line.type === 'debit') debits += line.amount;
@@ -25,7 +25,7 @@ exports.create = async (req, res) => {
       companyId: req.user.companyId,
       date,
       description,
-      type: 'journal',
+      type: type || 'journal',
       lines
     });
     await journal.save();

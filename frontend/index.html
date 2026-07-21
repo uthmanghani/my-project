@@ -1204,13 +1204,19 @@ function normId(id) {
 }
 async function fetchLiveRates() {
   try {
-    const res = await fetch('https://api.exchangerate-api.com/v4/latest/NGN');
-    if (!res.ok) return;
+    const res = await fetch('https://open.er-api.com/v6/latest/NGN');
+    if (!res.ok) throw new Error('Rate service returned ' + res.status);
     const data = await res.json();
+    if (data.result !== 'success' || !data.rates) throw new Error('Rate service returned no data');
     Object.keys(CURRENCIES).forEach(cur => {
       if (cur !== 'NGN' && data.rates[cur]) exchangeRates[cur] = 1 / data.rates[cur];
     });
-  } catch(e) { console.warn('Could not fetch live rates'); }
+    exchangeRates._lastUpdated = data.time_last_update_utc || new Date().toISOString();
+    return true;
+  } catch(e) {
+    console.warn('Could not fetch live rates', e);
+    return false;
+  }
 }
 
 // ─── ROLE-BASED ACCESS CONTROL ───────────────────────────────
@@ -1345,8 +1351,11 @@ function getDashDates() {
 async function loadAllData() {
   if (!authToken) return;
   try {
-    const [acc, je, cust, inv, vend, bill, prod, emp, ast, set] = await Promise.all([
-  apiFetch('/accounts').catch(() => []),
+    const lastFx = localStorage.getItem('at_fx_last_fetch');
+    if (!lastFx || (Date.now() - Number(lastFx)) > 12*60*60*1000) {
+      fetchLiveRates().then(ok => { if (ok) localStorage.setItem('at_fx_last_fetch', String(Date.now())); });
+    }
+    const [acc, je, cust, inv, vend, bill, prod, emp, ast, set] = await Promise.all([  apiFetch('/accounts').catch(() => []),
   apiFetch('/journals').catch(() => []),
   apiFetch('/customers').catch(() => []),
   apiFetch('/invoices').catch(() => []),
@@ -1616,21 +1625,7 @@ async function obSignIn() {
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
+    
     // Save user profile for Settings page
     localStorage.setItem('at_user_profile', JSON.stringify({
   ...data.user,
@@ -1728,26 +1723,7 @@ async function verify2FA() {
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
+    
     localStorage.setItem('at_user_profile', JSON.stringify({ ...data.user, role: data.user.role }));
     try {
       const cp = await apiFetch('/company/profile');
@@ -1796,7 +1772,7 @@ async function obFinishSetup() {
     email:       obData.company.email,
     address:     obData.company.address
   };
-  const admin = { firstName:fn, lastName:ln, email:em, password:pw, role:ro };
+  const admin = { firstName:fn, lastName:ln, email:em, password:pw, jobTitle:ro, role:'admin' };
 
   document.getElementById('obStep2').style.display='none';
   document.getElementById('obStep3').style.display='block';
@@ -1816,23 +1792,14 @@ async function obFinishSetup() {
     authToken = data.token;
     localStorage.setItem('at_token', authToken);
     currentUserId = data.user.id;
+    
     // If registering additional company, no invite needed
     if (window._registeringAdditionalCompany) {
       window._registeringAdditionalCompany = false;
       showToast('New company registered! You can now switch between companies.', 'success');
     }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // If registering additional company, no invite needed
-    if (window._registeringAdditionalCompany) {
-      window._registeringAdditionalCompany = false;
-      showToast('New company registered! You can now switch between companies.', 'success');
-    }
-    // Store user profile
-    localStorage.setItem('at_user_profile', JSON.stringify(admin));
+        // Store user profile
+    localStorage.setItem('at_user_profile', JSON.stringify({ ...admin, ...(data.user||{}), role: (data.user&&data.user.role) || 'admin' }));
     localStorage.setItem('at_industry', industry);
     if (window._inviteToken) {
       try {
@@ -2811,10 +2778,10 @@ function renderInvoicesView() {
         <td class="td-bold" style="color:${balance > 0.005 ? 'var(--danger)' : 'var(--success)'};">${fmt(balance)}</td>
         <td>
           <div class="table-actions">
-            <div class="action-btn" title="View" onclick="viewInvoice('${invId}')"><i class="fas fa-eye"></i></div>
+                        <div class="action-btn" title="View" onclick="viewInvoice('${invId}')"><i class="fas fa-eye"></i></div>
             ${inv.status !== 'paid' ? `<div class="action-btn" title="Record Payment" onclick="openCustomerPaymentModal('${invId}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-money-bill-wave"></i></div>` : ''}
-            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder('${invId}')" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}
-            <div class="action-btn danger" title="Delete" onclick="deleteInvoice('${invId}')"><i class="fas fa-trash"></i></div>
+            <div class="action-btn" title="Process Return" onclick="openReturnModal('sales','${invId}')" style="color:#d97706;border-color:#d97706;"><i class="fas fa-rotate-left"></i></div>
+            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder('${invId}')" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}            <div class="action-btn danger" title="Delete" onclick="deleteInvoice('${invId}')"><i class="fas fa-trash"></i></div>
           </div>
         </td>
       </tr>
@@ -3373,12 +3340,13 @@ function toggle2FA() {
 
 async function refreshExchangeRates() {
   showToast('Fetching live exchange rates...', 'info');
-  await fetchLiveRates();
+  const ok = await fetchLiveRates();
   Object.keys(CURRENCIES).filter(k=>k!=='NGN').forEach(k => {
     const el = document.getElementById('rate_'+k);
     if (el) el.value = exchangeRates[k] || '';
   });
-  showToast('Exchange rates updated!', 'success');
+  if (ok) showToast('Exchange rates updated!', 'success');
+  else showToast('Could not reach the exchange rate service — using last known rates.', 'warning');
 }
 
 function toggleRecurring() {
@@ -3865,8 +3833,8 @@ function renderBillsView() {
             '<i class="fas fa-money-bill-wave"></i></div>'
           : '') +
         (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${bId}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
-        '<div class="action-btn danger" onclick="deleteBill(\'' + bId + '\')">' +
-        '<i class="fas fa-trash"></i></div>' +
+        '<div class="action-btn" title="Process Return" onclick="openReturnModal(\'purchase\',\'' + bId + '\')" style="color:#d97706;border-color:#d97706;"><i class="fas fa-rotate-left"></i></div>' +
+        '<div class="action-btn danger" onclick="deleteBill(\'' + bId + '\')">' +        '<i class="fas fa-trash"></i></div>' +
         
       '</div></td></tr>';
   }).join('');
@@ -4482,14 +4450,13 @@ function renderAccountingView() {
     if (!accs.length) return;
     html += `<div class="section-label" style="margin-top:20px;">${type} Accounts</div>
     <div class="table-wrap" style="margin-bottom:12px;">
-      <table><thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th>Balance</th><th></th></tr></thead>
+      <table><thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th style="text-align:right;">Balance</th><th></th></tr></thead>
       <tbody>${accs.map(a=>`<tr>
         <td class="td-mono td-bold">${a.code}</td>
         <td>${a.name}</td>
         <td><span class="badge badge-neutral">${a.type}</span></td>
-        <td class="td-bold ${['Asset','Expense'].includes(a.type) ? (a.balance>=0?'':'') : (a.balance>=0?'':'')}" style="color:${a.balance===0?'var(--text-3)':a.balance>0?'var(--success)':'var(--danger)'}">${fmt(Math.abs(a.balance))}</td>
-            <td style="font-size:0.72rem;color:var(--text-3);">${a.balance===0?'—':(['Asset','Expense'].includes(a.type)?'Dr':'Cr')}</td>
-        <td><div class="action-btn danger" onclick="deleteAccount('${a.code}')"><i class="fas fa-trash"></i></div></td>
+        <td class="td-bold" style="text-align:right;color:${a.balance===0?'var(--text-3)':a.balance>0?'var(--success)':'var(--danger)'}">${fmt(Math.abs(a.balance))}</td>
+            <td style="font-size:0.72rem;color:var(--text-3);text-align:right;">${a.balance===0?'—':(['Asset','Expense'].includes(a.type)?'Dr':'Cr')}</td>        <td><div class="action-btn danger" onclick="deleteAccount('${a.code}')"><i class="fas fa-trash"></i></div></td>
       </tr>`).join('')}</tbody></table>
     </div>`;
   });
@@ -5108,18 +5075,18 @@ window.filterTx = () => {
 window.exportNRSReturns = function() {
   showModal('NRS Tax Returns Export', `
     <p style="font-size:0.82rem;color:var(--text-2);margin-bottom:16px;">
-      Export NRS-compliant files to upload directly to <strong>TaxPro Max / Rev360</strong>.
+      Generate working schedules for your NRS filings. <strong>TaxPro Max has been retired — file on Rev360</strong> (selfservice.nrs.gov.ng), which now uses a downloadable Excel schedule you fill offline and re-upload.
     </p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportPAYEReturn();closeTopModal()">
         <i class="fas fa-users" style="font-size:1.8rem;color:#0a4f45;margin-bottom:8px;"></i>
         <div style="font-weight:700;font-size:0.88rem;">PAYE Monthly Return</div>
-        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Form PAYE-001 · Due 10th of month</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Due 10th of month</div>
       </div>
       <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportVATReturn();closeTopModal()">
         <i class="fas fa-percent" style="font-size:1.8rem;color:#0891b2;margin-bottom:8px;"></i>
-        <div style="font-weight:700;font-size:0.88rem;">VAT Monthly Return</div>
-        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Form VAT-002 · Due 21st of month</div>
+        <div style="font-weight:700;font-size:0.88rem;">VAT Sales/Purchase Schedule</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Due 21st of month</div>
       </div>
       <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportWHTReturn();closeTopModal()">
         <i class="fas fa-file-invoice" style="font-size:1.8rem;color:#d97706;margin-bottom:8px;"></i>
@@ -5129,18 +5096,19 @@ window.exportNRSReturns = function() {
       <div style="background:var(--surface2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;border:2px solid var(--border);" onclick="exportCITReturn();closeTopModal()">
         <i class="fas fa-building" style="font-size:1.8rem;color:#7c3aed;margin-bottom:8px;"></i>
         <div style="font-weight:700;font-size:0.88rem;">CIT Annual Summary</div>
-        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Companies Income Tax · Form CIT-001</div>
+        <div style="font-size:0.72rem;color:var(--text-3);margin-top:4px;">Companies Income Tax</div>
       </div>
     </div>
     <div style="margin-top:16px;padding:12px 14px;background:#fef3c7;border-radius:8px;font-size:0.78rem;color:#92400e;">
       <i class="fas fa-info-circle" style="margin-right:6px;"></i>
-      Upload the exported CSV to <strong>taxpromax.firs.gov.ng</strong> or <strong>rev360.nrs.gov.ng</strong> under e-Filing.
+      These CSVs are working schedules for your own records and for filling in the official form. Rev360 requires its own downloadable Excel workbook (with embedded validation formulas) for the actual upload — always use the current template from <strong>selfservice.nrs.gov.ng</strong>, since NRS updates that format from time to time.
     </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Close</button>`
   );
 };
-
+ 
 window.exportPAYEReturn = function() {
+
   const now = new Date();
   const month = String(now.getMonth()+1).padStart(2,'0');
   const yr = now.getFullYear();
@@ -5169,23 +5137,23 @@ window.exportPAYEReturn = function() {
     download: `PAYE_Return_${yr}_${month}_${settings.companyName||'Company'}.csv`
   });
   a.click();
-  showToast('PAYE Return exported — upload to TaxPro Max / Rev360', 'success');
+   showToast('PAYE schedule exported — use it to fill the current Rev360 template', 'success');
 };
 
 window.exportVATReturn = function() {
   const now = new Date();
   const month = String(now.getMonth()+1).padStart(2,'0');
   const yr = now.getFullYear();
-  const outputHeader = 'InvoiceNumber,CustomerName,CustomerTIN,InvoiceDate,NetAmount,VATRate,VATAmount';
-  const inputHeader = 'BillNumber,VendorName,VendorTIN,BillDate,NetAmount,VATRate,VATAmount';
+  const outputHeader = 'Beneficiary Name,Beneficiary TIN,Item,Item Description,Item Cost,VAT Status,VAT Amount,Invoice Number,Invoice Date';
+  const inputHeader = 'Beneficiary Name,Beneficiary TIN,Item,Item Description,Item Cost,VAT Status,VAT Amount,Bill Number,Bill Date';
   const outputRows = invoices
     .filter(i => (i.vat||0) > 0)
     .map(inv => {
       const c = customers.find(x=>(x._id||x.id)==(inv._customerName?inv.customerId:(inv.customerId?._id||inv.customerId)));
       return [
-        inv.number||'', '"'+(c?.name||'')+'"', c?.tin||'',
-        inv.date, (inv.subtotal||inv.total).toFixed(2), '7.5',
-        (inv.vat||0).toFixed(2)
+        '"'+(c?.name||'')+'"', c?.tin||'', 'Goods/Services', '"'+(inv.number||'Sale')+'"',
+        (inv.subtotal||inv.total).toFixed(2), 'Vatable', (inv.vat||0).toFixed(2),
+        inv.number||'', inv.date
       ].join(',');
     }).join('\n');
   const inputRows = bills
@@ -5193,25 +5161,24 @@ window.exportVATReturn = function() {
     .map(bill => {
       const v = vendors.find(x=>x.id===bill.vendorId);
       return [
-        bill.number||'', '"'+(v?.name||'')+'"', v?.tin||'',
-        bill.date, (bill.subtotal||bill.total).toFixed(2), '7.5',
-        (bill.vat||0).toFixed(2)
+        '"'+(v?.name||'')+'"', v?.tin||'', 'Goods/Services', '"'+(bill.number||'Purchase')+'"',
+        (bill.subtotal||bill.total).toFixed(2), 'Vatable', (bill.vat||0).toFixed(2),
+        bill.number||'', bill.date
       ].join(',');
     }).join('\n');
   const totalOutput = invoices.reduce((s,i)=>s+(i.vat||0),0);
   const totalInput = bills.reduce((s,b)=>s+(b.vat||0),0);
-  const csv = `NRS VAT MONTHLY RETURN - FORM VAT-002\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Period:,${month}/${yr}\n\n`
-    + `OUTPUT VAT (Sales)\n${outputHeader}\n${outputRows||'No VAT invoices'}\n\n`
-    + `INPUT VAT (Purchases)\n${inputHeader}\n${inputRows||'No VAT bills'}\n\n`
+  const csv = `NRS VAT MONTHLY SCHEDULE (working copy — re-enter into the official Rev360 template)\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Period:,${month}/${yr}\n\n`
+    + `SALES SCHEDULE (Output VAT)\n${outputHeader}\n${outputRows||'No VAT invoices'}\n\n`
+    + `PURCHASES SCHEDULE (Input VAT)\n${inputHeader}\n${inputRows||'No VAT bills'}\n\n`
     + `SUMMARY\nTotal Output VAT,${totalOutput.toFixed(2)}\nTotal Input VAT,${totalInput.toFixed(2)}\nNet VAT Payable,${(totalOutput-totalInput).toFixed(2)}`;
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
-    download: `VAT_Return_${yr}_${month}_${settings.companyName||'Company'}.csv`
+    download: `VAT_Schedule_${yr}_${month}_${settings.companyName||'Company'}.csv`
   });
   a.click();
-  showToast('VAT Return exported — upload to TaxPro Max / Rev360', 'success');
+  showToast('VAT Schedule exported — use it to fill the current Rev360 Sales/Purchase template', 'success');
 };
-
 window.exportWHTReturn = function() {
   const now = new Date();
   const month = String(now.getMonth()+1).padStart(2,'0');
@@ -5248,7 +5215,7 @@ window.exportCITReturn = function() {
   const assessableProfit = Math.max(0, totalRevenue - totalExpensesAll);
   const citRate = totalRevenue > 100000000 ? 0.30 : totalRevenue > 25000000 ? 0.20 : 0;
   const estimatedCIT = assessableProfit * citRate;
-  const csv = `NRS COMPANIES INCOME TAX - FORM CIT-001\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Year:,${yr}\n\n`
+const csv = `NRS COMPANIES INCOME TAX SUMMARY (working copy)\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Year:,${yr}\n\n`
     + `INCOME STATEMENT SUMMARY\nTotal Revenue (Turnover):,${totalRevenue.toFixed(2)}\n`
     + `Cost of Sales / Expenses:,${totalExpensesAll.toFixed(2)}\n`
     + `Assessable Profit:,${assessableProfit.toFixed(2)}\n\n`
@@ -5338,12 +5305,7 @@ function renderReportsView() {
         <button class="btn btn-primary" onclick="exportNRSReturns()" style="background:#16a34a;border-color:#16a34a;"><i class="fas fa-file-export"></i> NRS Tax Returns</button>
       </div>
     </div>
-      <div class="page-actions">
-        <button class="btn btn-secondary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
-      </div>
-    </div>
-    <div class="report-tabs">
-      <button class="report-tab active" onclick="showRpt('pl',this)">Profit & Loss</button>
+    <div class="report-tabs">      <button class="report-tab active" onclick="showRpt('pl',this)">Profit & Loss</button>
       <button class="report-tab" onclick="showRpt('bs',this)">Balance Sheet</button>
       <button class="report-tab" onclick="showRpt('gl',this)">General Ledger</button>
       <button class="report-tab" onclick="showRpt('tb',this)">Trial Balance</button>
@@ -5371,19 +5333,26 @@ window.showRpt = (type, btn) => {
 
   if (type === 'pl') {
     cont.innerHTML = `
-      <div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:16px;">Statement of Profit or Loss</div>
-      <div class="report-section"><h4>Revenue</h4>${accounts.filter(a=>a.type==='Revenue').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Revenue</span><span>${fmt(revenue)}</span></div></div>
-      <div class="report-section"><h4>Expenses</h4>${accounts.filter(a=>a.type==='Expense').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Expenses</span><span>${fmt(expenses)}</span></div></div>
-      <div class="report-row ${netIncome>=0?'net-income':'net-loss'}"><span>${netIncome>=0?'Net Profit':'Net Loss'}</span><span>${fmt(Math.abs(netIncome))}</span></div>`;
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid var(--brand);">
+        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${settings.companyName||'My Company'}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Profit or Loss</div></div>
+        <div style="text-align:right;font-size:0.75rem;color:var(--text-3);">For the period ended<br><strong style="color:var(--text-2);">${today()}</strong></div>
+      </div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Revenue</h4>${accounts.filter(a=>a.type==='Revenue').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No revenue recorded</div>'}<div class="report-row total"><span>Total Revenue</span><span>${fmt(revenue)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Expenses</h4>${accounts.filter(a=>a.type==='Expense').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No expenses recorded</div>'}<div class="report-row total"><span>Total Expenses</span><span>${fmt(expenses)}</span></div></div>
+      <div style="display:flex;justify-content:space-between;padding:14px 16px;margin-top:16px;border-radius:8px;font-size:1rem;font-weight:800;background:${netIncome>=0?'var(--brand)':'var(--danger)'};color:white;"><span>${netIncome>=0?'Net Profit':'Net Loss'}</span><span>${fmt(Math.abs(netIncome))}</span></div>`;
     return;
   }
   if (type === 'bs') {
     cont.innerHTML = `
-      <div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:16px;">Statement of Financial Position<span style="float:right;font-size:0.78rem;font-weight:400;color:var(--text-3);">${today()}</span></div>
-      <div class="report-section"><h4>Assets</h4>${accounts.filter(a=>a.type==='Asset').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Assets</span><span>${fmt(assets)}</span></div></div>
-      <div class="report-section"><h4>Liabilities</h4>${accounts.filter(a=>a.type==='Liability').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(Math.abs(a.balance))}</span></div>`).join('')}<div class="report-row total"><span>Total Liabilities</span><span>${fmt(liabs)}</span></div></div>
-      <div class="report-section"><h4>Equity</h4>${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>`<div class="report-row" style="color:var(--danger);"><span>${a.name} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}<div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
-      <div class="report-row total" style="font-size:0.95rem;"><span>Total Liabilities + Equity</span><span>${fmt(liabs+equity)}</span></div>`;
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid var(--brand);">
+        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${settings.companyName||'My Company'}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Financial Position</div></div>
+        <div style="text-align:right;font-size:0.75rem;color:var(--text-3);">As at<br><strong style="color:var(--text-2);">${today()}</strong></div>
+      </div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Assets</h4>${accounts.filter(a=>a.type==='Asset').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Assets</span><span>${fmt(assets)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Liabilities</h4>${accounts.filter(a=>a.type==='Liability').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(Math.abs(a.balance))}</span></div>`).join('')}<div class="report-row total"><span>Total Liabilities</span><span>${fmt(liabs)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Equity</h4>${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>`<div class="report-row" style="color:var(--danger);"><span>${a.name} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}<div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
+      <div style="display:flex;justify-content:space-between;padding:14px 16px;margin-top:16px;border-radius:8px;font-size:1rem;font-weight:800;background:${Math.abs(assets-(liabs+equity))<0.01?'var(--brand)':'var(--danger)'};color:white;"><span>Total Liabilities + Equity</span><span>${fmt(liabs+equity)}</span></div>
+      ${Math.abs(assets-(liabs+equity))>=0.01?`<div style="margin-top:8px;font-size:0.75rem;color:var(--danger);text-align:right;">⚠ Balance sheet does not balance — check journal entries.</div>`:''}`;
     return;
   }
   if (type === 'gl') {
@@ -5533,7 +5502,7 @@ window.showRpt = (type, btn) => {
     const equityCF      = accounts.filter(a => a.type === 'Equity').reduce((s,a) => s + a.balance, 0);
     const financingCF   = equityCF;
     const netCash       = operatingCF + investingCF + financingCF;
-    const cfRow = (label, amt, indent) => `<div style="display:flex;justify-content:space-between;padding:7px ${indent?'32px':'12px'} 7px 12px;font-size:0.82rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-2);${indent?'padding-left:16px;':''}">${label}</span><strong style="color:${amt>=0?'var(--success)':'var(--danger)'};">${fmt(amt)}</strong></div>`;
+    const cfRow = (label, amt, indent) => `<div style="display:flex;justify-content:space-between;padding:7px 12px 7px ${indent?'12px':'12px'};font-size:0.82rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-2);${indent?'padding-left:16px;':''}">${label}</span><strong style="color:${amt>=0?'var(--success)':'var(--danger)'};min-width:110px;text-align:right;display:inline-block;">${fmt(amt)}</strong></div>`;
     cont.innerHTML = `<div style="font-size:1rem;font-weight:700;margin-bottom:16px;color:var(--text-1);">Statement of Cash Flows — Indirect Method (IAS 7)</div>
       <div class="report-panel" style="padding:0;">
         <div style="padding:10px 12px;background:var(--brand);border-radius:var(--radius-md) var(--radius-md) 0 0;color:white;font-size:0.82rem;font-weight:700;">A. Operating Activities</div>
@@ -5746,7 +5715,8 @@ function renderProductsView() {
     <td><span class="badge ${p.stock<=5?'badge-danger':p.stock<=20?'badge-warning':'badge-success'}">${p.stock} units</span></td>
     <td>${fmt(p.stock*p.cost)}</td>
     <td><div class="table-actions">
-      <div class="action-btn danger" onclick="deleteProduct('${p.id}')"><i class="fas fa-trash"></i></div>
+      <div class="action-btn" onclick="openEditProductModal('${p._id||p.id}')"><i class="fas fa-pen"></i></div>
+      <div class="action-btn danger" onclick="deleteProduct('${p._id||p.id}')"><i class="fas fa-trash"></i></div>
     </div></td>
   </tr>`).join('');
   const totalInv = products.reduce((s,p)=>s+(p.stock*p.cost),0);
@@ -5913,7 +5883,7 @@ function renderSettingsView() {
           ${(()=>{const u=JSON.parse(localStorage.getItem('at_user_profile')||'{}');return u.firstName?`
           <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
             <div style="width:52px;height:52px;background:var(--brand);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:1.2rem;font-weight:700;flex-shrink:0;">${(u.firstName[0]||'').toUpperCase()}${(u.lastName?.[0]||'').toUpperCase()}</div>
-            <div><div style="font-weight:700;font-size:0.95rem;">${u.firstName} ${u.lastName}</div><div style="color:var(--text-3);margin-top:2px;">${u.role||'Administrator'}</div></div>
+<div><div style="font-weight:700;font-size:0.95rem;">${u.firstName} ${u.lastName}</div><div style="color:var(--text-3);margin-top:2px;">${u.jobTitle||'Administrator'}</div></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Email</span><span style="font-weight:500;">${u.email}</span></div>
@@ -7114,6 +7084,158 @@ window.markBillPaid = function(id) {
   openVendorPaymentModal(id);
 };
 
+// ─── RETURNS / REFUNDS ──────────────────────────────────────────────────
+// kind: 'sales' = customer returns goods on an invoice (credit note)
+//       'purchase' = business returns goods to a vendor on a bill (debit note)
+window.openReturnModal = function(kind, docId) {
+  const doc = kind === 'sales'
+    ? invoices.find(i => String(i._id||i.id) === String(docId))
+    : bills.find(b => String(b._id||b.id) === String(docId));
+  if (!doc) return;
+  if (!doc.lines || !doc.lines.length) return showToast('This document has no line items to return.', 'info');
+ 
+  const vatRate = (settings.defaultVatRate || 7.5) / 100;
+  const revAcc  = accounts.find(a => a.type === 'Revenue' && /sales|revenue/i.test(a.name)) || accounts.find(a => a.type === 'Revenue');
+  const vatAcc  = accounts.find(a => /vat/i.test(a.name) && a.type === 'Liability');
+  const arAcc   = accounts.find(a => a.code === '1100') || accounts.find(a => /receivable/i.test(a.name));
+  const apAcc   = accounts.find(a => a.code === '2000') || accounts.find(a => /payable/i.test(a.name) && a.type === 'Liability' && !/vat|wht|paye/i.test(a.name));
+  const invAcc  = accounts.find(a => a.code === '1200') || accounts.find(a => /inventory/i.test(a.name));
+  const cogsAcc = accounts.find(a => /cost of goods|cogs/i.test(a.name)) || accounts.find(a => a.code === '5000');
+  const expAcc  = kind === 'purchase' ? accounts.find(a => a.code === doc.expenseAccount) : null;
+  const acctOpts = list => accounts.map(a => `<option value="${a.code}" ${list && a.code===list.code?'selected':''}>${a.code} – ${a.name}</option>`).join('');
+ 
+  const rows = doc.lines.map((l, idx) => {
+    const already = 0; // future: track prior returns per line
+    const maxQty = l.quantity - already;
+    return `<tr>
+      <td style="font-size:0.8rem;">${l.description||'Item'}</td>
+      <td style="font-size:0.8rem;text-align:center;">${l.quantity}</td>
+      <td style="text-align:center;"><input type="number" class="form-control ret-qty" data-idx="${idx}" data-rate="${l.rate}" data-prod="${l.productId||''}" value="0" min="0" max="${maxQty}" step="1" style="width:80px;" oninput="updateReturnTotals()"></td>
+      <td style="font-size:0.8rem;text-align:right;" class="ret-line-amt">₦0.00</td>
+    </tr>`;
+  }).join('');
+ 
+  showModal(kind === 'sales' ? 'Process Customer Return' : 'Process Return to Vendor', `
+    <p style="font-size:0.8rem;color:var(--text-2);margin-bottom:12px;">
+      ${kind === 'sales' ? 'Select the quantity being returned by the customer for '+doc.number+'.' : 'Select the quantity being returned to the vendor for '+doc.number+'.'}
+    </p>
+    <div class="table-wrap"><table><thead><tr><th>Item</th><th style="text-align:center;">Qty on ${kind==='sales'?'Invoice':'Bill'}</th><th style="text-align:center;">Return Qty</th><th style="text-align:right;">Amount</th></tr></thead>
+    <tbody id="returnLinesBody">${rows}</tbody></table></div>
+    <div style="display:flex;justify-content:space-between;padding:10px 4px;font-size:0.85rem;"><span>Return Subtotal</span><strong id="retSubtotal">₦0.00</strong></div>
+    <div style="display:flex;justify-content:space-between;padding:0 4px 10px;font-size:0.85rem;"><span>VAT (${(vatRate*100).toFixed(1)}%)</span><strong id="retVat">₦0.00</strong></div>
+    <div style="display:flex;justify-content:space-between;padding:0 4px 14px;font-size:0.95rem;font-weight:800;border-top:1px solid var(--border);"><span>Total ${kind==='sales'?'Refund / Credit':'Debit Note'}</span><strong id="retTotal">₦0.00</strong></div>
+    <div class="form-group"><label class="form-label">Reason</label><input class="form-control" id="retReason" placeholder="e.g. Damaged goods, wrong item"></div>
+    <div style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:8px;">
+      <div class="form-hint" style="margin-bottom:8px;">Review the accounts this return will post to — adjust if needed for your Chart of Accounts.</div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">${kind==='sales'?'Reverse Revenue Account':'Reduce Expense/Inventory Account'}</label>
+          <select class="form-control" id="ret${kind==='sales'?'Rev':'Exp'}Acc">${acctOpts(kind==='sales'?revAcc:(expAcc||invAcc))}</select></div>
+        <div class="form-group"><label class="form-label">${kind==='sales'?'Accounts Receivable':'Accounts Payable'}</label>
+          <select class="form-control" id="retArApAcc">${acctOpts(kind==='sales'?arAcc:apAcc)}</select></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">VAT Account</label><select class="form-control" id="retVatAcc">${acctOpts(vatAcc)}</select></div>
+        ${kind==='sales'?`<div class="form-group"><label class="form-label">Inventory Account (restock at cost)</label><select class="form-control" id="retInvAcc">${acctOpts(invAcc)}</select></div>`:''}
+      </div>
+    </div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="saveReturn('${kind}','${docId}')"><i class="fas fa-rotate-left"></i> Post Return</button>`
+  );
+  updateReturnTotals();
+};
+ 
+window.updateReturnTotals = function() {
+  const vatRate = (settings.defaultVatRate || 7.5) / 100;
+  let subtotal = 0;
+  document.querySelectorAll('.ret-qty').forEach(inp => {
+    const qty = parseFloat(inp.value) || 0;
+    const rate = parseFloat(inp.dataset.rate) || 0;
+    const amt = qty * rate;
+    subtotal += amt;
+    const cell = inp.closest('tr').querySelector('.ret-line-amt');
+    if (cell) cell.textContent = fmt(amt);
+  });
+  const vat = subtotal * vatRate;
+  document.getElementById('retSubtotal').textContent = fmt(subtotal);
+  document.getElementById('retVat').textContent = fmt(vat);
+  document.getElementById('retTotal').textContent = fmt(subtotal + vat);
+};
+ 
+window.saveReturn = async function(kind, docId) {
+  const lines = [];
+  document.querySelectorAll('.ret-qty').forEach(inp => {
+    const qty = parseFloat(inp.value) || 0;
+    if (qty > 0) lines.push({ quantity: qty, rate: parseFloat(inp.dataset.rate)||0, productId: inp.dataset.prod||null, amount: qty * (parseFloat(inp.dataset.rate)||0) });
+  });
+  if (!lines.length) return showToast('Enter a return quantity for at least one item.', 'warning');
+ 
+  const vatRate = (settings.defaultVatRate || 7.5) / 100;
+  const subtotal = lines.reduce((s,l)=>s+l.amount, 0);
+  const vatAmt = parseFloat((subtotal*vatRate).toFixed(2));
+  const reason = document.getElementById('retReason')?.value || 'Returned goods';
+  const arApCode = document.getElementById('retArApAcc')?.value;
+  const vatCode  = document.getElementById('retVatAcc')?.value;
+ 
+  try {
+    // 1. Adjust inventory for any product-linked lines
+    for (const l of lines) {
+      if (!l.productId) continue;
+      await apiFetch('/products/adjust', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: String(l.productId),
+          quantity: l.quantity,
+          type: kind === 'sales' ? 'in' : 'out',
+          reference: `${kind==='sales'?'Customer':'Vendor'} return — ${reason}`
+        })
+      });
+    }
+ 
+    // 2. Post the accounting adjustment
+    let jLines = [];
+    if (kind === 'sales') {
+      const revCode = document.getElementById('retRevAcc')?.value;
+      const invCode = document.getElementById('retInvAcc')?.value;
+      jLines.push({ accountCode: revCode, amount: subtotal, type: 'debit' });
+      if (vatCode && vatAmt > 0) jLines.push({ accountCode: vatCode, amount: vatAmt, type: 'debit' });
+      jLines.push({ accountCode: arApCode, amount: subtotal + vatAmt, type: 'credit' });
+      const cogsTotal = lines.reduce((s,l) => {
+        if (!l.productId) return s;
+        const p = products.find(x => String(x._id||x.id) === String(l.productId));
+        return s + (p ? p.cost * l.quantity : 0);
+      }, 0);
+      if (invCode && cogsTotal > 0) {
+        const cogsAccLocal = accounts.find(a => /cost of goods|cogs/i.test(a.name)) || accounts.find(a => a.code === '5000');
+        jLines.push({ accountCode: invCode, amount: cogsTotal, type: 'debit' });
+        if (cogsAccLocal) jLines.push({ accountCode: cogsAccLocal.code, amount: cogsTotal, type: 'credit' });
+      }
+    } else {
+      const expCode = document.getElementById('retExpAcc')?.value;
+      jLines.push({ accountCode: arApCode, amount: subtotal + vatAmt, type: 'debit' });
+      jLines.push({ accountCode: expCode, amount: subtotal, type: 'credit' });
+      if (vatCode && vatAmt > 0) jLines.push({ accountCode: vatCode, amount: vatAmt, type: 'credit' });
+    }
+ 
+    await apiFetch('/journals', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: today(), description: `${kind==='sales'?'Sales':'Purchase'} return — ${reason}`,
+        type: 'return', lines: jLines
+      })
+    });
+ 
+    logAction(kind==='sales'?'SALES_RETURN':'PURCHASE_RETURN', `${kind==='sales'?'Customer':'Vendor'} return processed — ${fmt(subtotal+vatAmt)} — ${reason}`);
+    closeTopModal();
+    await loadAllData();
+    recalcBalances();
+    if (kind === 'sales') renderInvoicesView(); else renderBillsView();
+    renderDashboard();
+    showToast('Return processed — stock and accounts updated.', 'success');
+  } catch (err) {
+    showToast(err.message || 'Failed to process return.', 'danger');
+  }
+};
+
 // ─── EMPLOYEES ────────────────────────────────────────────────────────
 window.saveEmployee = async function() {
   const name = document.getElementById('eName')?.value.trim();
@@ -7280,6 +7402,42 @@ window.saveProduct = async function() {
   } catch (err) { showToast(err.message || 'Save failed.', 'danger'); }
 };
 
+window.openEditProductModal = (id) => {
+  const p = products.find(x => String(x._id||x.id) === String(id));
+  if (!p) return;
+  showModal('Edit Product',`
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label required">Product Name</label><input class="form-control" id="pName" value="${p.name||''}"></div>
+      <div class="form-group"><label class="form-label">SKU / Code</label><input class="form-control" id="pSku" value="${p.sku||''}"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label">Category</label><input class="form-control" id="pCat" value="${p.category||''}"></div>
+      <div class="form-group"><label class="form-label">Unit of Measure</label><input class="form-control" id="pUnit" value="${p.unit||''}"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label class="form-label required">Sale Price (₦)</label><input type="number" class="form-control" id="pPrice" step="0.01" value="${p.price||0}"></div>
+      <div class="form-group"><label class="form-label required">Cost Price (₦)</label><input type="number" class="form-control" id="pCost" step="0.01" value="${p.cost||0}"></div>
+    </div>
+    <div class="form-hint">Stock quantity is changed via Adjust Stock, not here.</div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="saveProductEdit('${p._id||p.id}')"><i class="fas fa-save"></i> Save Changes</button>`
+  );
+};
+window.saveProductEdit = async function(id) {
+  const name  = document.getElementById('pName')?.value.trim();
+  const price = parseFloat(document.getElementById('pPrice')?.value);
+  const cost  = parseFloat(document.getElementById('pCost')?.value);
+  if (!name || !price || !cost) return alert('Name, price and cost are required.');
+  const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, price, cost };
+  try {
+    await apiFetch(`/products/${id}`, { method:'PUT', body:JSON.stringify(data) });
+    closeTopModal();
+    await loadAllData();
+    renderProductsView();
+    showToast('Product updated.', 'success');
+  } catch (err) { showToast(err.message || 'Update failed.', 'danger'); }
+};
+ 
 window.deleteProduct = async function(id) {
   if (!confirm('Delete product?')) return;
   try {
@@ -7353,9 +7511,9 @@ window.saveSettings = async function() {
     nextInvoiceNumber:   parseInt(document.getElementById('sNextInv')?.value) || 1,
     defaultDueDays:      parseInt(document.getElementById('sDue')?.value) || 30,
     defaultVatRate:      parseFloat(document.getElementById('sVat')?.value) || 7.5,
-    defaultInvoiceNotes: document.getElementById('sNotes')?.value
-  };
-  try {
+defaultInvoiceNotes: document.getElementById('sNotes')?.value,
+    invoiceTemplate:     settings.invoiceTemplate || 'classic'
+  };  try {
     await apiFetch('/company/settings', { method:'PUT', body:JSON.stringify(data) });
     // Refresh company profile in localStorage
     const updatedProfile = await apiFetch('/company/profile');
@@ -7522,11 +7680,14 @@ window.generateAnnualTaxReport = function() {
  
 window.exportData = async function() {
   try {
-    const response = await fetch(`${API_BASE}/export`, {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    if (!response.ok) throw new Error('Export failed');
-    const blob = await response.blob();
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      version: 1,
+      company: settings || {},
+      accounts, journalEntries, customers, invoices, vendors, bills,
+      products, employees, assets, payrollRuns
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -7540,7 +7701,6 @@ window.exportData = async function() {
     showToast(err.message || 'Export failed.', 'danger');
   }
 };
-
 window.importData = function(input) {
   const file = input.files[0]; if (!file) return;
   const r = new FileReader();
