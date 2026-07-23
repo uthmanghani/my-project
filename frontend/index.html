@@ -1202,21 +1202,65 @@ function normId(id) {
   if (typeof id === 'object') return id._id || id.id || '';
   return String(id);
 }
-async function fetchLiveRates() {
-  try {
-    const res = await fetch('https://open.er-api.com/v6/latest/NGN');
-    if (!res.ok) throw new Error('Rate service returned ' + res.status);
-    const data = await res.json();
-    if (data.result !== 'success' || !data.rates) throw new Error('Rate service returned no data');
-    Object.keys(CURRENCIES).forEach(cur => {
-      if (cur !== 'NGN' && data.rates[cur]) exchangeRates[cur] = 1 / data.rates[cur];
-    });
-    exchangeRates._lastUpdated = data.time_last_update_utc || new Date().toISOString();
-    return true;
-  } catch(e) {
-    console.warn('Could not fetch live rates', e);
-    return false;
-  }
+// ─── LIVE EXCHANGE RATES ──────────────────────────────────────
+// Rates are fetched through our own backend (/api/exchange-rates), which
+// proxies open.er-api.com, applies the NGN→CUR inversion, and caches
+// server-side for 12h. The frontend no longer calls the provider directly.
+let fxRefreshInFlight = null;
+
+async function fetchLiveRates({ force = false } = {}) {
+  // A refresh is already running — piggyback on it instead of firing another.
+  if (fxRefreshInFlight) return fxRefreshInFlight;
+
+  fxRefreshInFlight = (async () => {
+    exchangeRates._status = 'refreshing';
+
+    try {
+      const data = await apiFetch(`/exchange-rates${force ? '?force=true' : ''}`);
+      if (!data || !data.rates || typeof data.rates !== 'object') {
+        throw new Error('Backend returned an invalid exchange-rate response');
+      }
+
+      const nextRates = {};
+      Object.keys(CURRENCIES).forEach(cur => {
+        if (cur === 'NGN') return;
+        const val = Number(data.rates[cur]);
+        if (Number.isFinite(val) && val > 0) nextRates[cur] = val;
+      });
+      if (Object.keys(nextRates).length === 0) throw new Error('No valid rates in backend response');
+
+      Object.assign(exchangeRates, nextRates);
+      exchangeRates._lastUpdated = data.fetchedAt || new Date().toISOString();
+      exchangeRates._source = 'backend';
+      exchangeRates._status = data.status === 'stale' ? 'stale' : 'live';
+
+      // Local fallback only for the rare case the backend itself is unreachable.
+      localStorage.setItem('at_fx_last_success', JSON.stringify({
+        rates: nextRates,
+        fetchedAt: exchangeRates._lastUpdated
+      }));
+
+      return exchangeRates._status === 'live';
+    } catch (error) {
+      console.warn('Exchange-rate refresh failed:', error);
+
+      let cached = null;
+      try { cached = JSON.parse(localStorage.getItem('at_fx_last_success') || 'null'); } catch (_) {}
+
+      if (cached && cached.rates) {
+        Object.assign(exchangeRates, cached.rates);
+        exchangeRates._lastUpdated = cached.fetchedAt;
+        exchangeRates._source = 'local_cache';
+      }
+      exchangeRates._status = 'stale';
+
+      return false;
+    } finally {
+      fxRefreshInFlight = null;
+    }
+  })();
+
+  return fxRefreshInFlight;
 }
 
 // ─── ROLE-BASED ACCESS CONTROL ───────────────────────────────
@@ -1351,10 +1395,16 @@ function getDashDates() {
 async function loadAllData() {
   if (!authToken) return;
   try {
-    const lastFx = localStorage.getItem('at_fx_last_fetch');
-    if (!lastFx || (Date.now() - Number(lastFx)) > 12*60*60*1000) {
-      fetchLiveRates().then(ok => { if (ok) localStorage.setItem('at_fx_last_fetch', String(Date.now())); });
-    }
+    // Auto refresh is cache-aware (force:false) — fetchLiveRates itself decides
+    // whether the 12h window has expired, so no duplicate check is needed here.
+    fetchLiveRates({ force: false }).then(ok => {
+      const updatedEl = document.getElementById('fxLastUpdated');
+      if (updatedEl && exchangeRates._lastUpdated) {
+        updatedEl.textContent = (ok && exchangeRates._status === 'live')
+          ? `Last updated: ${new Date(exchangeRates._lastUpdated).toLocaleString()}`
+          : `Stale — last successful update: ${new Date(exchangeRates._lastUpdated).toLocaleString()}`;
+      }
+    });
     const [acc, je, cust, inv, vend, bill, prod, emp, ast, set] = await Promise.all([  apiFetch('/accounts').catch(() => []),
   apiFetch('/journals').catch(() => []),
   apiFetch('/customers').catch(() => []),
@@ -1457,8 +1507,10 @@ function saveAllData() {
 // ════════════════════════════════════════════════════════════
 
 const INDUSTRIES = [
+  { id:'generic', icon:'fas fa-briefcase', name:'Generic / General Business', desc:'General-purpose business', accounts:[] },
   { id:'manufacturing', icon:'fas fa-industry', name:'Manufacturing', desc:'Factory & production', accounts:[] },
   { id:'trading', icon:'fas fa-store', name:'Trading / Retail', desc:'Buy & sell goods', accounts:[] },
+  { id:'electrical_electronics', icon:'fas fa-microchip', name:'Electrical & Electronics', desc:'Electrical, electronics, repairs & technical services', accounts:[] },
   { id:'construction', icon:'fas fa-hard-hat', name:'Construction', desc:'Engineering & building', accounts:[] },
   { id:'healthcare', icon:'fas fa-hospital', name:'Healthcare', desc:'Hospitals & clinics', accounts:[] },
   { id:'hospitality', icon:'fas fa-hotel', name:'Hospitality', desc:'Hotels & restaurants', accounts:[] },
@@ -1500,7 +1552,9 @@ function obSelectIndustry(id) {
   document.querySelectorAll('.industry-card').forEach(c => c.classList.remove('selected'));
   const card = document.getElementById('icard-'+id);
   if (card) card.classList.add('selected');
-  obData.industry = INDUSTRIES.find(i => i.id === id);
+  // Fall back to Generic rather than leaving obData.industry undefined if an
+  // unrecognized/legacy id ever reaches this function.
+  obData.industry = INDUSTRIES.find(i => i.id === id) || INDUSTRIES.find(i => i.id === 'generic');
 }
 
 async function obSwitchTab(tab) {
@@ -3331,6 +3385,56 @@ function updateInvCurrency() {
   }
 }
 
+function selectInvoiceTemplate(style) {
+  const allowed = ['classic', 'modern', 'minimal'];
+  if (!allowed.includes(style)) return;
+
+  settings.invoiceTemplate = style;
+
+  document.querySelectorAll('.tpl-opt').forEach(el => {
+    const selected = el.dataset.template === style;
+    el.classList.toggle('selected', selected);
+    el.style.borderColor = selected ? 'var(--brand)' : 'var(--border)';
+    const check = el.querySelector('.tpl-check');
+    if (check) check.style.display = selected ? 'flex' : 'none';
+  });
+}
+
+function previewInvoiceTemplate(style) {
+  const allowed = ['classic', 'modern', 'minimal'];
+  if (!allowed.includes(style)) return;
+
+  const sampleInvoice = {
+    id: 'preview',
+    number: (settings.invoicePrefix || 'INV') + '-PREVIEW-0001',
+    date: today(),
+    dueDate: today(),
+    status: 'unpaid',
+    subtotal: 100000,
+    vat: 7500,
+    total: 107500,
+    notes: settings.defaultInvoiceNotes || 'Thank you for your business.',
+    lines: [
+      { description: 'Sample Product / Service', quantity: 1, rate: 100000, amount: 100000 }
+    ]
+  };
+  const sampleCustomer = {
+    name: 'Sample Customer',
+    email: 'customer@example.com',
+    address: 'Customer Address, Abuja'
+  };
+
+  const html = renderInvoiceTemplate(sampleInvoice, sampleCustomer, { ...settings, invoiceTemplate: style }, style, { preview: true });
+
+  const w = window.open('', '_blank', 'width=900,height=1000');
+  if (!w) {
+    showToast('Please allow pop-ups to preview invoice templates.', 'warning');
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+}
+
 function toggle2FA() {
   const current = localStorage.getItem('at_2fa') === 'true';
   localStorage.setItem('at_2fa', (!current).toString());
@@ -3339,14 +3443,43 @@ function toggle2FA() {
 }
 
 async function refreshExchangeRates() {
-  showToast('Fetching live exchange rates...', 'info');
-  const ok = await fetchLiveRates();
-  Object.keys(CURRENCIES).filter(k=>k!=='NGN').forEach(k => {
-    const el = document.getElementById('rate_'+k);
-    if (el) el.value = exchangeRates[k] || '';
-  });
-  if (ok) showToast('Exchange rates updated!', 'success');
-  else showToast('Could not reach the exchange rate service — using last known rates.', 'warning');
+  const button = document.querySelector('[onclick="refreshExchangeRates()"]');
+  const originalHtml = button?.innerHTML;
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+  }
+  showToast('Fetching current exchange rates...', 'info');
+
+  try {
+    // Manual refresh always bypasses the 12h cache.
+    const ok = await fetchLiveRates({ force: true });
+
+    Object.keys(CURRENCIES).filter(k => k !== 'NGN').forEach(k => {
+      const el = document.getElementById('rate_' + k);
+      if (el && Number.isFinite(Number(exchangeRates[k]))) el.value = exchangeRates[k];
+    });
+
+    const updatedEl = document.getElementById('fxLastUpdated');
+    if (updatedEl && exchangeRates._lastUpdated) {
+      const when = new Date(exchangeRates._lastUpdated).toLocaleString();
+      updatedEl.textContent = (ok && exchangeRates._status === 'live')
+        ? `Last updated: ${when}`
+        : `Stale — last successful update: ${when}`;
+    }
+
+    // Keep the invoice exchange-rate field in sync if an invoice form is open.
+    const invCurrency = document.getElementById('invCurrency')?.value;
+    if (invCurrency) updateInvCurrency();
+
+    if (ok) showToast('Exchange rates updated successfully.', 'success');
+    else showToast('Live refresh failed. Showing the last successfully fetched rates.', 'warning');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalHtml || '<i class="fas fa-rotate"></i> Refresh Live Rates';
+    }
+  }
 }
 
 function toggleRecurring() {
@@ -3392,116 +3525,239 @@ window.generateWHTCertificate = function(billId) {
   w.document.close();
 };
  
-window.printInvoice = function(id) {
-  // Find invoice using the passed id (parameter, not undefined variable)
-  var inv = invoices.find(function(i) { return i.id == id || i._id == id; });
-  if (!inv) { 
-    alert("Invoice not found.");
-    return; 
-  }
-  
-  // Find customer using flexible ID matching
-  var customer = customers.find(function(c) { 
-    return c.id == inv.customerId || c._id == inv.customerId; 
-  });
-  
-  const template = settings.invoiceTemplate || 'classic';
-  const logo = settings.companyLogo || localStorage.getItem('at_logo') || '';
-  const headerStyle = template === 'modern'
-    ? `background:#0a4f45;color:white;padding:28px 32px;`
-    : template === 'minimal'
-    ? `border-bottom:3px solid #0a4f45;padding:20px 32px;`
-    : `background:#f9f9f9;border-bottom:2px solid #0a4f45;padding:20px 32px;`;
-  const logoHtml = logo
-    ? `<img src="${logo}" style="height:52px;object-fit:contain;border-radius:4px;">`
-    : `<div style="font-size:22px;font-weight:800;color:${template==='modern'?'white':'#0a4f45'};">${settings.companyName || 'My Company'}</div>`;
-  
-  // Build line items rows
-  var lineRows = inv.lines.map(function(line, index) {
+// ─── INVOICE TEMPLATE RENDERING (shared by print + preview) ──────────
+// Small shared helpers used by every renderer so the three templates
+// don't duplicate currency/line-item logic — only the visual layout differs.
+function invCurrencySymbol(inv) {
+  return (CURRENCIES[inv.currency] || CURRENCIES.NGN).symbol;
+}
+function invFmt(amount, inv) {
+  return invCurrencySymbol(inv) + Number(amount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function buildInvoiceLineRows(inv) {
+  return inv.lines.map(function(line, index) {
     return `<tr>
       <td>${index + 1}</td>
       <td>${line.description}</td>
       <td style="text-align:center;">${line.quantity}</td>
-      <td style="text-align:right;">₦${Number(line.rate).toLocaleString("en-NG", {minimumFractionDigits:2})}</td>
-      <td style="text-align:right;">₦${Number(line.amount).toLocaleString("en-NG", {minimumFractionDigits:2})}</td>
+      <td style="text-align:right;">${invFmt(line.rate, inv)}</td>
+      <td style="text-align:right;">${invFmt(line.amount, inv)}</td>
     </tr>`;
-  }).join("");
-  
-  const statusStyle = inv.status === "paid"
-    ? "background:#dcfce7;color:#16a34a;padding:4px 12px;border-radius:6px;font-weight:700;"
-    : "background:#fef3c7;color:#d97706;padding:4px 12px;border-radius:6px;font-weight:700;";
-  
-  // Build the full printable HTML document
-  var html = `<!DOCTYPE html><html><head>
-    <meta charset="UTF-8">
-    <title>Invoice ${inv.number}</title>
-    <style>
-      * { margin:0; padding:0; box-sizing:border-box; }
-      body { font-family:Arial,sans-serif; font-size:12px; color:#1a202c; padding:40px; }
-      .header { display:flex; justify-content:space-between; margin-bottom:36px; }
-      .co-name { font-size:24px; font-weight:700; color:#0a4f45; }
-      .co-sub  { font-size:11px; color:#64748b; margin-top:3px; }
-      .inv-meta { text-align:right; }
-      .inv-title{ font-size:22px; font-weight:700; color:#0a4f45; }
-      .bill-to  { margin-bottom:28px; }
-      .bt-label { font-size:10px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.08em; margin-bottom:4px; }
-      .bt-name  { font-weight:700; font-size:15px; }
-      table     { width:100%; border-collapse:collapse; margin-bottom:20px; }
-      th        { background:#0a4f45; color:white; padding:9px 12px; text-align:left; font-size:11px; }
-      td        { padding:8px 12px; border-bottom:1px solid #e2e8f0; }
-      tr:nth-child(even) td { background:#f8fafb; }
-      .totals   { text-align:right; margin-top:8px; }
-      .tot-row  { display:flex; justify-content:flex-end; gap:32px; margin-bottom:6px; font-size:12px; }
-      .grand    { font-size:16px; font-weight:700; color:#0a4f45; margin-top:4px; }
-      .footer   { margin-top:48px; padding-top:12px; border-top:1px solid #e2e8f0; font-size:10px; color:#94a3b8; }
-      @media print { body { padding:16px; } button { display:none; } }
-    </style>
-  </head><body>
-    <div style="${headerStyle}">
+  }).join('');
+}
+function buildInvoiceCurrencyNote(inv) {
+  // Respect the invoice's own currency/exchange rate, not just NGN.
+  if (!inv.currency || inv.currency === 'NGN' || !inv.exchangeRate) return '';
+  return `<div style="font-size:10px;color:#94a3b8;margin-top:4px;">1 ${inv.currency} ≈ ₦${Number(inv.exchangeRate).toLocaleString('en-NG',{minimumFractionDigits:2})} (rate applied at time of invoice)</div>`;
+}
+function buildInvoiceStatusStyle(inv) {
+  return inv.status === 'paid'
+    ? 'background:#dcfce7;color:#16a34a;padding:4px 12px;border-radius:6px;font-weight:700;'
+    : 'background:#fef3c7;color:#d97706;padding:4px 12px;border-radius:6px;font-weight:700;';
+}
+// Shared print CSS so no template needs to redeclare the button/print rules.
+const INVOICE_PRINT_CSS = `* { margin:0; padding:0; box-sizing:border-box; }
+  @media print { body { padding:16px !important; } .no-print { display:none !important; } }`;
+function invoiceActionBar() {
+  return `<div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:8px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ Print / Save as PDF</button>
+  </div>`;
+}
+function invoiceFooter(inv, settings) {
+  return `<div class="footer" style="margin-top:32px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;color:#555;">
+    <div><strong>${settings.companyName || ''}</strong><br>TIN: ${settings.companyTaxId || 'N/A'}<br>Tel: ${settings.companyPhone || ''}</div>
+    <div style="text-align:center;font-size:10px;color:#999;">Generated by AccounTrack™ Pro<br>NTA 2025 Compliant · ${today()}</div>
+    <div style="text-align:right;">Payment Terms: ${settings.defaultDueDays || 30} days<br><em>${settings.defaultInvoiceNotes || 'Thank you for your business.'}</em></div>
+  </div>`;
+}
+function invoiceLogoHtml(settings, color) {
+  const logo = settings.companyLogo || localStorage.getItem('at_logo') || '';
+  return logo
+    ? `<img src="${logo}" style="height:52px;object-fit:contain;border-radius:4px;">`
+    : `<div style="font-size:22px;font-weight:800;color:${color};">${settings.companyName || 'My Company'}</div>`;
+}
+
+// CLASSIC — light header band, centered green rule, traditional invoice look.
+function renderClassicInvoiceTemplate(inv, customer, settings) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${inv.number}</title><style>
+    ${INVOICE_PRINT_CSS}
+    body { font-family:Georgia,'Times New Roman',serif; font-size:12px; color:#1a202c; padding:40px; }
+    .bt-label { font-size:10px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.08em; margin-bottom:4px; }
+    .bt-name  { font-weight:700; font-size:15px; font-family:Arial,sans-serif; }
+    table     { width:100%; border-collapse:collapse; margin-bottom:20px; font-family:Arial,sans-serif; }
+    th        { background:#0a4f45; color:white; padding:9px 12px; text-align:left; font-size:11px; }
+    td        { padding:8px 12px; border-bottom:1px solid #e2e8f0; }
+    tr:nth-child(even) td { background:#f8fafb; }
+    .totals   { text-align:right; margin-top:8px; font-family:Arial,sans-serif; }
+    .tot-row  { display:flex; justify-content:flex-end; gap:32px; margin-bottom:6px; font-size:12px; }
+    .grand    { font-size:16px; font-weight:700; color:#0a4f45; margin-top:4px; }
+  </style></head><body>
+    <div style="background:#f9f9f9;border-bottom:2px solid #0a4f45;padding:20px 32px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>${logoHtml}<div style="font-size:11px;${template==='modern'?'color:rgba(255,255,255,0.7)':'color:#666'};margin-top:4px;">${settings.companyAddress || ''}</div></div>
-        <div style="text-align:right;"><div style="font-size:22px;font-weight:800;${template==='modern'?'color:white':'color:#0a4f45'};">INVOICE</div>
-          <div class="co-sub">${settings.companyAddress || ""}</div>
-          <div class="co-sub">${settings.companyEmail || ""}&nbsp;&nbsp;${settings.companyPhone || ""}</div>
-          ${settings.companyTaxId ? `<div class="co-sub">TIN: ${settings.companyTaxId}</div>` : ""}
+        <div>${invoiceLogoHtml(settings, '#0a4f45')}<div style="font-size:11px;color:#666;margin-top:4px;">${settings.companyAddress || ''}</div></div>
+        <div style="text-align:right;"><div style="font-size:22px;font-weight:800;color:#0a4f45;">INVOICE</div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">${settings.companyEmail || ''}&nbsp;&nbsp;${settings.companyPhone || ''}</div>
+          ${settings.companyTaxId ? `<div style="font-size:11px;color:#64748b;">TIN: ${settings.companyTaxId}</div>` : ''}
         </div>
-        <div class="inv-meta">
-          <div class="inv-title">TAX INVOICE</div>
-          <div style="font-size:18px;font-weight:600;margin-top:4px;">${inv.number}</div>
-          <div style="margin-top:8px;font-size:11px;">Date: <strong>${inv.date}</strong></div>
-          <div style="font-size:11px;">Due:  <strong>${inv.dueDate}</strong></div>
-          <div style="margin-top:8px;"><span style="${statusStyle}">${inv.status.toUpperCase()}</span></div>
+        <div style="text-align:right;">
+          <div style="font-size:22px;font-weight:700;color:#0a4f45;font-family:Arial,sans-serif;">TAX INVOICE</div>
+          <div style="font-size:18px;font-weight:600;margin-top:4px;font-family:Arial,sans-serif;">${inv.number}</div>
+          <div style="margin-top:8px;font-size:11px;font-family:Arial,sans-serif;">Date: <strong>${inv.date}</strong></div>
+          <div style="font-size:11px;font-family:Arial,sans-serif;">Due:  <strong>${inv.dueDate}</strong></div>
+          <div style="margin-top:8px;"><span style="${buildInvoiceStatusStyle(inv)}">${inv.status.toUpperCase()}</span></div>
         </div>
       </div>
     </div>
-    <div class="bill-to">
+    <div style="margin:28px 32px;">
       <div class="bt-label">Bill To</div>
-      <div class="bt-name">${customer ? customer.name : "—"}</div>
-      ${customer && customer.email ? `<div style="color:#64748b;">${customer.email}</div>` : ""}
-      ${customer && customer.address ? `<div style="color:#64748b;">${customer.address}</div>` : ""}
-      ${customer && customer.tin ? `<div style="color:#64748b;">TIN: ${customer.tin}</div>` : ""}
+      <div class="bt-name">${customer ? customer.name : '—'}</div>
+      ${customer && customer.email ? `<div style="color:#64748b;font-family:Arial,sans-serif;">${customer.email}</div>` : ''}
+      ${customer && customer.address ? `<div style="color:#64748b;font-family:Arial,sans-serif;">${customer.address}</div>` : ''}
+      ${customer && customer.tin ? `<div style="color:#64748b;font-family:Arial,sans-serif;">TIN: ${customer.tin}</div>` : ''}
     </div>
-    <table>
-      <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
-      <tbody>${lineRows}</tbody>
-    </table>
+    <div style="margin:0 32px;">
+    <table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${buildInvoiceLineRows(inv)}</tbody></table>
     <div class="totals">
-      <div class="tot-row"><span>Subtotal:</span><span>₦${Number(inv.subtotal || inv.total).toLocaleString("en-NG", {minimumFractionDigits:2})}</span></div>
-      <div class="tot-row"><span>VAT (${settings.defaultVatRate}%):</span><span>₦${Number(inv.vat || 0).toLocaleString("en-NG", {minimumFractionDigits:2})}</span></div>
-      <div class="tot-row grand"><span>TOTAL DUE:</span><span>₦${Number(inv.total).toLocaleString("en-NG", {minimumFractionDigits:2})}</span></div>
+      <div class="tot-row"><span>Subtotal:</span><span>${invFmt(inv.subtotal || inv.total, inv)}</span></div>
+      <div class="tot-row"><span>VAT (${settings.defaultVatRate}%):</span><span>${invFmt(inv.vat || 0, inv)}</span></div>
+      <div class="tot-row grand"><span>TOTAL DUE:</span><span>${invFmt(inv.total, inv)}</span></div>
     </div>
-    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;"><strong>Notes:</strong> ${inv.notes}</div>` : ""}
-    <div style="margin-top:24px;text-align:center;">
-      <button onclick="window.print()" style="padding:8px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ Print / Save as PDF</button>
-    </div>
-    <div class="footer" style="margin-top:32px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;color:#555;">
-      <div><strong>${settings.companyName || ''}</strong><br>TIN: ${settings.companyTaxId || 'N/A'}<br>Tel: ${settings.companyPhone || ''}</div>
-      <div style="text-align:center;font-size:10px;color:#999;">Generated by AccounTrack™ Pro<br>NTA 2025 Compliant · ${today()}</div>
-      <div style="text-align:right;">Payment Terms: ${settings.defaultDueDays || 30} days<br><em>${settings.defaultInvoiceNotes || 'Thank you for your business.'}</em></div>
+    ${buildInvoiceCurrencyNote(inv)}
+    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;font-family:Arial,sans-serif;"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+    ${invoiceActionBar()}
+    ${invoiceFooter(inv, settings)}
     </div>
   </body></html>`;
-  
-  var printWindow = window.open("", "_blank", "width=850,height=1000");
+}
+
+// MODERN — bold full-bleed dark header banner, larger type, colored total box.
+function renderModernInvoiceTemplate(inv, customer, settings) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${inv.number}</title><style>
+    ${INVOICE_PRINT_CSS}
+    body { font-family:'Helvetica Neue',Arial,sans-serif; font-size:12px; color:#1a202c; }
+    .bt-label { font-size:10px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.12em; margin-bottom:4px; }
+    .bt-name  { font-weight:700; font-size:16px; }
+    table     { width:100%; border-collapse:collapse; margin-bottom:20px; }
+    th        { background:#111827; color:white; padding:11px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; }
+    td        { padding:10px 14px; border-bottom:1px solid #e2e8f0; }
+    tr:nth-child(even) td { background:#f8fafb; }
+    .totals-box { background:#0a4f45; color:white; border-radius:10px; padding:16px 20px; margin-top:12px; }
+    .tot-row  { display:flex; justify-content:space-between; margin-bottom:6px; font-size:12px; }
+    .grand    { font-size:18px; font-weight:800; border-top:1px solid rgba(255,255,255,0.25); padding-top:8px; margin-top:6px; }
+  </style></head><body>
+    <div style="background:#0a4f45;color:white;padding:36px 40px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>${invoiceLogoHtml(settings, 'white')}<div style="font-size:11px;color:rgba(255,255,255,0.75);margin-top:6px;">${settings.companyAddress || ''}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.75);">${settings.companyEmail || ''}&nbsp;&nbsp;${settings.companyPhone || ''}</div>
+          ${settings.companyTaxId ? `<div style="font-size:11px;color:rgba(255,255,255,0.75);">TIN: ${settings.companyTaxId}</div>` : ''}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:30px;font-weight:800;letter-spacing:0.03em;">INVOICE</div>
+          <div style="font-size:16px;font-weight:600;margin-top:6px;">${inv.number}</div>
+          <div style="margin-top:10px;font-size:11px;">Date: <strong>${inv.date}</strong> &nbsp; Due: <strong>${inv.dueDate}</strong></div>
+          <div style="margin-top:8px;"><span style="${buildInvoiceStatusStyle(inv)}">${inv.status.toUpperCase()}</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:28px 40px;">
+      <div style="margin-bottom:24px;">
+        <div class="bt-label">Bill To</div>
+        <div class="bt-name">${customer ? customer.name : '—'}</div>
+        ${customer && customer.email ? `<div style="color:#64748b;">${customer.email}</div>` : ''}
+        ${customer && customer.address ? `<div style="color:#64748b;">${customer.address}</div>` : ''}
+        ${customer && customer.tin ? `<div style="color:#64748b;">TIN: ${customer.tin}</div>` : ''}
+      </div>
+      <table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${buildInvoiceLineRows(inv)}</tbody></table>
+      <div style="display:flex;justify-content:flex-end;">
+        <div class="totals-box" style="min-width:280px;">
+          <div class="tot-row"><span>Subtotal</span><span>${invFmt(inv.subtotal || inv.total, inv)}</span></div>
+          <div class="tot-row"><span>VAT (${settings.defaultVatRate}%)</span><span>${invFmt(inv.vat || 0, inv)}</span></div>
+          <div class="tot-row grand"><span>TOTAL DUE</span><span>${invFmt(inv.total, inv)}</span></div>
+        </div>
+      </div>
+      ${buildInvoiceCurrencyNote(inv)}
+      ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+      ${invoiceActionBar()}
+      ${invoiceFooter(inv, settings)}
+    </div>
+  </body></html>`;
+}
+
+// MINIMAL — thin rule only, no color blocks, generous whitespace.
+function renderMinimalInvoiceTemplate(inv, customer, settings) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${inv.number}</title><style>
+    ${INVOICE_PRINT_CSS}
+    body { font-family:Arial,sans-serif; font-size:12px; color:#1a202c; padding:44px 48px; }
+    .bt-label { font-size:10px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.1em; margin-bottom:4px; }
+    .bt-name  { font-weight:600; font-size:14px; }
+    table     { width:100%; border-collapse:collapse; margin-bottom:20px; }
+    th        { border-bottom:1px solid #1a202c; color:#1a202c; padding:8px 4px; text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; background:none; }
+    td        { padding:9px 4px; border-bottom:1px solid #f1f5f9; }
+    .totals   { text-align:right; margin-top:8px; }
+    .tot-row  { display:flex; justify-content:flex-end; gap:32px; margin-bottom:6px; font-size:12px; color:#475569; }
+    .grand    { font-size:15px; font-weight:700; color:#1a202c; margin-top:6px; border-top:1px solid #1a202c; padding-top:8px; }
+  </style></head><body>
+    <div style="border-bottom:3px solid #0a4f45;padding-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>${invoiceLogoHtml(settings, '#0a4f45')}<div style="font-size:11px;color:#666;margin-top:4px;">${settings.companyAddress || ''}</div>
+          <div style="font-size:11px;color:#666;">${settings.companyEmail || ''}&nbsp;&nbsp;${settings.companyPhone || ''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:18px;font-weight:600;letter-spacing:0.08em;color:#1a202c;">INVOICE</div>
+          <div style="font-size:14px;margin-top:6px;color:#475569;">${inv.number}</div>
+          <div style="margin-top:8px;font-size:11px;color:#475569;">${inv.date} → ${inv.dueDate}</div>
+          <div style="margin-top:8px;"><span style="${buildInvoiceStatusStyle(inv)}">${inv.status.toUpperCase()}</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="margin:24px 0;">
+      <div class="bt-label">Bill To</div>
+      <div class="bt-name">${customer ? customer.name : '—'}</div>
+      ${customer && customer.email ? `<div style="color:#64748b;">${customer.email}</div>` : ''}
+      ${customer && customer.address ? `<div style="color:#64748b;">${customer.address}</div>` : ''}
+    </div>
+    <table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${buildInvoiceLineRows(inv)}</tbody></table>
+    <div class="totals">
+      <div class="tot-row"><span>Subtotal</span><span>${invFmt(inv.subtotal || inv.total, inv)}</span></div>
+      <div class="tot-row"><span>VAT (${settings.defaultVatRate}%)</span><span>${invFmt(inv.vat || 0, inv)}</span></div>
+      <div class="tot-row grand"><span>Total Due</span><span>${invFmt(inv.total, inv)}</span></div>
+    </div>
+    ${buildInvoiceCurrencyNote(inv)}
+    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;">${inv.notes}</div>` : ''}
+    ${invoiceActionBar()}
+    ${invoiceFooter(inv, settings)}
+  </body></html>`;
+}
+
+// Registry + dispatcher — every print/preview path goes through this one
+// function, so the template can never be silently ignored. Adding a future
+// template only means adding one more entry here.
+const invoiceTemplateRegistry = {
+  classic: renderClassicInvoiceTemplate,
+  modern: renderModernInvoiceTemplate,
+  minimal: renderMinimalInvoiceTemplate
+};
+function renderInvoiceTemplate(inv, customer, settingsObj, templateName) {
+  const template = ['classic', 'modern', 'minimal'].includes(templateName || settingsObj.invoiceTemplate)
+    ? (templateName || settingsObj.invoiceTemplate)
+    : 'classic';
+  const renderer = invoiceTemplateRegistry[template] || invoiceTemplateRegistry.classic;
+  return renderer(inv, customer, settingsObj);
+}
+
+window.printInvoice = function(id) {
+  var inv = invoices.find(function(i) { return i.id == id || i._id == id; });
+  if (!inv) { alert('Invoice not found.'); return; }
+
+  var customer = customers.find(function(c) {
+    return c.id == inv.customerId || c._id == inv.customerId;
+  });
+
+  // Always the persisted setting — this is the one and only print path,
+  // so there is no route that can "forget" to apply the chosen template.
+  const html = renderInvoiceTemplate(inv, customer, settings);
+
+  var printWindow = window.open('', '_blank', 'width=850,height=1000');
   printWindow.document.write(html);
   printWindow.document.close();
   printWindow.focus();
@@ -5942,12 +6198,18 @@ function renderSettingsView() {
             <label class="form-label">Invoice Template Style</label>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;">
               ${['classic','modern','minimal'].map(style=>`
-                <div onclick="settings.invoiceTemplate='${style}';document.querySelectorAll('.tpl-opt').forEach(el=>el.classList.remove('selected'));this.classList.add('selected');"
-                  class="tpl-opt" style="border:2px solid ${(settings.invoiceTemplate||'classic')===style?'var(--brand)':'var(--border)'};border-radius:8px;padding:10px;cursor:pointer;text-align:center;">
+                <div class="tpl-opt ${(settings.invoiceTemplate||'classic')===style?'selected':''}"
+                  data-template="${style}"
+                  onclick="selectInvoiceTemplate('${style}')"
+                  style="position:relative;border:2px solid ${(settings.invoiceTemplate||'classic')===style?'var(--brand)':'var(--border)'};border-radius:8px;padding:10px;cursor:pointer;text-align:center;transition:all .15s;">
+                  <div class="tpl-check" style="position:absolute;top:6px;right:6px;display:${(settings.invoiceTemplate||'classic')===style?'flex':'none'};width:18px;height:18px;border-radius:50%;align-items:center;justify-content:center;background:var(--brand);color:#fff;font-size:10px;">✓</div>
                   <div style="font-size:0.78rem;font-weight:600;text-transform:capitalize;">${style}</div>
                   <div style="font-size:0.68rem;color:var(--text-3);">${style==='classic'?'Traditional layout':style==='modern'?'Bold header':'Clean & simple'}</div>
+                  ${(settings.invoiceTemplate||'classic')===style?`<div style="font-size:0.62rem;color:var(--brand);font-weight:600;margin-top:4px;">Currently selected</div>`:''}
+                  <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;" onclick="event.stopPropagation();previewInvoiceTemplate('${style}')"><i class="fas fa-eye"></i> Preview</button>
                 </div>`).join('')}
             </div>
+            <div class="form-hint" style="margin-top:6px;">Selecting a template updates it here immediately. Click Save Settings below to persist it — it will then be used on every printed/generated invoice.</div>
           </div>
         </div>
       </div>
@@ -5988,10 +6250,13 @@ function renderSettingsView() {
       <div class="card" style="grid-column:1/-1;">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
           <span class="card-title"><i class="fas fa-coins" style="margin-right:8px;color:var(--brand);"></i>Exchange Rates (to NGN)</span>
-          <button class="btn btn-secondary btn-sm" onclick="refreshExchangeRates()"><i class="fas fa-rotate"></i> Refresh Live Rates</button>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span id="fxLastUpdated" class="form-hint">${exchangeRates._lastUpdated ? ((exchangeRates._status === 'live' ? 'Last updated: ' : 'Stale — last successful update: ') + new Date(exchangeRates._lastUpdated).toLocaleString()) : 'No live rate fetched yet'}</span>
+            <button class="btn btn-secondary btn-sm" onclick="refreshExchangeRates()"><i class="fas fa-rotate"></i> Refresh Live Rates</button>
+          </div>
         </div>
         <div class="card-body">
-          <p style="font-size:0.78rem;color:var(--text-3);margin-bottom:14px;">Set how many NGN equals 1 unit of each currency. Used for multi-currency invoices.</p>
+          <p style="font-size:0.78rem;color:var(--text-3);margin-bottom:14px;">Set how many NGN equals 1 unit of each currency. Used for multi-currency invoices. Rates are shown in your local time; only rates confirmed live (not stale/cached) are labeled "Last updated" rather than "Stale".</p>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
             ${Object.entries(CURRENCIES).filter(([k])=>k!=='NGN').map(([k,v])=>`
               <div style="display:flex;align-items:center;gap:8px;">
@@ -7512,7 +7777,7 @@ window.saveSettings = async function() {
     defaultDueDays:      parseInt(document.getElementById('sDue')?.value) || 30,
     defaultVatRate:      parseFloat(document.getElementById('sVat')?.value) || 7.5,
 defaultInvoiceNotes: document.getElementById('sNotes')?.value,
-    invoiceTemplate:     settings.invoiceTemplate || 'classic'
+    invoiceTemplate:     ['classic','modern','minimal'].includes(settings.invoiceTemplate) ? settings.invoiceTemplate : 'classic'
   };  try {
     await apiFetch('/company/settings', { method:'PUT', body:JSON.stringify(data) });
     // Refresh company profile in localStorage

@@ -15,15 +15,26 @@ exports.register = async (req, res) => {
 
   const { company, industry, admin } = req.body;
 
+  // Validate the industry BEFORE writing anything. Previously this check ran
+  // after the Company and User were already saved, so an unrecognized industry
+  // id left an orphaned company+user in the database with no chart of accounts.
+  const industryObj = INDUSTRIES.find(i => i.id === industry) || INDUSTRIES.find(i => i.id === 'generic');
+  if (!industryObj) {
+    // Only reachable if 'generic' itself is ever removed from industryData.js.
+    return res.status(400).json({ error: 'Invalid industry selected and no fallback industry is configured.' });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    const existingCompany = await Company.findOne({ email: company.email });
+    const existingCompany = await Company.findOne({ email: company.email }).session(session);
     if (existingCompany) {
-      return res.status(400).json({ error: 'A company with this email already exists' });
+      throw Object.assign(new Error('A company with this email already exists'), { status: 400 });
     }
 
-    const existingUser = await User.findOne({ email: admin.email });
+    const existingUser = await User.findOne({ email: admin.email }).session(session);
     if (existingUser) {
-      return res.status(400).json({ error: 'Admin email already registered' });
+      throw Object.assign(new Error('Admin email already registered'), { status: 400 });
     }
 
     const newCompany = new Company({
@@ -33,9 +44,11 @@ exports.register = async (req, res) => {
       phone: company.phone,
       email: company.email,
       address: company.address,
-      industry: industry
+      // Store the resolved id, so a request with an unknown/legacy id still
+      // lands on 'generic' instead of silently keeping an invalid value.
+      industry: industryObj.id
     });
-    await newCompany.save();
+    await newCompany.save({ session });
 
     const newUser = new User({
       companyId: newCompany._id,
@@ -46,12 +59,7 @@ exports.register = async (req, res) => {
       role: 'admin',
       companies: [newCompany._id]
     });
-    await newUser.save();
-
-    const industryObj = INDUSTRIES.find(i => i.id === industry);
-    if (!industryObj) {
-      throw new Error('Invalid industry selected');
-    }
+    await newUser.save({ session });
 
     if (industryObj.accounts && industryObj.accounts.length) {
       const accounts = industryObj.accounts.map(acc => ({
@@ -62,8 +70,10 @@ exports.register = async (req, res) => {
         balance: 0,
         openingBalance: 0
       }));
-      await Account.insertMany(accounts);
+      await Account.insertMany(accounts, { session });
     }
+
+    await session.commitTransaction();
 
     const token = jwt.sign(
       { userId: newUser._id, companyId: newCompany._id, email: newUser.email, role: newUser.role },
@@ -82,8 +92,11 @@ exports.register = async (req, res) => {
       }
     });
   } catch (err) {
+    await session.abortTransaction();
     console.error('Registration error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
 };
 

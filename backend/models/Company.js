@@ -21,6 +21,7 @@ const CompanySchema = new mongoose.Schema({
     defaultDueDays: { type: Number, default: 30 },
     defaultVatRate: { type: Number, default: 7.5 },
     defaultInvoiceNotes: { type: String, default: 'Thank you for your business.' },
+    invoiceTemplate: { type: String, enum: ['classic', 'modern', 'minimal'], default: 'classic' },
     darkMode: { type: Boolean, default: false },
     currency: { type: String, default: '₦' }
   },
