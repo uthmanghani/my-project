@@ -7,6 +7,16 @@ const { validationResult } = require('express-validator');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 
+// Emails are never case-sensitive in practice (mobile keyboards auto-capitalize
+// the first letter, users copy-paste inconsistently, etc.), but Mongo string
+// matching is case-sensitive by default. This builds a case-insensitive exact
+// match so lookups work regardless of how the email was originally saved,
+// escaping regex metacharacters so the email is matched literally.
+function emailQuery(email) {
+  const escaped = String(email || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
 exports.register = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -32,7 +42,7 @@ exports.register = async (req, res) => {
       throw Object.assign(new Error('A company with this email already exists'), { status: 400 });
     }
 
-    const existingUser = await User.findOne({ email: admin.email }).session(session);
+    const existingUser = await User.findOne({ email: emailQuery(admin.email) }).session(session);
     if (existingUser) {
       throw Object.assign(new Error('Admin email already registered'), { status: 400 });
     }
@@ -54,7 +64,7 @@ exports.register = async (req, res) => {
       companyId: newCompany._id,
       firstName: admin.firstName,
       lastName: admin.lastName,
-      email: admin.email,
+      email: String(admin.email || '').trim().toLowerCase(),
       password: admin.password,
       role: 'admin',
       companies: [newCompany._id]
@@ -103,7 +113,7 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: emailQuery(email) });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -138,13 +148,13 @@ exports.inviteUser = async (req, res) => {
     if (!['admin', 'accountant', 'viewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role. Use admin, accountant or viewer.' });
     }
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ email: emailQuery(email) });
     if (existing) return res.status(400).json({ error: 'Email already registered' });
     const newUser = new User({
       companyId: req.user.companyId,
       firstName,
       lastName,
-      email,
+      email: String(email || '').trim().toLowerCase(),
       password,
       role
     });
@@ -170,7 +180,7 @@ exports.getUsers = async (req, res) => {
 exports.sendOTP = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: emailQuery(email) });
     if (!user) return res.status(404).json({ error: 'User not found' });
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     user.resetPasswordToken = otp;
@@ -188,7 +198,7 @@ exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
     const user = await User.findOne({
-      email,
+      email: emailQuery(email),
       resetPasswordToken: otp,
       resetPasswordExpires: { $gt: Date.now() }
     });
@@ -205,7 +215,7 @@ exports.verifyOTP = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: emailQuery(email) });
     if (!user) return res.status(404).json({ error: 'No account found with that email' });
     const token = crypto.randomBytes(32).toString('hex');
     user.resetPasswordToken = token;

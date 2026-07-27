@@ -972,7 +972,7 @@
               <i class="fas fa-eye ob-eye" onclick="obTogglePass('siPassword', this)"></i>
             </div>
           </div>
-          <button class="ob-btn" onclick="obSignIn()"><i class="fas fa-arrow-right-to-bracket"></i> Sign In</button>
+          <button class="ob-btn" id="obSignInBtn" onclick="obSignIn()"><i class="fas fa-arrow-right-to-bracket"></i> Sign In</button>
           <div class="ob-link-row">Forgot password? <a onclick="obForgotPassword()">Reset my password</a></div>
           <div class="ob-link-row" style="margin-top:6px;">New here? <a onclick="obSwitchTab('register')">Create a company account</a></div>
         </div>
@@ -1762,6 +1762,14 @@ async function obSignIn() {
   const email = document.getElementById('siEmail').value.trim();
   const password = document.getElementById('siPassword').value;
   if (!email || !password) { obShowError(0, 'Please enter your email and password.'); return; }
+
+  const btn = document.getElementById('obSignInBtn');
+  const originalBtnHTML = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Signing in…';
+  }
+
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
@@ -1811,6 +1819,13 @@ async function obSignIn() {
     navigateTo('dashboard');
   } catch (err) {
     obShowError(0, err.message || 'Login failed. Please try again.');
+  } finally {
+    // Restore the button so a failed attempt can be retried. On success the
+    // onboarding screen is hidden anyway, so this is a no-op in that case.
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalBtnHTML;
+    }
   }
 }
 
