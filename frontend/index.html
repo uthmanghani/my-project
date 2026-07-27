@@ -234,6 +234,18 @@
     }
     .topbar-btn:hover { background: var(--brand-glow); color: var(--brand-mid); border-color: var(--brand-mid); }
     .topbar-notif-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; background: var(--danger); border-radius: 50%; border: 1.5px solid var(--surface); }
+    .notif-panel {
+      position: absolute; top: 44px; right: 0; width: 320px; max-height: 380px; overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 500; padding: 6px 0;
+    }
+    .notif-panel-empty { padding: 24px 16px; text-align: center; color: var(--text-4); font-size: 0.85rem; }
+    .notif-panel-header { padding: 10px 14px 6px; font-size: 0.72rem; font-weight: 700; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.04em; }
+    .notif-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 14px; cursor: pointer; }
+    .notif-item:hover { background: var(--brand-glow); }
+    .notif-item i { margin-top: 2px; }
+    .notif-item .notif-text { font-size: 0.82rem; line-height: 1.3; }
+    .notif-item .notif-sub { font-size: 0.72rem; color: var(--text-4); }
     .topbar-trial {
       background: var(--accent-lt);
       color: #92400e;
@@ -1155,11 +1167,11 @@
     <div class="topbar-breadcrumb"><span>AccounTrack</span><i class="fas fa-chevron-right" style="font-size:0.6rem; opacity:0.4;"></i><span class="crumb-active" id="topbarCrumb">Dashboard</span></div>
     <div class="topbar-spacer"></div>
     <div class="topbar-search"><i class="fas fa-search"></i><input type="text" placeholder="Search transactions, customers…" id="globalSearch"></div>
-    <div class="topbar-actions">
-      <div class="topbar-btn" title="Notifications">
+    <div class="topbar-actions" style="position:relative;">
+      <div class="topbar-btn" id="notifBell" title="Notifications" onclick="toggleNotifPanel()">
         <i class="fas fa-bell"></i>
-        <span class="topbar-notif-dot"></span>
       </div>
+      <div id="notifPanel" class="notif-panel" style="display:none;"></div>
       <div class="topbar-btn" title="Refresh" onclick="refreshCurrentPage()"><i class="fas fa-sync-alt"></i></div>
       <div class="topbar-pro-badge"><i class="fas fa-crown"></i> Pro</div>
       <div class="topbar-avatar" id="upgradeProBtn" title="Upgrade to Pro">AT</div>
@@ -1256,7 +1268,10 @@ async function fetchLiveRates({ force = false } = {}) {
       Object.keys(CURRENCIES).forEach(cur => {
         if (cur === 'NGN') return;
         const val = Number(data.rates[cur]);
-        if (Number.isFinite(val) && val > 0) nextRates[cur] = val;
+        // Round to 2 decimal places here — the single point where rates enter
+        // the app — so every place that displays exchangeRates[cur] is clean,
+        // instead of showing values like 1366.120218579235.
+        if (Number.isFinite(val) && val > 0) nextRates[cur] = Math.round(val * 100) / 100;
       });
       if (Object.keys(nextRates).length === 0) throw new Error('No valid rates in backend response');
 
@@ -1509,6 +1524,71 @@ function checkOverdueInvoices() {
     }, 2000);
   }
 }
+// ─── NOTIFICATION PANEL — surfaces overdue invoices, low stock, and bills
+// pending approval, all from data already loaded client-side. ───
+function getNotifItems() {
+  const today = new Date().toISOString().split('T')[0];
+  const items = [];
+
+  (invoices || []).filter(inv => inv.status !== 'paid' && inv.dueDate && inv.dueDate < today)
+    .forEach(inv => items.push({
+      icon: 'fa-file-invoice-dollar', color: '#dc2626',
+      text: `Invoice ${inv.number || ''} is overdue`,
+      sub: `Due ${inv.dueDate} — ${fmt(inv.total)}`,
+      page: 'invoices'
+    }));
+
+  (products || []).filter(p => (p.stock || 0) <= 5)
+    .forEach(p => items.push({
+      icon: 'fa-boxes', color: '#d97706',
+      text: `${p.name} is low on stock`,
+      sub: `${p.stock || 0} unit(s) remaining`,
+      page: 'products'
+    }));
+
+  (bills || []).filter(b => b.approvalStatus === 'pending_approval')
+    .forEach(b => items.push({
+      icon: 'fa-user-check', color: '#2563eb',
+      text: `Bill ${b.number || ''} needs approval`,
+      sub: `${fmt(b.total)} — awaiting admin sign-off`,
+      page: 'bills'
+    }));
+
+  return items;
+}
+
+function renderNotifPanel() {
+  const panel = document.getElementById('notifPanel');
+  if (!panel) return;
+  const items = getNotifItems();
+  panel.innerHTML = items.length === 0
+    ? '<div class="notif-panel-empty">You\'re all caught up 🎉</div>'
+    : '<div class="notif-panel-header">Notifications</div>' + items.map(n =>
+        `<div class="notif-item" onclick="navigateTo('${n.page}'); toggleNotifPanel(true);">
+          <i class="fas ${n.icon}" style="color:${n.color};"></i>
+          <div><div class="notif-text">${n.text}</div><div class="notif-sub">${n.sub}</div></div>
+        </div>`
+      ).join('');
+}
+
+function toggleNotifPanel(forceClose) {
+  const panel = document.getElementById('notifPanel');
+  if (!panel) return;
+  const shouldOpen = forceClose ? false : panel.style.display === 'none';
+  if (shouldOpen) renderNotifPanel();
+  panel.style.display = shouldOpen ? 'block' : 'none';
+}
+
+// Close the panel when clicking anywhere outside it or the bell.
+document.addEventListener('click', function(e) {
+  const panel = document.getElementById('notifPanel');
+  const bell = document.getElementById('notifBell');
+  if (!panel || panel.style.display === 'none') return;
+  if (!panel.contains(e.target) && e.target !== bell && !bell.contains(e.target)) {
+    panel.style.display = 'none';
+  }
+});
+
 function checkBudgetAlerts() {
   const year = new Date().getFullYear().toString();
   budgets.forEach(b => {
@@ -4745,7 +4825,7 @@ function renderAccountingView() {
     if (!accs.length) return;
     html += `<div class="section-label" style="margin-top:20px;">${type} Accounts</div>
     <div class="table-wrap" style="margin-bottom:12px;">
-      <table><thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th style="text-align:right;">Balance</th><th></th></tr></thead>
+      <table><thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th style="text-align:right;">Balance</th><th></th><th></th></tr></thead>
       <tbody>${accs.map(a=>`<tr>
         <td class="td-mono td-bold">${a.code}</td>
         <td>${a.name}</td>
@@ -8011,11 +8091,12 @@ window.importData = function(input) {
 };
 
 window.clearData = async function() {
-  if (!confirm('⚠️ This will delete ALL company data. Are you absolutely sure?')) return;
-  if (!confirm('Last warning: all invoices, transactions and records will be permanently deleted.')) return;
+  if (!confirm('⚠️ This will permanently delete all invoices, bills, customers, vendors, products, employees, assets, budgets, payments, bank transactions and audit history. Your Chart of Accounts will be kept (balances reset to zero). Continue?')) return;
+  if (!confirm('Last warning: this cannot be undone. Your Chart of Accounts stays intact — everything else is wiped. Proceed?')) return;
   try {
     await apiFetch('/company/clear', { method:'DELETE' });
-    location.reload();
+    showToast('Company data cleared. Chart of Accounts preserved.', 'success');
+    setTimeout(() => location.reload(), 1200);
   } catch (err) { showToast(err.message || 'Clear failed.', 'danger'); }
 };
 
@@ -8167,19 +8248,6 @@ async function navigateTo(page) {
     document.getElementById('sidebarOverlay')?.classList.remove('overlay-visible');
   }
   applyRBAC();
-}
-
-document.querySelectorAll('.nav-item[data-page]').forEach(item => {
-  item.addEventListener('click', function() { navigateTo(this.dataset.page); });
-});
-document.getElementById('darkModeToggle').addEventListener('click', toggleDark);
-document.getElementById('upgradeProBtn').addEventListener('click', () => { navigateTo('settings'); });
-
-var _gsInput = document.getElementById('globalSearch');
-if (_gsInput) {
-  _gsInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { globalSearch(this.value.trim()); this.blur(); }
-  });
 }
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────
