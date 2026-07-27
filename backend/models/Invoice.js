@@ -59,11 +59,19 @@ const InvoiceSchema = new mongoose.Schema({
   recurringNextDate: Date,
   recurringEndDate: Date,
   createdAt: { type: Date, default: Date.now },
-  isRecurring: { type: Boolean, default: false },
-  recurringFrequency: { type: String, enum: ['weekly','monthly','quarterly'], default: 'monthly' },
-  recurringNextDate: { type: Date },
-  recurringEndDate: { type: Date }
 
+  // FIRS/NRS e-invoicing readiness — populated once an Access Point
+  // Provider integration validates the invoice. Safe to leave null until then.
+  einvoiceStatus: {
+    type: String,
+    enum: ['not_required', 'pending', 'validated', 'rejected'],
+    default: 'not_required'
+  },
+  irn: { type: String, default: null },      // Invoice Reference Number
+  csid: { type: String, default: null },      // Cryptographic Stamp ID
+  qrCode: { type: String, default: null },    // QR payload/URL
+  einvoiceSubmittedAt: { type: Date, default: null },
+  einvoiceValidatedAt: { type: Date, default: null }
 });
 
 InvoiceSchema.pre('save', function(next) {

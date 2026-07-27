@@ -50,6 +50,11 @@ exports.create = async (req, res) => {
     const whtAmount = whtRate ? parseFloat((total * (whtRate / 100)).toFixed(2)) : 0;
     const netPayable = parseFloat((total - whtAmount).toFixed(2));
 
+    // Maker-checker: non-admins creating a bill above the threshold get
+    // routed to pending approval — no ledger or stock impact until approved.
+    const approvalThreshold = (company && company.approvalThreshold) || 500000;
+    const needsApproval = req.user.role !== 'admin' && total > approvalThreshold;
+
     const bill = new Bill({
       companyId: req.user.companyId,
       number: billNumber,
@@ -66,17 +71,36 @@ exports.create = async (req, res) => {
       amountPaid: 0,
       balance: total,
       expenseAccount,
-      isInventoryPurchase: isInventoryPurchase || false
+      isInventoryPurchase: isInventoryPurchase || false,
+      approvalStatus: needsApproval ? 'pending_approval' : 'approved'
     });
     await bill.save({ session });
 
-    // Handle inventory purchase - update stock
+    if (needsApproval) {
+      // Stop here — no stock, no journal entry, no account balances until
+      // an admin calls PUT /:id/approve for this bill.
+      await session.commitTransaction();
+      return res.status(201).json(bill);
+    }
+
+    // Handle inventory purchase - update stock AND cost (weighted average).
+    // This is the ONLY place stock/cost update for a bill — the frontend no
+    // longer makes a separate /products/adjust call for bill-driven receipts,
+    // which previously caused stock to be double-counted.
     if (isInventoryPurchase) {
       for (const line of lines) {
         if (line.productId) {
           const product = await Product.findById(line.productId).session(session);
-          if (product) {
-            product.stock += line.quantity;
+          if (product && line.quantity > 0) {
+            const oldStock = product.stock || 0;
+            const oldCost = product.cost || 0;
+            const unitCost = line.rate || 0;
+            if (unitCost > 0) {
+              const oldValue = oldStock * oldCost;
+              const newValue = line.quantity * unitCost;
+              product.cost = (oldValue + newValue) / (oldStock + line.quantity);
+            }
+            product.stock = oldStock + line.quantity;
             await product.save({ session });
           }
         }
@@ -138,6 +162,90 @@ exports.create = async (req, res) => {
 
     await session.commitTransaction();
     res.status(201).json(bill);
+  } catch (err) {
+    await session.abortTransaction();
+    res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
+  }
+};
+
+// Approve a pending bill — posts the stock update and journal entry that
+// were withheld when the bill was created above the approval threshold.
+exports.approve = async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can approve bills' });
+  }
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const bill = await Bill.findOne({ companyId: req.user.companyId, _id: req.params.id }).session(session);
+    if (!bill) throw new Error('Bill not found');
+    if (bill.approvalStatus !== 'pending_approval') {
+      throw new Error('Bill is not pending approval');
+    }
+
+    if (bill.isInventoryPurchase) {
+      for (const line of bill.lines) {
+        if (line.productId) {
+          const product = await Product.findById(line.productId).session(session);
+          if (product && line.quantity > 0) {
+            const oldStock = product.stock || 0;
+            const oldCost = product.cost || 0;
+            const unitCost = line.rate || 0;
+            if (unitCost > 0) {
+              const oldValue = oldStock * oldCost;
+              const newValue = line.quantity * unitCost;
+              product.cost = (oldValue + newValue) / (oldStock + line.quantity);
+            }
+            product.stock = oldStock + line.quantity;
+            await product.save({ session });
+          }
+        }
+      }
+    }
+
+    const apAccount = await Account.findOne({ companyId: req.user.companyId, code: '2000' }).session(session);
+    const expenseAccountDoc = await Account.findOne({ companyId: req.user.companyId, code: bill.expenseAccount }).session(session);
+    if (!apAccount || !expenseAccountDoc) throw new Error('Required accounts not found');
+
+    const journalLines = [{ accountCode: bill.expenseAccount, amount: bill.total, type: 'debit' }];
+    let whtAccount = null;
+    if (bill.whtAmount > 0) {
+      whtAccount = await Account.findOne({ companyId: req.user.companyId, code: '2250' }).session(session);
+      if (whtAccount) {
+        journalLines.push({ accountCode: whtAccount.code, amount: bill.whtAmount, type: 'credit' });
+        journalLines.push({ accountCode: apAccount.code, amount: bill.netPayable, type: 'credit' });
+      }
+    } else {
+      journalLines.push({ accountCode: apAccount.code, amount: bill.total, type: 'credit' });
+    }
+
+    const journal = new JournalEntry({
+      companyId: req.user.companyId,
+      date: bill.date,
+      description: `Bill ${bill.number} - Approved (${bill.isInventoryPurchase ? 'Inventory Purchase' : 'Expense'})`,
+      type: 'bill',
+      referenceType: 'bill',
+      referenceId: bill._id,
+      lines: journalLines
+    });
+    await journal.save({ session });
+
+    expenseAccountDoc.balance += bill.total;
+    await expenseAccountDoc.save({ session });
+    apAccount.balance += bill.netPayable;
+    await apAccount.save({ session });
+    if (whtAccount && bill.whtAmount > 0) {
+      whtAccount.balance += bill.whtAmount;
+      await whtAccount.save({ session });
+    }
+
+    bill.approvalStatus = 'approved';
+    await bill.save({ session });
+
+    await session.commitTransaction();
+    res.json(bill);
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ error: err.message });
