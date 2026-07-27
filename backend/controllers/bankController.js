@@ -81,6 +81,27 @@ exports.reconcileTransaction = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Bulk reconcile — the frontend's "select multiple, reconcile at once" action.
+// This route previously didn't exist at all on the backend.
+exports.bulkReconcileTransactions = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) {
+      return res.status(400).json({ error: 'No transaction ids provided' });
+    }
+    const result = await BankTransaction.updateMany(
+      { companyId: req.user.companyId, _id: { $in: ids } },
+      { $set: { reconciled: true, reconciledAt: new Date() } }
+    );
+    const updated = await BankTransaction.find({
+      companyId: req.user.companyId, _id: { $in: ids }
+    });
+    res.json({ modifiedCount: result.modifiedCount, transactions: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
  
 exports.createBankTransaction = async (req, res) => {
 
@@ -89,7 +110,7 @@ exports.createBankTransaction = async (req, res) => {
   try {
     const { bankId, date, type, amount, description, reference } = req.body;
     // Find the bank account to get its code
-    const bankAccount = await BankAccount.findById(bankId).session(session);
+    const bankAccount = await BankAccount.findOne({ _id: bankId, companyId: req.user.companyId }).session(session);
     if (!bankAccount) throw new Error('Bank account not found');
     const bankCode = bankAccount.code || '1000'; // fallback
 
