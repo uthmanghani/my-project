@@ -190,7 +190,8 @@ exports.sendOTP = async (req, res) => {
     await sendOTPEmail({ to: email, otp, firstName: user.firstName });
     res.json({ message: 'OTP sent to your email' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('sendOTP error:', err.message);
+    res.status(500).json({ error: 'Could not send the verification code right now. Please try again shortly.' });
   }
 };
 
@@ -225,7 +226,11 @@ exports.forgotPassword = async (req, res) => {
     await sendPasswordResetEmail({ to: email, token, firstName: user.firstName });
     res.json({ message: 'Password reset email sent' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Log the real error server-side for debugging, but never expose raw
+    // internals (network errors, stack traces, provider details) to the
+    // person using the app — they just need to know it didn't go through.
+    console.error('forgotPassword error:', err.message);
+    res.status(500).json({ error: 'Could not send the reset email right now. Please try again shortly.' });
   }
 };
  

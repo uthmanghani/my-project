@@ -1,5 +1,11 @@
 const nodemailer = require('nodemailer');
 
+// Render's outbound networking doesn't support IPv6, but smtp.gmail.com
+// resolves to both IPv4 and IPv6 addresses. Node can pick the IPv6 one,
+// which then fails with ENETUNREACH since there's no route to it. Forcing
+// IPv4-first resolution for the whole process fixes this at the source.
+require('dns').setDefaultResultOrder('ipv4first');
+
 // SMTP_PORT arrives from env as a string — nodemailer wants a number.
 const smtpPort = Number(process.env.SMTP_PORT) || 587;
 
