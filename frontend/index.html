@@ -973,7 +973,7 @@
             </div>
           </div>
           <button class="ob-btn" id="obSignInBtn" onclick="obSignIn()"><i class="fas fa-arrow-right-to-bracket"></i> Sign In</button>
-          <div class="ob-link-row">Forgot password? <a onclick="obForgotPassword()">Reset my password</a></div>
+          <div class="ob-link-row">Forgot password? <a id="obForgotPassLink" onclick="obForgotPassword()">Reset my password</a></div>
           <div class="ob-link-row" style="margin-top:6px;">New here? <a onclick="obSwitchTab('register')">Create a company account</a></div>
         </div>
 
@@ -2028,6 +2028,11 @@ function obUpdateSidebarUser(user, company) {
 async function obForgotPassword() {
   const email = (document.getElementById('siEmail')||{}).value || '';
   if (!email.trim()) { obShowError(0,'Please enter your email address first.'); return; }
+
+  const link = document.getElementById('obForgotPassLink');
+  const originalText = link ? link.textContent : '';
+  if (link) { link.textContent = 'Sending…'; link.style.pointerEvents = 'none'; link.style.opacity = '0.6'; }
+
   try {
     const res = await fetch(`${API_BASE}/auth/forgot-password`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2038,7 +2043,11 @@ async function obForgotPassword() {
     obShowError(0, 'Password reset email sent! Check your inbox.');
     document.getElementById('obError0').style.background = '#dcfce7';
     document.getElementById('obError0').style.color = '#16a34a';
-  } catch(err) { obShowError(0,'Failed to send reset email. Try again.'); }
+  } catch(err) {
+    obShowError(0,'Failed to send reset email. Try again.');
+  } finally {
+    if (link) { link.textContent = originalText; link.style.pointerEvents = ''; link.style.opacity = ''; }
+  }
 }
 
 function obSignOut() {

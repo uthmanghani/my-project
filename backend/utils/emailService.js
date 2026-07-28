@@ -1,11 +1,38 @@
 const nodemailer = require('nodemailer');
- 
+
+// SMTP_PORT arrives from env as a string — nodemailer wants a number.
+const smtpPort = Number(process.env.SMTP_PORT) || 587;
+
+// Port 465 requires implicit TLS (secure: true) or the connection fails
+// outright; port 587 (and most others) use STARTTLS (secure: false).
+// Hardcoding `secure: false` breaks any provider configured on port 465
+// (common for some SMTP providers' default setup).
+const smtpSecure = process.env.SMTP_SECURE
+  ? process.env.SMTP_SECURE === 'true'
+  : smtpPort === 465;
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  secure: false,
+  port: smtpPort,
+  secure: smtpSecure,
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
 });
+
+// Fail loud and early. Without this, a missing/wrong SMTP_HOST or
+// SMTP_USER/PASS stays invisible until a real user hits "forgot password"
+// and gets a generic 500 — this puts the actual cause in the Render logs
+// the moment the server starts.
+if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  console.error('⚠️  SMTP is not fully configured — SMTP_HOST, SMTP_USER and SMTP_PASS must all be set as environment variables on Render. Emails (password reset, OTP, invoices) will fail until this is fixed.');
+} else {
+  transporter.verify((err) => {
+    if (err) {
+      console.error('⚠️  SMTP connection failed on startup:', err.message);
+    } else {
+      console.log('✅ SMTP connection verified — email sending is configured correctly.');
+    }
+  });
+}
  
 exports.sendInvoiceEmail = async ({ to, customerName, invoiceNumber, amount, dueDate, companyName, pdfUrl }) => {
   await transporter.sendMail({
@@ -33,50 +60,60 @@ exports.sendInvoiceEmail = async ({ to, customerName, invoiceNumber, amount, due
   });
 };
 exports.sendOTPEmail = async ({ to, otp, firstName }) => {
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to,
-    subject: 'AccounTrack — Your Login Verification Code',
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;">
-        <div style="background:#0a4f45;padding:24px;text-align:center;border-radius:8px 8px 0 0;">
-          <h1 style="color:white;margin:0;font-size:20px;">AccounTrack™ Pro</h1>
-        </div>
-        <div style="padding:32px;background:#f9f9f9;border-radius:0 0 8px 8px;">
-          <p>Hello ${firstName},</p>
-          <p>Your verification code is:</p>
-          <div style="text-align:center;margin:24px 0;">
-            <div style="background:#0a4f45;color:white;font-size:36px;font-weight:800;letter-spacing:12px;padding:20px 32px;border-radius:10px;display:inline-block;">${otp}</div>
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to,
+      subject: 'AccounTrack — Your Login Verification Code',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;">
+          <div style="background:#0a4f45;padding:24px;text-align:center;border-radius:8px 8px 0 0;">
+            <h1 style="color:white;margin:0;font-size:20px;">AccounTrack™ Pro</h1>
           </div>
-          <p style="color:#666;font-size:13px;">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
-          <p style="color:#999;font-size:12px;">If you did not attempt to sign in, please change your password immediately.</p>
-        </div>
-      </div>`
-  });
+          <div style="padding:32px;background:#f9f9f9;border-radius:0 0 8px 8px;">
+            <p>Hello ${firstName},</p>
+            <p>Your verification code is:</p>
+            <div style="text-align:center;margin:24px 0;">
+              <div style="background:#0a4f45;color:white;font-size:36px;font-weight:800;letter-spacing:12px;padding:20px 32px;border-radius:10px;display:inline-block;">${otp}</div>
+            </div>
+            <p style="color:#666;font-size:13px;">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+            <p style="color:#999;font-size:12px;">If you did not attempt to sign in, please change your password immediately.</p>
+          </div>
+        </div>`
+    });
+  } catch (err) {
+    console.error(`⚠️  Failed to send OTP email to ${to}:`, err.message);
+    throw err;
+  }
 };
 
 exports.sendPasswordResetEmail = async ({ to, token, firstName }) => {
   const resetUrl = `https://accountrack.onrender.com?resetToken=${token}`;
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to,
-    subject: 'AccounTrack Password Reset Request',
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-        <div style="background:#0a4f45;padding:24px;text-align:center;">
-          <h1 style="color:white;margin:0;font-size:22px;">AccounTrack™ Pro</h1>
-        </div>
-        <div style="padding:32px;background:#f9f9f9;">
-          <p>Hello ${firstName},</p>
-          <p>You requested a password reset. Click the button below to set a new password.</p>
-          <div style="text-align:center;margin:24px 0;">
-            <a href="${resetUrl}" style="background:#0a4f45;color:white;padding:14px 28px;
-               border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;">
-              Reset My Password
-            </a>
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to,
+      subject: 'AccounTrack Password Reset Request',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:#0a4f45;padding:24px;text-align:center;">
+            <h1 style="color:white;margin:0;font-size:22px;">AccounTrack™ Pro</h1>
           </div>
-          <p style="color:#999;font-size:13px;">This link expires in 1 hour. If you did not request this, ignore this email.</p>
-        </div>
-      </div>`
-  });
+          <div style="padding:32px;background:#f9f9f9;">
+            <p>Hello ${firstName},</p>
+            <p>You requested a password reset. Click the button below to set a new password.</p>
+            <div style="text-align:center;margin:24px 0;">
+              <a href="${resetUrl}" style="background:#0a4f45;color:white;padding:14px 28px;
+                 border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;">
+                Reset My Password
+              </a>
+            </div>
+            <p style="color:#999;font-size:13px;">This link expires in 1 hour. If you did not request this, ignore this email.</p>
+          </div>
+        </div>`
+    });
+  } catch (err) {
+    console.error(`⚠️  Failed to send password reset email to ${to}:`, err.message);
+    throw err;
+  }
 };
