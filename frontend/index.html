@@ -4286,8 +4286,16 @@ window.openBillPaymentSelector = () => {
 window.openBillModal = (presetVendorId) => {
   if (vendors.length===0) return alert('Please add a vendor first.');
   const vOpts = vendors.map(v=>`<option value="${v._id||v.id}" ${(v._id||v.id)==presetVendorId?'selected':''}>${v.name}</option>`).join('');
-    // TASK 3: Inventory Asset listed first for stock/goods purchases
-  const inventoryOpt ='<option value="1200">1200 – Inventory Asset (Goods for resale / stock)</option>';
+    // Show every real inventory-stage account (Raw Materials, WIP, Finished
+    // Goods, generic Inventory/Stock) with its actual name from the Chart
+    // of Accounts — not a single hardcoded "1200" option that always said
+    // "Goods for resale / stock" regardless of what your COA actually calls it.
+  const inventoryAccounts = accounts.filter(a =>
+    a.type === 'Asset' && /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i.test(a.name)
+  );
+  const inventoryOpt = inventoryAccounts.map(a =>
+    `<option value="${a.code}">${a.code} – ${a.name}</option>`
+  ).join('');
   const accOpts = inventoryOpt + accounts.filter(a => a.type === 'Expense').map(a => '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>').join('');
   showModal('Enter Bill',`
     <div class="form-row cols-3">
