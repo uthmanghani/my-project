@@ -10,7 +10,7 @@ const BankAccountSchema = new mongoose.Schema({
   bank: String,
   accountNumber: String,
   openingBalance: { type: Number, default: 0 },
-  code: { type: String, default: '1000' },
+  code: { type: String },
   createdAt: {
     type: Date,
     default: Date.now

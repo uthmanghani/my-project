@@ -16,6 +16,19 @@ const mongoose = require('mongoose');
 
 const BankAccount = require('../models/BankAccount');
 
+// Bank account ledger codes live in the 10xx range. Every bank account
+// previously defaulted to the same hardcoded code ('1000'), meaning a
+// second bank account would silently share one ledger account with the
+// first — mixing two banks' transactions into a single GL balance.
+async function getNextBankLedgerCode(companyId, session) {
+  const existing = await Account.find({ companyId, code: { $regex: /^10[0-9]0$/ } })
+    .session(session)
+    .sort({ code: -1 });
+  if (!existing.length) return '1000';
+  const maxCode = parseInt(existing[0].code, 10);
+  return String(maxCode + 10);
+}
+
 exports.getBankAccounts = async (req, res) => {
   try {
     const accounts = await BankAccount.find({ companyId: req.user.companyId });
@@ -26,34 +39,79 @@ exports.getBankAccounts = async (req, res) => {
 };
 
 exports.createBankAccount = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { name, bank, accountNumber, openingBalance } = req.body;
+    const code = await getNextBankLedgerCode(req.user.companyId, session);
+
+    // Create the matching ledger account so this balance actually shows up
+    // in Trial Balance, Balance Sheet, and everywhere else that reads from
+    // Account — previously the opening balance only ever lived on the
+    // separate BankAccount document, invisible to the rest of the books.
+    const ledgerAccount = new Account({
+      companyId: req.user.companyId,
+      code,
+      name: bank ? `${bank} - ${name}` : name,
+      type: 'Asset',
+      balance: openingBalance || 0,
+      openingBalance: openingBalance || 0
+    });
+    await ledgerAccount.save({ session });
+
     const bankAccount = new BankAccount({
       companyId: req.user.companyId,
       name,
       bank,
       accountNumber,
-      openingBalance: openingBalance || 0
+      openingBalance: openingBalance || 0,
+      code
     });
-    await bankAccount.save();
-    // Also create a corresponding Account in the chart of accounts?
-    // The frontend uses a separate list; we'll keep it separate.
+    await bankAccount.save({ session });
+
+    await session.commitTransaction();
     res.status(201).json(bankAccount);
   } catch (err) {
+    await session.abortTransaction();
     res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
 };
 
 exports.deleteBankAccount = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    const account = await BankAccount.findOneAndDelete({
+    const account = await BankAccount.findOne({
       companyId: req.user.companyId,
       _id: req.params.id
-    });
-    if (!account) return res.status(404).json({ error: 'Bank account not found' });
+    }).session(session);
+    if (!account) {
+      await session.abortTransaction();
+      return res.status(404).json({ error: 'Bank account not found' });
+    }
+
+    // Deactivate the ledger account instead of deleting it — past journal
+    // entries still reference this code, and removing it outright would
+    // break Trial Balance / General Ledger history for anything already
+    // posted against it.
+    if (account.code) {
+      await Account.updateOne(
+        { companyId: req.user.companyId, code: account.code },
+        { $set: { isActive: false } }
+      ).session(session);
+    }
+
+    await BankAccount.deleteOne({ _id: account._id }).session(session);
+
+    await session.commitTransaction();
     res.json({ message: 'Bank account deleted' });
   } catch (err) {
+    await session.abortTransaction();
     res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
 };
 
