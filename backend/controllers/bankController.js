@@ -116,6 +116,7 @@ exports.createBankTransaction = async (req, res) => {
 
     const transaction = new BankTransaction({
       companyId: req.user.companyId,
+      bankId: bankAccount._id,
       bankAccountCode: bankCode,
       date,
       type,
