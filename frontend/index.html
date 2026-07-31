@@ -7469,8 +7469,7 @@ window.saveBill = async function() {
     vendorId, date: bDate, dueDate: bDue, lines, total,
     whtRate, whtAmount, netPayable: netPay,
     expenseAccount: expCode, isInventoryPurchase,
-    status: 'unpaid', payments: [], amountPaid: 0, balance: total,
-    ...(attachment ? { attachment } : {})
+    status: 'unpaid', payments: [], amountPaid: 0, balance: total
   };
 
   try {
@@ -7492,7 +7491,7 @@ window.saveBill = async function() {
     recalcBalances();
     renderBillsView();
     renderDashboard();
-    showToast(`Bill ${billNumber} entered and posted to ledger.`, 'success');
+    showToast(`Bill ${createdBill?.number || ''} entered and posted to ledger.`, 'success');
   } catch (err) {
     showToast(err.message || 'Save failed.', 'danger');
   }
