@@ -37,10 +37,13 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
+    // context: 'query' is required for the conditional `required` on price
+    // (itemType !== 'raw_material') to evaluate correctly during an update —
+    // without it, Mongoose validators can't see sibling fields properly.
     const product = await Product.findOneAndUpdate(
       { companyId: req.user.companyId, _id: req.params.id },
       req.body,
-      { new: true, runValidators: true }
+      { new: true, runValidators: true, context: 'query' }
     );
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);

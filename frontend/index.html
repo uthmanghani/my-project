@@ -3097,7 +3097,7 @@ window.openInvoiceModal = (presetCustomerId) => {
   addInvLine(prodOpts);
 };
 window.addInvLine = (prodOpts) => {
-  if (!prodOpts) prodOpts = products.map(p =>
+  if (!prodOpts) prodOpts = products.filter(p => p.itemType !== 'raw_material').map(p =>
     '<option value="'+(p._id||p.id)+'" data-price="'+p.price+'">'+p.name+' ('+fmt(p.price)+')</option>').join('');
   const c = document.getElementById('invLines');
   if (!c) return;
@@ -6169,14 +6169,35 @@ window.openProductModal = () => {
       <div class="form-group"><label class="form-label">Category</label><input class="form-control" id="pCat" placeholder="e.g. Furniture"></div>
       <div class="form-group"><label class="form-label">Unit of Measure</label><input class="form-control" id="pUnit" placeholder="e.g. pieces"></div>
     </div>
+    <div class="form-group">
+      <label class="form-label required">Item Type</label>
+      <select class="form-control" id="pItemType" onchange="toggleProductPriceField(this.value)">
+        <option value="finished_good">Finished Good — sold to customers</option>
+        <option value="raw_material">Raw Material — bought for production, not resold</option>
+      </select>
+    </div>
     <div class="form-row cols-3">
-      <div class="form-group"><label class="form-label required">Sale Price (₦)</label><input type="number" class="form-control" id="pPrice" step="0.01"></div>
+      <div class="form-group" id="pPriceGroup"><label class="form-label required">Sale Price (₦)</label><input type="number" class="form-control" id="pPrice" step="0.01"></div>
       <div class="form-group"><label class="form-label required">Cost Price (₦)</label><input type="number" class="form-control" id="pCost" step="0.01"></div>
       <div class="form-group"><label class="form-label">Opening Stock</label><input type="number" class="form-control" id="pStock" value="0" min="0"></div>
     </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveProduct()"><i class="fas fa-save"></i> Save Product</button>`
   );
+};
+// Raw materials aren't sold directly, so Sale Price doesn't apply to them —
+// hide the field entirely rather than just leaving it optional-but-visible,
+// so it's clear at a glance why it's missing.
+window.toggleProductPriceField = (itemType) => {
+  const group = document.getElementById('pPriceGroup');
+  const input = document.getElementById('pPrice');
+  if (!group || !input) return;
+  if (itemType === 'raw_material') {
+    group.style.display = 'none';
+    input.value = '';
+  } else {
+    group.style.display = '';
+  }
 };
 window.saveProduct = () => {
   const name = document.getElementById('pName')?.value.trim();
@@ -7797,10 +7818,12 @@ window.saveBankTx = async function(bankId) {
 // ─── PRODUCTS ─────────────────────────────────────────────────────────
 window.saveProduct = async function() {
   const name  = document.getElementById('pName')?.value.trim();
+  const itemType = document.getElementById('pItemType')?.value || 'finished_good';
   const price = parseFloat(document.getElementById('pPrice')?.value);
   const cost  = parseFloat(document.getElementById('pCost')?.value);
-  if (!name || !price || !cost) return alert('Name, price and cost are required.');
-  const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, price, cost, stock:parseInt(document.getElementById('pStock')?.value)||0 };
+  if (!name || !cost) return alert('Name and cost are required.');
+  if (itemType !== 'raw_material' && !price) return alert('Sale price is required for finished goods.');
+  const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, itemType, price: itemType === 'raw_material' ? 0 : price, cost, stock:parseInt(document.getElementById('pStock')?.value)||0 };
   try {
     await apiFetch('/products', { method:'POST', body:JSON.stringify(data) });
     closeTopModal();
@@ -7822,21 +7845,30 @@ window.openEditProductModal = (id) => {
       <div class="form-group"><label class="form-label">Category</label><input class="form-control" id="pCat" value="${p.category||''}"></div>
       <div class="form-group"><label class="form-label">Unit of Measure</label><input class="form-control" id="pUnit" value="${p.unit||''}"></div>
     </div>
+    <div class="form-group"><label class="form-label required">Item Type</label>
+      <select class="form-control" id="pItemType" onchange="toggleProductPriceField(this.value)">
+        <option value="finished_good" ${(p.itemType||'finished_good')==='finished_good'?'selected':''}>Finished Good — sold to customers</option>
+        <option value="raw_material" ${p.itemType==='raw_material'?'selected':''}>Raw Material — bought for production, not resold</option>
+      </select>
+    </div>
     <div class="form-row cols-2">
-      <div class="form-group"><label class="form-label required">Sale Price (₦)</label><input type="number" class="form-control" id="pPrice" step="0.01" value="${p.price||0}"></div>
+      <div class="form-group" id="pPriceGroup"><label class="form-label required">Sale Price (₦)</label><input type="number" class="form-control" id="pPrice" step="0.01" value="${p.price||0}"></div>
       <div class="form-group"><label class="form-label required">Cost Price (₦)</label><input type="number" class="form-control" id="pCost" step="0.01" value="${p.cost||0}"></div>
     </div>
     <div class="form-hint">Stock quantity is changed via Adjust Stock, not here.</div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveProductEdit('${p._id||p.id}')"><i class="fas fa-save"></i> Save Changes</button>`
   );
+  toggleProductPriceField(p.itemType||'finished_good');
 };
 window.saveProductEdit = async function(id) {
   const name  = document.getElementById('pName')?.value.trim();
+  const itemType = document.getElementById('pItemType')?.value || 'finished_good';
   const price = parseFloat(document.getElementById('pPrice')?.value);
   const cost  = parseFloat(document.getElementById('pCost')?.value);
-  if (!name || !price || !cost) return alert('Name, price and cost are required.');
-  const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, price, cost };
+  if (!name || !cost) return alert('Name and cost are required.');
+  if (itemType !== 'raw_material' && !price) return alert('Sale price is required for finished goods.');
+  const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, itemType, price: itemType === 'raw_material' ? 0 : price, cost };
   try {
     await apiFetch(`/products/${id}`, { method:'PUT', body:JSON.stringify(data) });
     closeTopModal();

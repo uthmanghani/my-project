@@ -13,9 +13,17 @@ const ProductSchema = new mongoose.Schema({
   sku: String,
   category: String,
   unit: String,
+  // Raw materials are bought and consumed into production — they're never
+  // sold directly, so they shouldn't need a sale price at all. Finished
+  // goods keep both price and cost required, exactly as before.
+  itemType: {
+    type: String,
+    enum: ['finished_good', 'raw_material'],
+    default: 'finished_good'
+  },
   price: {
     type: Number,
-    required: true
+    required: function() { return this.itemType !== 'raw_material'; }
   },
   cost: {
     type: Number,
