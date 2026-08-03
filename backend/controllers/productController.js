@@ -25,9 +25,25 @@ exports.getOne = async (req, res) => {
   }
 };
 
+// Picks the right inventory GL account for a product based on its item
+// type, so Raw Materials and Finished Goods can post to separate accounts
+// instead of always sharing '1200'. Falls back sensibly if the company's
+// Chart of Accounts doesn't have a dedicated account for that item type yet.
+async function resolveInventoryAccountCode(companyId, itemType) {
+  const nameTest = itemType === 'raw_material'
+    ? /raw material/i
+    : /finished goods/i;
+  let match = await Account.findOne({ companyId, type: 'Asset', name: nameTest });
+  if (!match) match = await Account.findOne({ companyId, type: 'Asset', name: /inventory|stock/i });
+  return match ? match.code : '1200';
+}
+
 exports.create = async (req, res) => {
   try {
-    const product = new Product({ ...req.body, companyId: req.user.companyId });
+    const itemType = req.body.itemType || 'finished_good';
+    const inventoryAccountCode = req.body.inventoryAccountCode
+      || await resolveInventoryAccountCode(req.user.companyId, itemType);
+    const product = new Product({ ...req.body, itemType, inventoryAccountCode, companyId: req.user.companyId });
     await product.save();
     res.status(201).json(product);
   } catch (err) {
@@ -78,7 +94,8 @@ exports.adjustStock = async (req, res) => {
     await product.save({ session });
 
     const adjValue = quantity * product.cost;
-    const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: '1200' }).session(session);
+    const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: product.inventoryAccountCode || '1200' }).session(session);
+    if (!inventoryAccount) throw new Error('Inventory account not found for this product');
     let adjAccount = await Account.findOne({ companyId: req.user.companyId, code: '6500' }).session(session);
     if (!adjAccount) {
       adjAccount = new Account({

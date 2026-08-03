@@ -27,11 +27,21 @@ const ProductSchema = new mongoose.Schema({
   },
   cost: {
     type: Number,
-    required: true
+    required: function() { return this.itemType !== 'raw_material'; },
+    default: 0
   },
   stock: {
     type: Number,
     default: 0
+  },
+  // Which GL Asset account this product's value lives in — lets Raw
+  // Materials and Finished Goods post to genuinely separate ledger
+  // accounts instead of always sharing one hardcoded '1200' account.
+  // Auto-resolved on creation if not explicitly provided (see
+  // productController.js), falling back to '1200' for older data.
+  inventoryAccountCode: {
+    type: String,
+    default: '1200'
   },
   reorderLevel: {
     type: Number,

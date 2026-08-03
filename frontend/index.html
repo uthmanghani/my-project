@@ -4337,8 +4337,17 @@ window.openBillModal = (presetVendorId) => {
   );
   addBillLine();
 };
+// Any Asset-type account whose name indicates it's an inventory/stock
+// account — Raw Materials, Work-in-Progress, Finished Goods, or generic
+// Inventory/Stock. Used everywhere the app used to hardcode a single
+// account code ('1200'), so manufacturers can track Raw Materials and
+// Finished Goods as genuinely separate GL accounts instead of one shared
+// account for all stock.
+function isInventoryAccount(a) {
+  return !!a && a.type === 'Asset' && /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i.test(a.name || '');
+}
 window.billAccChange = (sel) => {
-  const isInv = sel.value === '1200';
+  const isInv = isInventoryAccount(accounts.find(a => a.code === sel.value));
   const hdrProd = document.getElementById('bphProduct');
   if (hdrProd) hdrProd.style.display = isInv ? '' : 'none';
   document.querySelectorAll('#billLines .bill-line').forEach(line => {
@@ -4348,7 +4357,7 @@ window.billAccChange = (sel) => {
 };
 window.addBillLine = () => {
   const c = document.getElementById('billLines'); if(!c) return;
-  const isInv = document.getElementById('bExpAcc')?.value === '1200';
+  const isInv = isInventoryAccount(accounts.find(a => a.code === document.getElementById('bExpAcc')?.value));
   const prodOpts = '<option value="">— no link —</option>' +
     products.map(p =>
       '<option value="' + (p._id||p.id) + '">' +
@@ -5902,7 +5911,7 @@ window.showRpt = (type, btn) => {
     const netIncomeCF   = totalRevenue - totalExpense;
     const arChange      = -(accounts.find(a => a.code === '1100')?.balance || 0);
     const apChange      =  (accounts.find(a => a.code === '2000')?.balance || 0);
-    const invChange     = -(accounts.find(a => a.code === '1200')?.balance || 0);
+    const invChange     = -(accounts.filter(isInventoryAccount).reduce((s,a) => s + (a.balance||0), 0));
     const operatingCF   = netIncomeCF + arChange + apChange + invChange;
     const fixedAssets   = accounts.filter(a => a.type === 'Asset' && (a.code.startsWith('14') || a.code.startsWith('15'))).reduce((s,a) => s + a.balance, 0);
     const investingCF   = -fixedAssets;
@@ -5981,7 +5990,7 @@ window.showRpt = (type, btn) => {
     const netProfitMargin = revenueHealth > 0 ? (netIncomeHealth / revenueHealth) * 100 : 0;
 
     const currentAssets = accounts.filter(a => a.type === 'Asset').reduce((s,a) => s + a.balance, 0);
-    const inventory = accounts.find(a => a.code === '1200')?.balance || 0;
+    const inventory = accounts.filter(isInventoryAccount).reduce((s,a) => s + (a.balance||0), 0);
     const currentLiabilities = accounts.filter(a => a.type === 'Liability').reduce((s,a) => s + Math.abs(a.balance), 0);
     const quickAssets = currentAssets - inventory;
     const currentRatio = currentLiabilities !== 0 ? currentAssets / currentLiabilities : (currentAssets > 0 ? Infinity : 0);
@@ -6178,7 +6187,7 @@ window.openProductModal = () => {
     </div>
     <div class="form-row cols-3">
       <div class="form-group" id="pPriceGroup"><label class="form-label required">Sale Price (₦)</label><input type="number" class="form-control" id="pPrice" step="0.01"></div>
-      <div class="form-group"><label class="form-label required">Cost Price (₦)</label><input type="number" class="form-control" id="pCost" step="0.01"></div>
+      <div class="form-group"><label class="form-label" id="pCostLabel">Cost Price (₦) <span class="required-mark"></span></label><input type="number" class="form-control" id="pCost" step="0.01" placeholder="Leave blank if not yet known"></div>
       <div class="form-group"><label class="form-label">Opening Stock</label><input type="number" class="form-control" id="pStock" value="0" min="0"></div>
     </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
@@ -6187,16 +6196,22 @@ window.openProductModal = () => {
 };
 // Raw materials aren't sold directly, so Sale Price doesn't apply to them —
 // hide the field entirely rather than just leaving it optional-but-visible,
-// so it's clear at a glance why it's missing.
+// so it's clear at a glance why it's missing. Cost Price also becomes
+// optional for raw materials, since the real cost is often unknown until
+// the first actual purchase — billController then sets it automatically
+// via weighted-average costing when a Bill is entered.
 window.toggleProductPriceField = (itemType) => {
   const group = document.getElementById('pPriceGroup');
   const input = document.getElementById('pPrice');
+  const costLabel = document.getElementById('pCostLabel');
   if (!group || !input) return;
   if (itemType === 'raw_material') {
     group.style.display = 'none';
     input.value = '';
+    if (costLabel) costLabel.innerHTML = 'Cost Price (₦) <span style="color:var(--text-4);font-weight:400;">— optional, updates automatically on purchase</span>';
   } else {
     group.style.display = '';
+    if (costLabel) costLabel.innerHTML = 'Cost Price (₦) <span class="required-mark">*</span>';
   }
 };
 window.saveProduct = () => {
@@ -7442,7 +7457,7 @@ window.saveBill = async function() {
   const whtRate = parseFloat(document.getElementById('bWht')?.value) || 0;
   const lines = []; let total = 0;
   const productLines = []; // collect productId, quantity, cost for inventory
-  const isInventoryPurchase = (expCode === '1200');
+  const isInventoryPurchase = isInventoryAccount(accounts.find(a => a.code === expCode));
 
   document.querySelectorAll('#billLines .bill-line').forEach(l => {
     const q = parseFloat(l.querySelector('.qty').value) || 0;
@@ -7527,7 +7542,7 @@ window.openReturnModal = function(kind, docId) {
   const vatAcc  = accounts.find(a => /vat/i.test(a.name) && a.type === 'Liability');
   const arAcc   = accounts.find(a => a.code === '1100') || accounts.find(a => /receivable/i.test(a.name));
   const apAcc   = accounts.find(a => a.code === '2000') || accounts.find(a => /payable/i.test(a.name) && a.type === 'Liability' && !/vat|wht|paye/i.test(a.name));
-  const invAcc  = accounts.find(a => a.code === '1200') || accounts.find(a => /inventory/i.test(a.name));
+  const invAcc  = accounts.find(isInventoryAccount);
   const cogsAcc = accounts.find(a => /cost of goods|cogs/i.test(a.name)) || accounts.find(a => a.code === '5000');
   const expAcc  = kind === 'purchase' ? accounts.find(a => a.code === doc.expenseAccount) : null;
   const acctOpts = list => accounts.map(a => `<option value="${a.code}" ${list && a.code===list.code?'selected':''}>${a.code} – ${a.name}</option>`).join('');
@@ -7819,9 +7834,12 @@ window.saveProduct = async function() {
   const name  = document.getElementById('pName')?.value.trim();
   const itemType = document.getElementById('pItemType')?.value || 'finished_good';
   const price = parseFloat(document.getElementById('pPrice')?.value);
-  const cost  = parseFloat(document.getElementById('pCost')?.value);
-  if (!name || !cost) return alert('Name and cost are required.');
-  if (itemType !== 'raw_material' && !price) return alert('Sale price is required for finished goods.');
+  const cost  = parseFloat(document.getElementById('pCost')?.value) || 0;
+  if (!name) return alert('Product name is required.');
+  if (itemType !== 'raw_material') {
+    if (!price) return alert('Sale price is required for finished goods.');
+    if (!cost) return alert('Cost price is required for finished goods.');
+  }
   const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, itemType, price: itemType === 'raw_material' ? 0 : price, cost, stock:parseInt(document.getElementById('pStock')?.value)||0 };
   try {
     await apiFetch('/products', { method:'POST', body:JSON.stringify(data) });
@@ -7864,9 +7882,12 @@ window.saveProductEdit = async function(id) {
   const name  = document.getElementById('pName')?.value.trim();
   const itemType = document.getElementById('pItemType')?.value || 'finished_good';
   const price = parseFloat(document.getElementById('pPrice')?.value);
-  const cost  = parseFloat(document.getElementById('pCost')?.value);
-  if (!name || !cost) return alert('Name and cost are required.');
-  if (itemType !== 'raw_material' && !price) return alert('Sale price is required for finished goods.');
+  const cost  = parseFloat(document.getElementById('pCost')?.value) || 0;
+  if (!name) return alert('Product name is required.');
+  if (itemType !== 'raw_material') {
+    if (!price) return alert('Sale price is required for finished goods.');
+    if (!cost) return alert('Cost price is required for finished goods.');
+  }
   const data = { name, sku:document.getElementById('pSku')?.value, category:document.getElementById('pCat')?.value, unit:document.getElementById('pUnit')?.value, itemType, price: itemType === 'raw_material' ? 0 : price, cost };
   try {
     await apiFetch(`/products/${id}`, { method:'PUT', body:JSON.stringify(data) });
