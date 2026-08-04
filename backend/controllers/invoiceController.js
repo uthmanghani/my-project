@@ -77,7 +77,8 @@ exports.create = async (req, res) => {
           product.stock -= line.quantity;
           await product.save({ session });
           const cogsAccount = await Account.findOne({ companyId: req.user.companyId, code: '5000' }).session(session);
-          const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: '1200' }).session(session);
+          const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: product.inventoryAccountCode || '1200' }).session(session);
+          if (!inventoryAccount) throw new Error(`Inventory account not found for ${product.name}`);
           const cost = product.cost * line.quantity;
           const cogsJournal = new JournalEntry({
             companyId: req.user.companyId,

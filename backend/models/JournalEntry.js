@@ -16,7 +16,7 @@ const JournalEntrySchema = new mongoose.Schema({
   description: String,
   type: {
     type: String,
-    enum: ['invoice', 'bill', 'payment', 'payroll', 'journal', 'depreciation', 'bank', 'drawings'],
+    enum: ['invoice', 'bill', 'payment', 'payroll', 'journal', 'depreciation', 'bank', 'drawings', 'cogs', 'credit_note'],
     default: 'journal'
   },
   referenceType: {
