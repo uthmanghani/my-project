@@ -5,6 +5,9 @@ const Account = require('../models/Account');
 const Payment = require('../models/Payment');
 const Company = require('../models/Company');
 const mongoose = require('mongoose');
+const { reverseAllEntriesFor } = require('../utils/journalReversal');
+const { logAudit } = require('../utils/auditLog');
+const { createAndPostInvoice } = require('../utils/invoicePosting');
 
 exports.getAll = async (req, res) => {
   try {
@@ -34,80 +37,12 @@ exports.create = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const company = await Company.findById(req.user.companyId).session(session);
-    const invoiceNumber = company.settings.invoicePrefix +
-      String(company.settings.nextInvoiceNumber).padStart(4, '0');
-    company.settings.nextInvoiceNumber += 1;
-    await company.save({ session });
-
-    const invoiceData = { ...req.body, companyId: req.user.companyId, number: invoiceNumber };
-    const invoice = new Invoice(invoiceData);
-    await invoice.save({ session });
-
-    // Post journal entry
-    const arAccount = await Account.findOne({ companyId: req.user.companyId, code: '1100' }).session(session);
-    const revenueAccount = await Account.findOne({ companyId: req.user.companyId, code: '4000' }).session(session);
-    const vatAccount = await Account.findOne({ companyId: req.user.companyId, code: '2100' }).session(session);
-
-    const lines = [
-      { accountCode: arAccount.code, amount: invoice.total, type: 'debit' },
-      { accountCode: revenueAccount.code, amount: invoice.subtotal, type: 'credit' }
-    ];
-    if (invoice.vat > 0 && vatAccount) {
-      lines.push({ accountCode: vatAccount.code, amount: invoice.vat, type: 'credit' });
-    }
-
-    const journal = new JournalEntry({
+    const invoice = await createAndPostInvoice({
       companyId: req.user.companyId,
-      date: invoice.date,
-      description: `Invoice ${invoice.number}`,
-      type: 'invoice',
-      referenceType: 'invoice',
-      referenceId: invoice._id,
-      lines
+      data: req.body,
+      session
     });
-    await journal.save({ session });
-
-    // Update inventory and post COGS
-    for (const line of invoice.lines) {
-      if (line.productId) {
-        const product = await Product.findById(line.productId).session(session);
-        if (product) {
-          if (product.stock < line.quantity) throw new Error(`Insufficient stock for ${product.name}`);
-          product.stock -= line.quantity;
-          await product.save({ session });
-          const cogsAccount = await Account.findOne({ companyId: req.user.companyId, code: '5000' }).session(session);
-          const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: product.inventoryAccountCode || '1200' }).session(session);
-          if (!inventoryAccount) throw new Error(`Inventory account not found for ${product.name}`);
-          const cost = product.cost * line.quantity;
-          const cogsJournal = new JournalEntry({
-            companyId: req.user.companyId,
-            date: invoice.date,
-            description: `COGS - ${product.name} (${invoice.number})`,
-            type: 'cogs',
-            referenceType: 'invoice',
-            referenceId: invoice._id,
-            lines: [
-              { accountCode: cogsAccount.code, amount: cost, type: 'debit' },
-              { accountCode: inventoryAccount.code, amount: cost, type: 'credit' }
-            ]
-          });
-          await cogsJournal.save({ session });
-          cogsAccount.balance += cost;
-          inventoryAccount.balance -= cost;
-          await cogsAccount.save({ session });
-          await inventoryAccount.save({ session });
-        }
-      }
-    }
-
-    arAccount.balance += invoice.total;
-    revenueAccount.balance += invoice.subtotal;
-    if (vatAccount && invoice.vat > 0) vatAccount.balance += invoice.vat;
-    await arAccount.save({ session });
-    await revenueAccount.save({ session });
-    if (vatAccount && invoice.vat > 0) await vatAccount.save({ session });
-
+    await logAudit(req, 'INVOICE_CREATED', `Created Invoice ${invoice.number} — ₦${invoice.total.toLocaleString()}`, session);
     await session.commitTransaction();
     res.status(201).json(invoice);
   } catch (err) {
@@ -268,19 +203,54 @@ exports.delete = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const invoice = await Invoice.findOneAndDelete({
+    const invoice = await Invoice.findOne({
       companyId: req.user.companyId,
       _id: req.params.id
-    })
-.session(session);
-    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-    await JournalEntry.deleteMany({
-      companyId: req.user.companyId,
-      referenceType: 'invoice',
-      referenceId: invoice._id
     }).session(session);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (invoice.voided) return res.status(400).json({ error: 'This invoice has already been voided' });
+    if (invoice.amountPaid > 0.005) {
+      return res.status(400).json({
+        error: 'This invoice has payments applied. Reverse or delete those payments before voiding the invoice.'
+      });
+    }
+
+    // Reverse every journal entry this invoice posted (AR/Revenue/VAT, plus
+    // any per-line COGS entries) — correctly restores account balances,
+    // unlike the previous behavior which deleted the entries but left the
+    // balances they'd changed permanently wrong.
+    await reverseAllEntriesFor({
+      referenceType: 'invoice',
+      referenceId: invoice._id,
+      companyId: req.user.companyId,
+      userId: req.user.userId,
+      reason: req.body.reason,
+      session
+    });
+
+    // Restore stock for any stocked lines. As with bill voiding, this
+    // restores quantity exactly but doesn't attempt to reconstruct the
+    // exact pre-sale weighted-average cost.
+    for (const line of invoice.lines) {
+      if (line.productId) {
+        const product = await Product.findById(line.productId).session(session);
+        if (product) {
+          product.stock = (product.stock || 0) + line.quantity;
+          await product.save({ session });
+        }
+      }
+    }
+
+    invoice.voided = true;
+    invoice.voidedAt = new Date();
+    invoice.voidedBy = req.user.userId;
+    invoice.voidReason = req.body.reason || null;
+    await invoice.save({ session });
+
+    await logAudit(req, 'INVOICE_VOIDED', `Voided Invoice ${invoice.number}${req.body.reason ? ' — ' + req.body.reason : ''}`, session);
+
     await session.commitTransaction();
-    res.json({ message: 'Invoice deleted' });
+    res.json({ message: 'Invoice voided. Journal entries reversed and stock restored.' });
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ error: err.message });

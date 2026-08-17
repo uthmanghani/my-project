@@ -1,10 +1,11 @@
 const Asset = require('../models/Asset');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
+const { logAudit } = require('../utils/auditLog');
 
 exports.getAll = async (req, res) => {
   try {
-    const assets = await Asset.find({ companyId: req.user.companyId }).sort({ purchaseDate: -1 });
+    const assets = await Asset.find({ companyId: req.user.companyId, isActive: { $ne: false } }).sort({ purchaseDate: -1 });
     res.json(assets);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -67,12 +68,14 @@ exports.postDepreciation = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const asset = await Asset.findOneAndDelete({
-      companyId: req.user.companyId,
-      _id: req.params.id
-    });
+    const asset = await Asset.findOneAndUpdate(
+      { companyId: req.user.companyId, _id: req.params.id },
+      { isActive: false },
+      { new: true }
+    );
     if (!asset) return res.status(404).json({ error: 'Asset not found' });
-    res.json({ message: 'Asset deleted' });
+    await logAudit(req, 'ASSET_DEACTIVATED', `Deactivated asset ${asset.name}`);
+    res.json({ message: 'Asset deactivated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -4,6 +4,8 @@ const Account = require('../models/Account');
 const Product = require('../models/Product');
 const Payment = require('../models/Payment');
 const mongoose = require('mongoose');
+const { reverseAllEntriesFor } = require('../utils/journalReversal');
+const { logAudit } = require('../utils/auditLog');
 
 // Get all bills for the company
 exports.getAll = async (req, res) => {
@@ -47,7 +49,13 @@ exports.create = async (req, res) => {
     const billNumber = 'BILL-' + new Date().getFullYear() + '-' +
       String((await Bill.countDocuments({ companyId: req.user.companyId })) + 1).padStart(4, '0');
 
-    const whtAmount = whtRate ? parseFloat((total * (whtRate / 100)).toFixed(2)) : 0;
+    // NTA 2025: payments below the de minimis threshold are exempt from
+    // WHT entirely, regardless of what rate was requested — enforced
+    // here, not just as a frontend default, since a client could still
+    // send a non-zero whtRate.
+    const whtDeMinimis = (company?.taxStatus?.whtDeMinimisThreshold) ?? 2000000;
+    const effectiveWhtRate = total < whtDeMinimis ? 0 : whtRate;
+    const whtAmount = effectiveWhtRate ? parseFloat((total * (effectiveWhtRate / 100)).toFixed(2)) : 0;
     const netPayable = parseFloat((total - whtAmount).toFixed(2));
 
     // Maker-checker: non-admins creating a bill above the threshold get
@@ -63,7 +71,7 @@ exports.create = async (req, res) => {
       dueDate,
       lines,
       total,
-      whtRate: whtRate || 0,
+      whtRate: effectiveWhtRate || 0,
       whtAmount,
       netPayable,
       status: 'unpaid',
@@ -342,21 +350,59 @@ exports.delete = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const bill = await Bill.findOneAndDelete({
+    const bill = await Bill.findOne({
       companyId: req.user.companyId,
       _id: req.params.id
     }).session(session);
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    if (bill.voided) return res.status(400).json({ error: 'This bill has already been voided' });
+    if (bill.amountPaid > 0.005) {
+      return res.status(400).json({
+        error: 'This bill has payments applied. Reverse or delete those payments before voiding the bill.'
+      });
+    }
 
-    // Delete associated journal entries
-    await JournalEntry.deleteMany({
-      companyId: req.user.companyId,
+    // Reverse every journal entry this bill posted (main entry + any COGS
+    // entry) — this correctly restores account balances too, unlike the
+    // previous behavior which deleted the journal entries but left the
+    // account balances they'd changed permanently wrong.
+    await reverseAllEntriesFor({
       referenceType: 'bill',
-      referenceId: bill._id
-    }).session(session);
+      referenceId: bill._id,
+      companyId: req.user.companyId,
+      userId: req.user.userId,
+      reason: req.body.reason,
+      session
+    });
+
+    // Reverse the stock quantity impact for inventory purchases. Note:
+    // this restores the quantity exactly, but does not attempt to
+    // perfectly reconstruct the pre-purchase weighted-average cost —
+    // doing that correctly requires full cost-lot history, which this
+    // system doesn't track. The cost basis may need manual review after
+    // voiding an inventory bill with a non-trivial purchase history.
+    if (bill.isInventoryPurchase) {
+      for (const line of bill.lines) {
+        if (line.productId) {
+          const product = await Product.findById(line.productId).session(session);
+          if (product) {
+            product.stock = Math.max(0, (product.stock || 0) - line.quantity);
+            await product.save({ session });
+          }
+        }
+      }
+    }
+
+    bill.voided = true;
+    bill.voidedAt = new Date();
+    bill.voidedBy = req.user.userId;
+    bill.voidReason = req.body.reason || null;
+    await bill.save({ session });
+
+    await logAudit(req, 'BILL_VOIDED', `Voided Bill ${bill.number}${req.body.reason ? ' — ' + req.body.reason : ''}`, session);
 
     await session.commitTransaction();
-    res.json({ message: 'Bill deleted successfully' });
+    res.json({ message: 'Bill voided. Journal entries reversed and stock impact reverted.' });
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ error: err.message });

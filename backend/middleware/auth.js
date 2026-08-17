@@ -72,4 +72,4 @@ const requireRole = (...roles) => (req, res, next) => {
   next();
 };
  
-module.exports = { authenticateToken, requireRole };
+module.exports = { authenticateToken, requireRole, authorizeRoles, hasPermission };

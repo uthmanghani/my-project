@@ -12,6 +12,7 @@ const EmployeeSchema = new mongoose.Schema({
   department: String,
   annualSalary: Number,
   annualRent: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: true },
   createdAt: {
     type: Date,
     default: Date.now

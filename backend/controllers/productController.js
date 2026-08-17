@@ -2,10 +2,11 @@ const Product = require('../models/Product');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
 const mongoose = require('mongoose');
+const { logAudit } = require('../utils/auditLog');
 
 exports.getAll = async (req, res) => {
   try {
-    const products = await Product.find({ companyId: req.user.companyId }).sort({ name: 1 });
+    const products = await Product.find({ companyId: req.user.companyId, isActive: { $ne: false } }).sort({ name: 1 });
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -70,12 +71,14 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const product = await Product.findOneAndDelete({
-      companyId: req.user.companyId,
-      _id: req.params.id
-    });
+    const product = await Product.findOneAndUpdate(
+      { companyId: req.user.companyId, _id: req.params.id },
+      { isActive: false },
+      { new: true }
+    );
     if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json({ message: 'Product deleted' });
+    await logAudit(req, 'PRODUCT_DEACTIVATED', `Deactivated product ${product.name}`);
+    res.json({ message: 'Product deactivated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

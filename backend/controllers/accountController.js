@@ -1,4 +1,5 @@
 const Account = require('../models/Account');
+const { logAudit } = require('../utils/auditLog');
 
 exports.getAll = async (req, res) => {
   try {
@@ -45,12 +46,17 @@ exports.updateOpeningBalance = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const account = await Account.findOneAndDelete({
-      companyId: req.user.companyId,
-      _id: req.params.id
-    });
+    const account = await Account.findOne({ companyId: req.user.companyId, _id: req.params.id });
     if (!account) return res.status(404).json({ error: 'Account not found' });
-    res.json({ message: 'Account deleted' });
+    if (Math.abs(account.balance || 0) > 0.005) {
+      return res.status(400).json({
+        error: `This account still has a balance of ${account.balance}. Post a journal entry to zero it out before deactivating.`
+      });
+    }
+    account.isActive = false;
+    await account.save();
+    await logAudit(req, 'ACCOUNT_DEACTIVATED', `Deactivated account ${account.code} — ${account.name}`);
+    res.json({ message: 'Account deactivated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

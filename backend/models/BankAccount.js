@@ -11,6 +11,7 @@ const BankAccountSchema = new mongoose.Schema({
   accountNumber: String,
   openingBalance: { type: Number, default: 0 },
   code: { type: String },
+  isActive: { type: Boolean, default: true },
   createdAt: {
     type: Date,
     default: Date.now

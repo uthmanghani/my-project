@@ -2,6 +2,7 @@ const BankTransaction = require('../models/BankTransaction');
 const Account = require('../models/Account');
 const JournalEntry = require('../models/JournalEntry');
 const mongoose = require('mongoose');
+const { logAudit } = require('../utils/auditLog');
 
 // Bank accounts are stored as Account documents with type 'Asset' and code starting with '10' or custom.
 // For simplicity, we treat bank accounts as separate collection? The frontend expects a /bankaccounts endpoint.
@@ -31,7 +32,7 @@ async function getNextBankLedgerCode(companyId, session) {
 
 exports.getBankAccounts = async (req, res) => {
   try {
-    const accounts = await BankAccount.find({ companyId: req.user.companyId });
+    const accounts = await BankAccount.find({ companyId: req.user.companyId, isActive: { $ne: false } });
     res.json(accounts);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -103,10 +104,17 @@ exports.deleteBankAccount = async (req, res) => {
       ).session(session);
     }
 
-    await BankAccount.deleteOne({ _id: account._id }).session(session);
+    // Deactivate the BankAccount document itself rather than hard-deleting
+    // it — historical BankTransaction records reference it by bankId, and
+    // removing it outright would orphan every past transaction's link back
+    // to which bank it belonged to.
+    account.isActive = false;
+    await account.save({ session });
+
+    await logAudit(req, 'BANK_ACCOUNT_DEACTIVATED', `Deactivated bank account ${account.name} (${account.bank || ''})`, session);
 
     await session.commitTransaction();
-    res.json({ message: 'Bank account deleted' });
+    res.json({ message: 'Bank account deactivated' });
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ error: err.message });

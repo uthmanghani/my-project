@@ -1,8 +1,9 @@
 const Customer = require('../models/Customer');
+const { logAudit } = require('../utils/auditLog');
 
 exports.getAll = async (req, res) => {
   try {
-    const customers = await Customer.find({ companyId: req.user.companyId }).sort({ name: 1 });
+    const customers = await Customer.find({ companyId: req.user.companyId, isActive: { $ne: false } }).sort({ name: 1 });
     res.json(customers);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -60,12 +61,14 @@ exports.bulkImport = async (req, res) => {
  
 exports.delete = async (req, res) => {
   try {
-    const customer = await Customer.findOneAndDelete({
-      companyId: req.user.companyId,
-      _id: req.params.id
-    });
+    const customer = await Customer.findOneAndUpdate(
+      { companyId: req.user.companyId, _id: req.params.id },
+      { isActive: false },
+      { new: true }
+    );
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
-    res.json({ message: 'Customer deleted' });
+    await logAudit(req, 'CUSTOMER_DEACTIVATED', `Deactivated customer ${customer.name}`);
+    res.json({ message: 'Customer deactivated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

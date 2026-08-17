@@ -47,7 +47,7 @@ const InvoiceSchema = new mongoose.Schema({
   total: Number,
   status: {
     type: String,
-    enum: ['unpaid', 'partial', 'paid', 'overdue'],
+    enum: ['unpaid', 'partial', 'paid', 'overdue', 'voided'],
     default: 'unpaid'
   },
   payments: [PaymentSchema],
@@ -71,10 +71,18 @@ const InvoiceSchema = new mongoose.Schema({
   csid: { type: String, default: null },      // Cryptographic Stamp ID
   qrCode: { type: String, default: null },    // QR payload/URL
   einvoiceSubmittedAt: { type: Date, default: null },
-  einvoiceValidatedAt: { type: Date, default: null }
+  einvoiceValidatedAt: { type: Date, default: null },
+
+  // A posted invoice is never deleted — voiding reverses its journal
+  // entries (revenue, VAT, COGS) instead, keeping the original traceable.
+  voided: { type: Boolean, default: false },
+  voidedAt: { type: Date, default: null },
+  voidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  voidReason: { type: String, default: null }
 });
 
 InvoiceSchema.pre('save', function(next) {
+  if (this.voided) { this.status = 'voided'; return next(); }
   this.balance = this.total - this.amountPaid;
   if (this.balance <= 0.005) this.status = 'paid';
   else if (this.amountPaid > 0.005) this.status = 'partial';

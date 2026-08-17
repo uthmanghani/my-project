@@ -45,7 +45,14 @@ function calculatePAYE(annualGross, annualRent = 0) {
   const monthlyPension = pension / 12;
   const monthlyRentRelief = rentRelief / 12;
   const monthlyTaxable = taxableIncome / 12;
-  const monthlyNet = monthlyGross - monthlyPension - monthlyPAYE;
+
+  // NHF is a statutory EMPLOYEE deduction (2.5% of basic salary) — unlike
+  // NSITF/ITF (employer-paid), NHF must reduce net pay. Basic is
+  // approximated at 70% of gross, matching calculateLevies()'s convention.
+  const annualBasic = annualGross * 0.7;
+  const annualNHF = annualBasic * 0.025;
+  const monthlyNHF = annualNHF / 12;
+  const monthlyNet = monthlyGross - monthlyPension - monthlyPAYE - monthlyNHF;
   
   return {
     annualGross,
@@ -53,11 +60,13 @@ function calculatePAYE(annualGross, annualRent = 0) {
     rentRelief,
     taxableIncome,
     annualPAYE,
+    annualNHF,
     monthlyPAYE,
     monthlyGross,
     monthlyPension,
     monthlyRentRelief,
     monthlyTaxable,
+    monthlyNHF,
     monthlyNet
   };
 }
@@ -96,6 +105,13 @@ function formatNaira(amount) {
 
 function calculateLevies(monthlyGross, basicSalary) {
   const nsitf = parseFloat((monthlyGross * 0.01).toFixed(2));
+  // NOTE: this threshold check is functionally meaningless as written —
+  // (monthlyGross * 12) > 50000 is true for virtually every employee
+  // (₦50,000/year is below minimum wage), so itf always equals nsitf
+  // regardless of the check. ITF applicability in Nigeria is actually a
+  // COMPANY-level test (headcount + annual turnover), not a per-employee
+  // salary threshold. Verify against current FIRS/ITF guidance before
+  // relying on this for real payroll — as written it doesn't gate anything.
   const itf = (monthlyGross * 12) > 50000
     ? parseFloat((monthlyGross * 0.01).toFixed(2)) : 0;
   const nhf = parseFloat(((basicSalary || monthlyGross * 0.7) * 0.025).toFixed(2));

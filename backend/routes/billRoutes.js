@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 const billController = require('../controllers/billController');
 
 router.get('/', authenticateToken, billController.getAll);
@@ -10,6 +10,6 @@ router.post('/', authenticateToken, checkPeriodLock, billController.create);
 router.put('/:id', authenticateToken, billController.update);
 router.put('/:id/pay', authenticateToken, billController.recordPayment);
 router.put('/:id/approve', authenticateToken, billController.approve);
-router.delete('/:id', authenticateToken, billController.delete);
+router.delete('/:id', authenticateToken, requireRole('admin', 'accountant'), billController.delete);
 
 module.exports = router;

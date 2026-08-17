@@ -1,5 +1,8 @@
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
+const mongoose = require('mongoose');
+const { reverseJournalEntry } = require('../utils/journalReversal');
+const { logAudit } = require('../utils/auditLog');
 
 exports.getAll = async (req, res) => {
   try {
@@ -37,29 +40,31 @@ exports.create = async (req, res) => {
         await account.save();
       }
     }
+    await logAudit(req, 'JOURNAL_CREATED', `Posted manual journal — ${description} (₦${debits.toLocaleString()})`);
     res.status(201).json(journal);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-exports.delete = async (req, res) => {
+exports.voidEntry = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    const journal = await JournalEntry.findOneAndDelete({
+    const reversal = await reverseJournalEntry({
+      entryId: req.params.id,
       companyId: req.user.companyId,
-      _id: req.params.id
+      userId: req.user.userId,
+      reason: req.body.reason,
+      session
     });
-    if (!journal) return res.status(404).json({ error: 'Journal entry not found' });
-    for (const line of journal.lines) {
-      const account = await Account.findOne({ companyId: req.user.companyId, code: line.accountCode });
-      if (account) {
-        if (line.type === 'debit') account.balance -= line.amount;
-        else account.balance += line.amount;
-        await account.save();
-      }
-    }
-    res.json({ message: 'Journal entry deleted' });
+    await logAudit(req, 'JOURNAL_VOIDED', `Voided journal entry ${req.params.id}${req.body.reason ? ' — ' + req.body.reason : ''}`, session);
+    await session.commitTransaction();
+    res.json({ message: 'Journal entry voided. A reversing entry has been posted.', reversalEntry: reversal });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await session.abortTransaction();
+    res.status(400).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
 };

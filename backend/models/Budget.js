@@ -9,6 +9,7 @@ const BudgetSchema = new mongoose.Schema({
   accountCode: String,
   year: String,
   amount: Number,
+  isActive: { type: Boolean, default: true },
   createdAt: {
     type: Date,
     default: Date.now

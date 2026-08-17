@@ -12,6 +12,7 @@ const AssetSchema = new mongoose.Schema({
   purchaseCost: Number,
   usefulLifeYears: Number,
   residualValue: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: true },
   createdAt: {
     type: Date,
     default: Date.now

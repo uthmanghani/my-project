@@ -1,9 +1,10 @@
 const Vendor = require('../models/Vendor');
+const { logAudit } = require('../utils/auditLog');
 
 // Get all vendors
 exports.getAll = async (req, res) => {
   try {
-    const vendors = await Vendor.find({ companyId: req.user.companyId })
+    const vendors = await Vendor.find({ companyId: req.user.companyId, isActive: { $ne: false } })
       .sort({ name: 1 });
     res.json(vendors);
   } catch (err) {
@@ -63,12 +64,14 @@ exports.update = async (req, res) => {
 // Delete a vendor
 exports.delete = async (req, res) => {
   try {
-    const vendor = await Vendor.findOneAndDelete({
-      companyId: req.user.companyId,
-      _id: req.params.id
-    });
+    const vendor = await Vendor.findOneAndUpdate(
+      { companyId: req.user.companyId, _id: req.params.id },
+      { isActive: false },
+      { new: true }
+    );
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
-    res.json({ message: 'Vendor deleted successfully' });
+    await logAudit(req, 'VENDOR_DEACTIVATED', `Deactivated vendor ${vendor.name}`);
+    res.json({ message: 'Vendor deactivated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

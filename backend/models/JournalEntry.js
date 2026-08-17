@@ -16,7 +16,7 @@ const JournalEntrySchema = new mongoose.Schema({
   description: String,
   type: {
     type: String,
-    enum: ['invoice', 'bill', 'payment', 'payroll', 'journal', 'depreciation', 'bank', 'drawings', 'cogs', 'credit_note'],
+    enum: ['invoice', 'bill', 'payment', 'payroll', 'journal', 'depreciation', 'bank', 'drawings', 'cogs', 'credit_note', 'closing'],
     default: 'journal'
   },
   referenceType: {
@@ -25,6 +25,16 @@ const JournalEntrySchema = new mongoose.Schema({
   },
   referenceId: mongoose.Schema.Types.ObjectId,
   lines: [JournalLineSchema],
+  // A posted journal entry is never deleted — corrections go through a
+  // controlled reversal instead, so the original stays fully traceable.
+  voided: { type: Boolean, default: false },
+  voidedAt: { type: Date, default: null },
+  voidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  voidReason: { type: String, default: null },
+  // On the ORIGINAL entry: points to the reversing entry that voided it.
+  reversedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
+  // On the REVERSING entry itself: points back to what it reverses.
+  reversalOf: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
   createdAt: {
     type: Date,
     default: Date.now

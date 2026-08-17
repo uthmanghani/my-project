@@ -18,6 +18,10 @@ const CustomerSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Soft-delete: deactivating instead of removing preserves referential
+  // integrity for every invoice/payment that already references this
+  // customer, and keeps historical reports accurate.
+  isActive: { type: Boolean, default: true },
   createdAt: {
     type: Date,
     default: Date.now
