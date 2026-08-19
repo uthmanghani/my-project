@@ -46,8 +46,20 @@ exports.create = async (req, res) => {
     // Generate bill number
     const Company = require('../models/Company');
     const company = await Company.findById(req.user.companyId).session(session);
-    const billNumber = 'BILL-' + new Date().getFullYear() + '-' +
-      String((await Bill.countDocuments({ companyId: req.user.companyId })) + 1).padStart(4, '0');
+    // A count-based number ('count + 1') drifts out of sync with what's
+    // actually saved whenever data is cleared, imported, or created under
+    // concurrent load — and Bill.number has a unique index, so a collision
+    // throws exactly like the invoice numbering bug did. Verify each
+    // candidate is actually free rather than trusting the count blindly.
+    const yearPrefix = 'BILL-' + new Date().getFullYear() + '-';
+    let candidateNum = (await Bill.countDocuments({ companyId: req.user.companyId })) + 1;
+    let billNumber = yearPrefix + String(candidateNum).padStart(4, '0');
+    let existingBill = await Bill.findOne({ companyId: req.user.companyId, number: billNumber }).session(session);
+    while (existingBill) {
+      candidateNum += 1;
+      billNumber = yearPrefix + String(candidateNum).padStart(4, '0');
+      existingBill = await Bill.findOne({ companyId: req.user.companyId, number: billNumber }).session(session);
+    }
 
     // NTA 2025: payments below the de minimis threshold are exempt from
     // WHT entirely, regardless of what rate was requested — enforced

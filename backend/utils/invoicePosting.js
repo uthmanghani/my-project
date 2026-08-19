@@ -23,9 +23,22 @@ async function createAndPostInvoice({ companyId, data, session }) {
   const company = await Company.findById(companyId).session(session);
   if (!company) throw new Error('Company not found');
 
-  const invoiceNumber = company.settings.invoicePrefix +
-    String(company.settings.nextInvoiceNumber).padStart(4, '0');
-  company.settings.nextInvoiceNumber += 1;
+  // The stored counter (nextInvoiceNumber) can drift out of sync with what's
+  // actually in the database — a failed save that didn't roll back cleanly,
+  // a data clear that didn't reset it, or manual data edits can all cause
+  // this. Rather than trust the counter blindly and risk a duplicate-key
+  // collision on the unique 'number' index, verify each candidate number is
+  // actually free and keep advancing until one is, then persist that
+  // corrected position back to the counter.
+  let candidateNum = company.settings.nextInvoiceNumber;
+  let invoiceNumber = company.settings.invoicePrefix + String(candidateNum).padStart(4, '0');
+  let existing = await Invoice.findOne({ companyId, number: invoiceNumber }).session(session);
+  while (existing) {
+    candidateNum += 1;
+    invoiceNumber = company.settings.invoicePrefix + String(candidateNum).padStart(4, '0');
+    existing = await Invoice.findOne({ companyId, number: invoiceNumber }).session(session);
+  }
+  company.settings.nextInvoiceNumber = candidateNum + 1;
   await company.save({ session });
 
   const invoiceData = { ...data, companyId, number: invoiceNumber };
