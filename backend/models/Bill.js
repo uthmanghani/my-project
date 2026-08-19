@@ -22,8 +22,7 @@ const BillSchema = new mongoose.Schema({
   },
   number: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   vendorId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -75,5 +74,9 @@ BillSchema.pre('save', function(next) {
   else this.status = 'unpaid';
   next();
 });
+
+// Same multi-tenancy fix as Invoice — bill numbers only need to be unique
+// within a company, not globally across every tenant.
+BillSchema.index({ companyId: 1, number: 1 }, { unique: true });
 
 module.exports = mongoose.model('Bill', BillSchema);

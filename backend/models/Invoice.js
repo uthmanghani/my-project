@@ -25,8 +25,7 @@ const InvoiceSchema = new mongoose.Schema({
   },
   number: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -89,5 +88,13 @@ InvoiceSchema.pre('save', function(next) {
   else this.status = 'unpaid';
   next();
 });
+
+// Invoice numbers only need to be unique WITHIN a company — every company
+// legitimately starts its own numbering at INV-0001. A bare unique:true on
+// 'number' alone (the previous approach) enforced uniqueness across every
+// tenant in the database, guaranteeing a collision the moment any two
+// companies' invoice numbers ever matched — which they always will, since
+// every new company starts at the same default.
+InvoiceSchema.index({ companyId: 1, number: 1 }, { unique: true });
 
 module.exports = mongoose.model('Invoice', InvoiceSchema);
