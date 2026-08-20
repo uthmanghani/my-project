@@ -65,8 +65,15 @@ exports.create = async (req, res) => {
     // WHT entirely, regardless of what rate was requested — enforced
     // here, not just as a frontend default, since a client could still
     // send a non-zero whtRate.
-    const whtDeMinimis = (company?.taxStatus?.whtDeMinimisThreshold) ?? 2000000;
-    const effectiveWhtRate = total < whtDeMinimis ? 0 : whtRate;
+    // NTA 2025: the ₦2,000,000 WHT de minimis exemption applies specifically
+    // to SMALL COMPANIES ("small companies are exempt from WHT deduction if
+    // transaction value is less than ₦2,000,000, and vendor has a valid
+    // TIN" — PwC Worldwide Tax Summaries), not to every company regardless
+    // of size. A large company must still withhold tax on a small payment.
+    const taxStatus = company?.taxStatus || {};
+    const qualifiesAsSmallCompany = taxStatus.isSmallCompany && !taxStatus.isProfessionalServices;
+    const whtDeMinimis = taxStatus.whtDeMinimisThreshold ?? 2000000;
+    const effectiveWhtRate = (qualifiesAsSmallCompany && total < whtDeMinimis) ? 0 : whtRate;
     const whtAmount = effectiveWhtRate ? parseFloat((total * (effectiveWhtRate / 100)).toFixed(2)) : 0;
     const netPayable = parseFloat((total - whtAmount).toFixed(2));
 

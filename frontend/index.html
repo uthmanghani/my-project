@@ -4344,7 +4344,7 @@ window.openBillModal = (presetVendorId) => {
       </select>
       <div class="form-hint">WHT is deducted from payment &amp; remitted to NRS</div>
       <div id="bWhtExemptNote" style="display:none;background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:6px 10px;margin-top:6px;font-size:0.74rem;color:#166534;">
-        <i class="fas fa-circle-check" style="margin-right:6px;"></i>Bill total is below the WHT exemption threshold (NTA 2025) — no withholding tax applies.
+        <i class="fas fa-circle-check" style="margin-right:6px;"></i>Small Company status (NTA 2025) — bill total is below the WHT exemption threshold, so no withholding tax applies.
       </div>
     </div>
     <div class="form-group" style="margin-top:8px;">
@@ -4416,14 +4416,17 @@ window.updateBillTotal = () => {
   document.querySelectorAll('#billLines .bill-line').forEach(l => t += parseFloat(l.querySelector('.amt')?.value)||0);
   document.getElementById('bTotal').textContent = fmt(t);
 
-  // NTA 2025: payments below the de minimis threshold are exempt from WHT
-  // entirely — auto-select and lock "Not Applicable" so the user isn't
-  // left picking a rate that'll just get overridden server-side anyway.
+  // NTA 2025: the ₦2,000,000 WHT de minimis exemption applies specifically
+  // to companies with Small Company status — not to every bill regardless
+  // of company size (per PwC's Worldwide Tax Summaries: "small companies
+  // are exempt from WHT deduction if transaction value is less than
+  // ₦2,000,000"). A large company still withholds tax on a small payment.
   const whtSelect = document.getElementById('bWht');
   const whtNote = document.getElementById('bWhtExemptNote');
   const deMinimis = settings.whtDeMinimisThreshold || 2000000;
+  const qualifiesAsSmallCompany = settings.isSmallCompany && !settings.isProfessionalServices;
   if (whtSelect) {
-    const isExempt = t > 0 && t < deMinimis;
+    const isExempt = qualifiesAsSmallCompany && t > 0 && t < deMinimis;
     whtSelect.disabled = isExempt;
     if (isExempt) whtSelect.value = '0';
     if (whtNote) whtNote.style.display = isExempt ? 'block' : 'none';
