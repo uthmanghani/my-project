@@ -4,6 +4,8 @@ const Product = require('../models/Product');
 const Account = require('../models/Account');
 const Payment = require('../models/Payment');
 const Company = require('../models/Company');
+const BankAccount = require('../models/BankAccount');
+const BankTransaction = require('../models/BankTransaction');
 const mongoose = require('mongoose');
 const { reverseAllEntriesFor } = require('../utils/journalReversal');
 const { logAudit } = require('../utils/auditLog');
@@ -118,6 +120,26 @@ exports.recordPayment = async (req, res) => {
       bankAccountCode: bankCode || '1000'
     });
     await paymentRecord.save({ session });
+
+    // Create the actual BankTransaction record — without this, money moves
+    // correctly in the ledger Account balance, but the Banking module (which
+    // reads from this separate collection, matched by bankId) never shows
+    // this payment at all, and it can't be reconciled.
+    const bankAccountDoc = await BankAccount.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
+    if (bankAccountDoc) {
+      const bankTx = new BankTransaction({
+        companyId: req.user.companyId,
+        bankId: bankAccountDoc._id,
+        bankAccountCode: bankCode || '1000',
+        date,
+        type: 'credit', // money coming into the bank from a customer
+        amount: paidAmount,
+        description: `Payment received - Invoice ${invoice.number}`,
+        reference: invoice.number,
+        reconciled: false
+      });
+      await bankTx.save({ session });
+    }
 
     await session.commitTransaction();
     res.json(invoice);

@@ -133,6 +133,8 @@ exports.adjustStock = async (req, res) => {
     await inventoryAccount.save({ session });
     await adjAccount.save({ session });
 
+    await logAudit(req, 'STOCK_ADJUSTED', `${type === 'in' ? 'Increased' : 'Decreased'} stock for ${product.name} by ${quantity} units${reference ? ' — ' + reference : ''} (posted against Inventory Adjustments, not AP/Cash — use Enter Bill for actual purchases)`, session);
+
     await session.commitTransaction();
     res.json({ message: 'Stock adjusted', newStock: product.stock });
   } catch (err) {

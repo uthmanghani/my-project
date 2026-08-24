@@ -3587,6 +3587,38 @@ function previewInvoiceTemplate(style) {
   w.document.close();
 }
 
+window.closeFiscalYear = async () => {
+  const yearToClose = parseInt(document.getElementById('closeYearInput')?.value);
+  const newYearStartDate = document.getElementById('closeYearNewStart')?.value;
+  const lockPeriod = document.getElementById('closeYearLockToggle')?.checked;
+  if (!yearToClose || !newYearStartDate) return alert('Enter both the year to close and the new fiscal year start date.');
+  if (!confirm(`Close fiscal year ${yearToClose}? This zeroes all Revenue/Expense accounts and transfers net income to Retained Earnings.${lockPeriod ? ' The period will also be LOCKED — nothing can be posted or backdated into it afterward.' : ''} This cannot be simply undone by closing again.`)) return;
+  try {
+    const result = await apiFetch('/company/close-year', {
+      method: 'POST',
+      body: JSON.stringify({ yearToClose, newYearStartDate, lockPeriod })
+    });
+    showToast(result.message || `Fiscal year ${yearToClose} closed.`, 'success');
+    await loadAllData();
+    renderSettingsView();
+  } catch (err) { showToast(err.message || 'Failed to close fiscal year.', 'danger'); }
+};
+
+window.reopenFiscalPeriod = async () => {
+  const reason = document.getElementById('reopenReason')?.value.trim();
+  const newLockDate = document.getElementById('reopenNewLockDate')?.value || null;
+  if (!reason) return alert('A reason is required to reopen a locked period.');
+  if (!confirm('Reopen the locked period? This is permanently recorded in the audit trail with your reason.')) return;
+  try {
+    const result = await apiFetch('/company/reopen-period', {
+      method: 'POST',
+      body: JSON.stringify({ reason, newLockDate })
+    });
+    showToast(result.message || 'Period reopened.', 'success');
+    document.getElementById('reopenReason').value = '';
+  } catch (err) { showToast(err.message || 'Failed to reopen period.', 'danger'); }
+};
+
 function toggle2FA() {
   const current = localStorage.getItem('at_2fa') === 'true';
   localStorage.setItem('at_2fa', (!current).toString());
@@ -6499,6 +6531,36 @@ function renderSettingsView() {
             <div class="form-group"><label class="form-label">WHT Exemption Threshold (₦)</label><input type="number" class="form-control" id="sWhtDeMinimis" value="${settings.whtDeMinimisThreshold||2000000}"></div>
           </div>
           <div class="form-hint">Defaults reflect NTA 2025 Section 56/202 (₦100,000,000 turnover, ₦250,000,000 fixed assets) and the WHT de minimis exemption for payments under ₦2,000,000. Any bill under the WHT threshold automatically skips withholding tax, regardless of company size.</div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/-1;">
+        <div class="card-header"><span class="card-title"><i class="fas fa-lock" style="margin-right:8px;color:var(--brand);"></i>Fiscal Period Management</span></div>
+        <div class="card-body">
+          <p style="font-size:0.78rem;color:var(--text-3);margin-bottom:14px;">
+            Closing a fiscal year zeroes Revenue and Expense accounts, transfers net income to Retained Earnings, and
+            (optionally) locks that period so nothing can be posted or backdated into it. This cannot be undone by
+            simply closing again — use Reopen Period below if a correction is needed.
+          </p>
+          <div class="form-row cols-3">
+            <div class="form-group"><label class="form-label">Year to Close</label><input type="number" class="form-control" id="closeYearInput" value="${new Date().getFullYear() - 1}"></div>
+            <div class="form-group"><label class="form-label">New Fiscal Year Starts</label><input type="date" class="form-control" id="closeYearNewStart" value="${new Date().getFullYear()}-01-01"></div>
+            <div class="form-group" style="display:flex;align-items:flex-end;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-2);">
+                <input type="checkbox" id="closeYearLockToggle" checked> Lock this period after closing
+              </label>
+            </div>
+          </div>
+          <button class="btn btn-danger" onclick="closeFiscalYear()"><i class="fas fa-lock"></i> Close Fiscal Year</button>
+
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text-1);margin-bottom:8px;">Reopen a Locked Period</div>
+            <p style="font-size:0.76rem;color:var(--text-3);margin-bottom:10px;">Requires a reason — every reopen is permanently recorded in the audit trail with who did it and why.</p>
+            <div class="form-row cols-2">
+              <div class="form-group"><label class="form-label">Reason (required)</label><input class="form-control" id="reopenReason" placeholder="e.g. Correcting a misposted invoice"></div>
+              <div class="form-group"><label class="form-label">New Lock Date (optional — leave blank to fully unlock)</label><input type="date" class="form-control" id="reopenNewLockDate"></div>
+            </div>
+            <button class="btn btn-secondary" onclick="reopenFiscalPeriod()"><i class="fas fa-unlock"></i> Reopen Period</button>
+          </div>
         </div>
       </div>
       <div class="card">

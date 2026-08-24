@@ -3,6 +3,8 @@ const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
 const Product = require('../models/Product');
 const Payment = require('../models/Payment');
+const BankAccount = require('../models/BankAccount');
+const BankTransaction = require('../models/BankTransaction');
 const mongoose = require('mongoose');
 const { reverseAllEntriesFor } = require('../utils/journalReversal');
 const { logAudit } = require('../utils/auditLog');
@@ -96,7 +98,7 @@ exports.create = async (req, res) => {
       status: 'unpaid',
       payments: [],
       amountPaid: 0,
-      balance: total,
+      balance: netPayable,
       expenseAccount,
       isInventoryPurchase: isInventoryPurchase || false,
       approvalStatus: needsApproval ? 'pending_approval' : 'approved'
@@ -306,12 +308,12 @@ exports.recordPayment = async (req, res) => {
     if (!bill) throw new Error('Bill not found');
     if (bill.status === 'paid') throw new Error('Bill already fully paid');
 
-    const remaining = bill.total - bill.amountPaid;
+    const remaining = bill.netPayable - bill.amountPaid;
     const paidAmount = Math.min(amount, remaining);
     
     bill.payments.push({ date, amount: paidAmount });
     bill.amountPaid += paidAmount;
-    bill.balance = bill.total - bill.amountPaid;
+    bill.balance = bill.netPayable - bill.amountPaid;
     if (bill.balance <= 0.005) bill.status = 'paid';
     else if (bill.amountPaid > 0.005) bill.status = 'partial';
     await bill.save({ session });
@@ -353,6 +355,26 @@ exports.recordPayment = async (req, res) => {
       bankAccountCode: bankCode || '1000'
     });
     await paymentRecord.save({ session });
+
+    // Create the actual BankTransaction record — without this, money moves
+    // correctly in the ledger Account balance, but the Banking module (which
+    // reads from this separate collection, matched by bankId) never shows
+    // this payment at all, and it can't be reconciled.
+    const bankAccountDoc = await BankAccount.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
+    if (bankAccountDoc) {
+      const bankTx = new BankTransaction({
+        companyId: req.user.companyId,
+        bankId: bankAccountDoc._id,
+        bankAccountCode: bankCode || '1000',
+        date,
+        type: 'debit', // money leaving the bank to pay a vendor
+        amount: paidAmount,
+        description: `Payment to vendor - Bill ${bill.number}`,
+        reference: bill.number,
+        reconciled: false
+      });
+      await bankTx.save({ session });
+    }
 
     await session.commitTransaction();
     res.json(bill);

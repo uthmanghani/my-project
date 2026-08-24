@@ -68,7 +68,11 @@ const BillSchema = new mongoose.Schema({
 
 BillSchema.pre('save', function(next) {
   if (this.voided) { this.status = 'voided'; return next(); }
-  this.balance = this.total - this.amountPaid;
+  // What's actually owed to the VENDOR is netPayable (total minus WHT
+  // withheld for remittance to NRS) — not the gross total. Falls back to
+  // total only for older bills saved before netPayable existed.
+  const owed = (this.netPayable !== undefined && this.netPayable !== null) ? this.netPayable : this.total;
+  this.balance = owed - this.amountPaid;
   if (this.balance <= 0.005) this.status = 'paid';
   else if (this.amountPaid > 0.005) this.status = 'partial';
   else this.status = 'unpaid';
