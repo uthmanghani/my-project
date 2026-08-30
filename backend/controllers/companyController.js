@@ -121,16 +121,16 @@ exports.clearCompanyData = async (req, res) => {
       await Model.deleteMany({ companyId }).session(session);
     }
 
-    // 2. Reset account balances to zero (preserve the accounts themselves)
+    // 2. Reset account balances to zero (preserve the accounts themselves).
+    // Also resets openingBalance — this was the actual bug: Account has
+    // TWO balance-related fields (the live 'balance' and the separately-
+    // stored 'openingBalance' that the Opening Balances screen reads back).
+    // Only 'balance' was being cleared before, so re-opening Opening
+    // Balances after a "clear" still showed the old figures, since nothing
+    // ever reset the field it actually reads from.
     await require('../models/Account').updateMany(
       { companyId },
-      { $set: { balance: 0 } }
-    ).session(session);
-
-    // 3. Reset opening balances stored in Company document (if any)
-    await require('../models/Company').updateOne(
-      { _id: companyId },
-      { $set: { openingBalances: {} } }
+      { $set: { balance: 0, openingBalance: 0 } }
     ).session(session);
 
     await logAudit(req, 'COMPANY_DATA_CLEARED', 'Cleared all transactional data (Chart of Accounts preserved).', session);

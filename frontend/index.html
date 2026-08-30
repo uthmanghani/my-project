@@ -2776,7 +2776,7 @@ if (recurringDue.length > 0) {
                   <td>${inv.date}</td>
                   <td class="td-bold">${fmt(inv.total)}</td>
                   <td>${statusBadge(inv.status==='unpaid' && inv.dueDate < today() ? 'overdue' : inv.status)}</td>
-                  <td><div class="table-actions">${inv.status!=='paid'?`<div class="action-btn" title="Mark Paid" onclick="markInvoicePaid('${inv.id}')"><i class="fas fa-check"></i></div>`:''}<div class="action-btn danger" title="Delete" onclick="deleteInvoice('${inv.id}')"><i class="fas fa-trash"></i></div></div></td>
+                  <td><div class="table-actions">${inv.status!=='paid'?`<div class="action-btn" title="Mark Paid" onclick="markInvoicePaid('${inv.id}')"><i class="fas fa-check"></i></div>`:''}<div class="action-btn danger" title="Void Invoice" onclick="deleteInvoice('${inv.id}')"><i class="fas fa-trash"></i></div></div></td>
                 </tr>`;
               }).join('')}</tbody>
             </table>
@@ -2977,7 +2977,7 @@ function renderInvoicesView() {
                         <div class="action-btn" title="View" onclick="viewInvoice('${invId}')"><i class="fas fa-eye"></i></div>
             ${inv.status !== 'paid' ? `<div class="action-btn" title="Record Payment" onclick="openCustomerPaymentModal('${invId}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-money-bill-wave"></i></div>` : ''}
             <div class="action-btn" title="Process Return" onclick="openReturnModal('sales','${invId}')" style="color:#d97706;border-color:#d97706;"><i class="fas fa-rotate-left"></i></div>
-            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder('${invId}')" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}            <div class="action-btn danger" title="Delete" onclick="deleteInvoice('${invId}')"><i class="fas fa-trash"></i></div>
+            ${overdue ? `<div class="action-btn" title="Send Reminder" onclick="sendInvoiceReminder('${invId}')" style="color:var(--warning);border-color:var(--warning);"><i class="fas fa-bell"></i></div>` : ''}            <div class="action-btn danger" title="Void Invoice" onclick="deleteInvoice('${invId}')"><i class="fas fa-trash"></i></div>
           </div>
         </td>
       </tr>
@@ -4286,7 +4286,7 @@ function renderBillsView() {
           : '') +
         (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${bId}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
         '<div class="action-btn" title="Process Return" onclick="openReturnModal(\'purchase\',\'' + bId + '\')" style="color:#d97706;border-color:#d97706;"><i class="fas fa-rotate-left"></i></div>' +
-        '<div class="action-btn danger" onclick="deleteBill(\'' + bId + '\')">' +        '<i class="fas fa-trash"></i></div>' +
+        '<div class="action-btn danger" title="Void Bill" onclick="deleteBill(\'' + bId + '\')">' +        '<i class="fas fa-trash"></i></div>' +
         
       '</div></td></tr>';
   }).join('');
@@ -5188,7 +5188,7 @@ function renderJournalView() {
         + 'background:' + (isBalanced?'var(--success)':'var(--danger)') + ';color:white;font-size:0.65rem;">'
         + '<i class="fas ' + (isBalanced?'fa-check':'fa-exclamation') + '"></i></div>'
         // Delete button
-        + '<div class="action-btn danger" onclick="event.stopPropagation();deleteJournalEntry(' + je.id + ')" style="flex-shrink:0;margin-left:4px;">'
+        + '<div class="action-btn danger" title="Void Entry" onclick="event.stopPropagation();deleteJournalEntry(' + je.id + ')" style="flex-shrink:0;margin-left:4px;">'
         + '<i class="fas fa-trash"></i></div>'
       + '</div>'
       // Expandable line items
