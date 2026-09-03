@@ -40,15 +40,39 @@ async function resolveInventoryAccountCode(companyId, itemType) {
 }
 
 exports.create = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const itemType = req.body.itemType || 'finished_good';
     const inventoryAccountCode = req.body.inventoryAccountCode
       || await resolveInventoryAccountCode(req.user.companyId, itemType);
     const product = new Product({ ...req.body, itemType, inventoryAccountCode, companyId: req.user.companyId });
-    await product.save();
+    await product.save({ session });
+
+    // Auto-post opening stock value to its linked ledger account — without
+    // this, a product's Opening Stock quantity/cost only ever existed on
+    // the Product document itself, with zero connection to the actual
+    // Inventory account in the Chart of Accounts. Matches how creating a
+    // Bank Account already auto-sets its linked ledger account's balance.
+    const openingValue = (product.stock || 0) * (product.cost || 0);
+    if (openingValue > 0) {
+      const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: inventoryAccountCode }).session(session);
+      if (inventoryAccount) {
+        inventoryAccount.balance += openingValue;
+        inventoryAccount.openingBalance = (inventoryAccount.openingBalance || 0) + openingValue;
+        await inventoryAccount.save({ session });
+      }
+    }
+
+    await logAudit(req, 'PRODUCT_CREATED', `Created product ${product.name}${openingValue > 0 ? ` with opening stock value ₦${openingValue.toLocaleString()}` : ''}`, session);
+
+    await session.commitTransaction();
     res.status(201).json(product);
   } catch (err) {
+    await session.abortTransaction();
     res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
 };
 

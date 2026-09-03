@@ -42,7 +42,7 @@ exports.create = async (req, res) => {
   try {
     const {
       vendorId, date, dueDate, lines, total,
-      whtRate, expenseAccount, isInventoryPurchase
+      whtRate, expenseAccount
     } = req.body;
 
     // Generate bill number
@@ -83,6 +83,18 @@ exports.create = async (req, res) => {
     // routed to pending approval — no ledger or stock impact until approved.
     const approvalThreshold = (company && company.approvalThreshold) || 500000;
     const needsApproval = req.user.role !== 'admin' && total > approvalThreshold;
+
+    // Never trust a client-sent flag for something this consequential —
+    // determine isInventoryPurchase from the ACTUAL selected account,
+    // server-side. Previously this came straight from req.body with zero
+    // verification: if the frontend ever sent isInventoryPurchase:false
+    // for any reason (stale deploy, a naming edge case, anything), the
+    // bill and journal entry still posted fine, but stock/cost silently
+    // never updated — exactly the "ledger updates, Products doesn't" bug.
+    const expenseAccountDoc = await Account.findOne({ companyId: req.user.companyId, code: expenseAccount }).session(session);
+    const isInventoryPurchase = !!(expenseAccountDoc
+      && expenseAccountDoc.type === 'Asset'
+      && /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i.test(expenseAccountDoc.name || ''));
 
     const bill = new Bill({
       companyId: req.user.companyId,
@@ -138,7 +150,7 @@ exports.create = async (req, res) => {
 
     // Post journal entry
     const apAccount = await Account.findOne({ companyId: req.user.companyId, code: '2000' }).session(session);
-    const expenseAccountDoc = await Account.findOne({ companyId: req.user.companyId, code: expenseAccount }).session(session);
+    // expenseAccountDoc was already fetched above to determine isInventoryPurchase — reused here.
     
     if (!apAccount || !expenseAccountDoc) {
       throw new Error('Required accounts not found');
