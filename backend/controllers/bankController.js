@@ -3,6 +3,9 @@ const Account = require('../models/Account');
 const JournalEntry = require('../models/JournalEntry');
 const mongoose = require('mongoose');
 const { logAudit } = require('../utils/auditLog');
+// Version fingerprint — checked by GET /health so deployment status can be
+// verified from any browser, with no shell or git access needed.
+exports.__VERSION__ = 'bank-controller-2026-fix-getNextBankLedgerCode';
 
 // Bank accounts are stored as Account documents with type 'Asset' and code starting with '10' or custom.
 // For simplicity, we treat bank accounts as separate collection? The frontend expects a /bankaccounts endpoint.

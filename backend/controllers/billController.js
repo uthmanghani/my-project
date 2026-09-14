@@ -3,6 +3,8 @@ const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
 const Product = require('../models/Product');
 const Payment = require('../models/Payment');
+// Version fingerprint — checked by GET /health.
+exports.__VERSION__ = 'bill-controller-2026-fix-server-side-isInventoryPurchase';
 const BankAccount = require('../models/BankAccount');
 const BankTransaction = require('../models/BankTransaction');
 const mongoose = require('mongoose');

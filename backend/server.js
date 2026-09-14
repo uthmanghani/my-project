@@ -33,6 +33,12 @@ const payrollRoutes = require('./routes/payrollRoutes');
 const inviteRoutes = require('./routes/inviteRoutes');
 const exchangeRateRoutes = require('./routes/exchangeRateRoutes');
 
+// Loaded directly (not just via their routes) so /health can report exactly
+// which version of these two files is actually running in this process —
+// verifiable from any browser, no shell or git access required.
+const bankControllerCheck = require('./controllers/bankController');
+const billControllerCheck = require('./controllers/billController');
+
 const app = express();
 
 // ==================== CONNECT TO DATABASE ====================
@@ -89,7 +95,17 @@ app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    // Visit this endpoint directly in a browser to verify which version of
+    // these two files is actually deployed — no shell or git access needed.
+    // If bankControllerHasFix or billControllerHasFix show false, the
+    // deployed code is NOT the version that was meant to go live.
+    deployCheck: {
+      bankControllerVersion: bankControllerCheck.__VERSION__ || 'UNKNOWN (no version marker found — likely an old file)',
+      bankControllerHasFix: typeof bankControllerCheck.__VERSION__ === 'string',
+      billControllerVersion: billControllerCheck.__VERSION__ || 'UNKNOWN (no version marker found — likely an old file)',
+      billControllerHasFix: typeof billControllerCheck.__VERSION__ === 'string'
+    }
   });
 });
 
