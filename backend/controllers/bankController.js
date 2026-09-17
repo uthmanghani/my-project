@@ -20,17 +20,22 @@ exports.__VERSION__ = 'bank-controller-2026-fix-getNextBankLedgerCode';
 
 const BankAccount = require('../models/BankAccount');
 
-// Bank account ledger codes live in the 10xx range. Every bank account
-// previously defaulted to the same hardcoded code ('1000'), meaning a
-// second bank account would silently share one ledger account with the
-// first — mixing two banks' transactions into a single GL balance.
+// Bank account ledger codes live in the 15xx range (chosen to sit clear of
+// every other reserved code block: AR=1100, Inventory=1200+, Equipment=
+// 1400+). Rather than compute "highest existing + 10" and trust it blindly
+// (the previous approach — which silently overflowed into 1100, AR's own
+// code, once the original 1000-1090 range of only 9 slots was exhausted),
+// this verifies each candidate is genuinely unused before returning it —
+// the same self-healing pattern already used for invoice/bill numbering.
 async function getNextBankLedgerCode(companyId, session) {
-  const existing = await Account.find({ companyId, code: { $regex: /^10[0-9]0$/ } })
-    .session(session)
-    .sort({ code: -1 });
-  if (!existing.length) return '1000';
-  const maxCode = parseInt(existing[0].code, 10);
-  return String(maxCode + 10);
+  let candidate = 1500;
+  for (let i = 0; i < 200; i++) { // hard cap so a bug elsewhere can't loop forever
+    const codeStr = String(candidate);
+    const existing = await Account.findOne({ companyId, code: codeStr }).session(session);
+    if (!existing) return codeStr;
+    candidate += 10;
+  }
+  throw new Error('Could not allocate a free bank account ledger code — please contact support.');
 }
 
 exports.getBankAccounts = async (req, res) => {
