@@ -4,7 +4,7 @@ const Account = require('../models/Account');
 const Product = require('../models/Product');
 const Payment = require('../models/Payment');
 // Version fingerprint — checked by GET /health.
-exports.__VERSION__ = 'bill-controller-2026-fix-server-side-isInventoryPurchase';
+exports.__VERSION__ = 'bill-controller-2026-09-19-stock-from-product-lines';
 const BankAccount = require('../models/BankAccount');
 const BankTransaction = require('../models/BankTransaction');
 const mongoose = require('mongoose');
@@ -37,6 +37,162 @@ exports.getOne = async (req, res) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Inventory + posting helpers (shared by create and approve)
+// ---------------------------------------------------------------------------
+const INVENTORY_ACCOUNT_RE = /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i;
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+function isInventoryAccount(acct) {
+  return !!(acct && acct.type === 'Asset' && INVENTORY_ACCOUNT_RE.test(acct.name || ''));
+}
+
+// Decides, server-side, which bill lines receive stock.
+//
+// ROOT CAUSE of "ledger updates but Products doesn't": stock used to move
+// ONLY when the account picked on the bill was an Asset account whose NAME
+// matched an inventory pattern. Pick any other account (e.g. an expense
+// account like "Purchases", or an inventory account with an unusual name)
+// and the journal + account balances still posted, but the product loop was
+// skipped entirely. A line that carries a product IS a stock receipt, so
+// stock now follows the product lines themselves, not the account name.
+async function planBillPosting(bill, companyId, session) {
+  const expenseAccountDoc = await Account.findOne({ companyId, code: bill.expenseAccount }).session(session);
+
+  const ids = [...new Set((bill.lines || []).filter(l => l.productId).map(l => String(l.productId)))];
+  const products = ids.length
+    ? await Product.find({ _id: { $in: ids }, companyId }).session(session)
+    : [];
+  const byId = new Map(products.map(p => [String(p._id), p]));
+
+  const stockLines = [];
+  for (const line of bill.lines || []) {
+    const product = line.productId ? byId.get(String(line.productId)) : null;
+    const qty = Number(line.quantity);
+    if (!product || !(qty > 0)) continue;
+    const rate = Number(line.rate) || 0;
+    const amount = Number(line.amount) > 0 ? Number(line.amount) : qty * rate;
+    stockLines.push({ product, qty, rate, amount });
+  }
+
+  return {
+    expenseAccountDoc,
+    stockLines,
+    isInventoryPurchase: stockLines.length > 0 || isInventoryAccount(expenseAccountDoc)
+  };
+}
+
+// Posts a bill: receives stock (weighted-average cost), writes the journal
+// entry and updates account balances. Runs inside the caller's transaction.
+async function postBill(bill, plan, companyId, session, description) {
+  const { expenseAccountDoc, stockLines } = plan;
+  const apAccount = await Account.findOne({ companyId, code: '2000' }).session(session);
+  if (!apAccount || !expenseAccountDoc) throw new Error('Required accounts not found');
+
+  // One document instance per account code, so several balance changes to
+  // the same account can never overwrite each other.
+  const accounts = new Map([[expenseAccountDoc.code, expenseAccountDoc], [apAccount.code, apAccount]]);
+  const changed = new Set();
+  const getAccount = async (code) => {
+    if (accounts.has(code)) return accounts.get(code);
+    const acct = await Account.findOne({ companyId, code }).session(session);
+    if (acct) accounts.set(code, acct);
+    return acct;
+  };
+
+  // ---- 1. Stock + weighted-average cost ----
+  const summary = new Map();
+  for (const sl of stockLines) {
+    const p = sl.product;
+    const oldStock = p.stock || 0;
+    const oldCost = p.cost || 0;
+    if (sl.rate > 0 && oldStock + sl.qty > 0) {
+      p.cost = (oldStock * oldCost + sl.qty * sl.rate) / (oldStock + sl.qty);
+    }
+    p.stock = oldStock + sl.qty;
+    const key = String(p._id);
+    const entry = summary.get(key) || { productId: key, name: p.name, added: 0, product: p };
+    entry.added += sl.qty;
+    summary.set(key, entry);
+  }
+  for (const entry of summary.values()) await entry.product.save({ session });
+  const stockUpdates = [...summary.values()].map(e => ({
+    productId: e.productId, name: e.name, added: e.added, newStock: e.product.stock
+  }));
+
+  // ---- 2. Debit side ----
+  // If the account chosen on the bill is itself an inventory account, keep
+  // the user's choice for everything. Otherwise product lines are debited to
+  // the product's own inventory account, so the ledger and the Products
+  // module agree; any non-product remainder stays on the chosen account.
+  const debits = new Map();
+  const addDebit = (code, amt) => debits.set(code, round2((debits.get(code) || 0) + amt));
+  const routed = [];
+  if (!isInventoryAccount(expenseAccountDoc)) {
+    for (const sl of stockLines) {
+      const invAcct = await getAccount(sl.product.inventoryAccountCode || '1200');
+      if (invAcct) routed.push({ code: invAcct.code, amount: round2(sl.amount) });
+    }
+  }
+  const routedTotal = round2(routed.reduce((s, r) => s + r.amount, 0));
+  if (routed.length && routedTotal <= round2(bill.total) + 0.005) {
+    routed.forEach(r => addDebit(r.code, r.amount));
+    const rest = round2(bill.total - routedTotal);
+    if (rest > 0.005) addDebit(expenseAccountDoc.code, rest);
+    else addDebit(routed[routed.length - 1].code, rest); // absorb rounding
+  } else {
+    addDebit(expenseAccountDoc.code, bill.total);
+  }
+
+  const journalLines = [...debits.entries()].map(([accountCode, amount]) => ({ accountCode, amount, type: 'debit' }));
+
+  // ---- 3. Credit side (AP, plus WHT payable when applicable) ----
+  let whtAccount = null;
+  if (bill.whtAmount > 0) {
+    whtAccount = await getAccount('2250');
+    if (!whtAccount) {
+      whtAccount = new Account({
+        companyId,
+        code: '2250',
+        name: 'WHT Payable (NRS)',
+        type: 'Liability',
+        balance: 0
+      });
+      accounts.set('2250', whtAccount);
+    }
+    journalLines.push({ accountCode: '2250', amount: bill.whtAmount, type: 'credit' });
+    journalLines.push({ accountCode: apAccount.code, amount: bill.netPayable, type: 'credit' });
+  } else {
+    journalLines.push({ accountCode: apAccount.code, amount: bill.total, type: 'credit' });
+  }
+
+  const journal = new JournalEntry({
+    companyId,
+    date: bill.date,
+    description,
+    type: 'bill',
+    referenceType: 'bill',
+    referenceId: bill._id,
+    lines: journalLines
+  });
+  await journal.save({ session });
+
+  // ---- 4. Account balances ----
+  for (const [code, amt] of debits) {
+    accounts.get(code).balance += amt;
+    changed.add(code);
+  }
+  apAccount.balance += (bill.whtAmount > 0 ? bill.netPayable : bill.total);
+  changed.add(apAccount.code);
+  if (whtAccount) {
+    whtAccount.balance += bill.whtAmount;
+    changed.add('2250');
+  }
+  for (const code of changed) await accounts.get(code).save({ session });
+
+  return { journal, stockUpdates };
+}
+
 // Create a new bill
 exports.create = async (req, res) => {
   const session = await mongoose.startSession();
@@ -65,15 +221,9 @@ exports.create = async (req, res) => {
       existingBill = await Bill.findOne({ companyId: req.user.companyId, number: billNumber }).session(session);
     }
 
-    // NTA 2025: payments below the de minimis threshold are exempt from
-    // WHT entirely, regardless of what rate was requested — enforced
-    // here, not just as a frontend default, since a client could still
-    // send a non-zero whtRate.
     // NTA 2025: the ₦2,000,000 WHT de minimis exemption applies specifically
-    // to SMALL COMPANIES ("small companies are exempt from WHT deduction if
-    // transaction value is less than ₦2,000,000, and vendor has a valid
-    // TIN" — PwC Worldwide Tax Summaries), not to every company regardless
-    // of size. A large company must still withhold tax on a small payment.
+    // to SMALL COMPANIES (not every company regardless of size), and is
+    // enforced here rather than trusting a client-sent whtRate.
     const taxStatus = company?.taxStatus || {};
     const qualifiesAsSmallCompany = taxStatus.isSmallCompany && !taxStatus.isProfessionalServices;
     const whtDeMinimis = taxStatus.whtDeMinimisThreshold ?? 2000000;
@@ -85,18 +235,6 @@ exports.create = async (req, res) => {
     // routed to pending approval — no ledger or stock impact until approved.
     const approvalThreshold = (company && company.approvalThreshold) || 500000;
     const needsApproval = req.user.role !== 'admin' && total > approvalThreshold;
-
-    // Never trust a client-sent flag for something this consequential —
-    // determine isInventoryPurchase from the ACTUAL selected account,
-    // server-side. Previously this came straight from req.body with zero
-    // verification: if the frontend ever sent isInventoryPurchase:false
-    // for any reason (stale deploy, a naming edge case, anything), the
-    // bill and journal entry still posted fine, but stock/cost silently
-    // never updated — exactly the "ledger updates, Products doesn't" bug.
-    const expenseAccountDoc = await Account.findOne({ companyId: req.user.companyId, code: expenseAccount }).session(session);
-    const isInventoryPurchase = !!(expenseAccountDoc
-      && expenseAccountDoc.type === 'Asset'
-      && /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i.test(expenseAccountDoc.name || ''));
 
     const bill = new Bill({
       companyId: req.user.companyId,
@@ -114,9 +252,14 @@ exports.create = async (req, res) => {
       amountPaid: 0,
       balance: netPayable,
       expenseAccount,
-      isInventoryPurchase: isInventoryPurchase || false,
+      isInventoryPurchase: false,
       approvalStatus: needsApproval ? 'pending_approval' : 'approved'
     });
+
+    // Never trust a client-sent isInventoryPurchase flag — work it out here
+    // from the product lines (and the selected account) on the saved bill.
+    const plan = await planBillPosting(bill, req.user.companyId, session);
+    bill.isInventoryPurchase = plan.isInventoryPurchase;
     await bill.save({ session });
 
     if (needsApproval) {
@@ -126,85 +269,20 @@ exports.create = async (req, res) => {
       return res.status(201).json(bill);
     }
 
-    // Handle inventory purchase - update stock AND cost (weighted average).
-    // This is the ONLY place stock/cost update for a bill — the frontend no
-    // longer makes a separate /products/adjust call for bill-driven receipts,
-    // which previously caused stock to be double-counted.
-    if (isInventoryPurchase) {
-      for (const line of lines) {
-        if (line.productId) {
-          const product = await Product.findById(line.productId).session(session);
-          if (product && line.quantity > 0) {
-            const oldStock = product.stock || 0;
-            const oldCost = product.cost || 0;
-            const unitCost = line.rate || 0;
-            if (unitCost > 0) {
-              const oldValue = oldStock * oldCost;
-              const newValue = line.quantity * unitCost;
-              product.cost = (oldValue + newValue) / (oldStock + line.quantity);
-            }
-            product.stock = oldStock + line.quantity;
-            await product.save({ session });
-          }
-        }
-      }
+    const withProduct = (bill.lines || []).filter(l => l.productId).length;
+    if (withProduct && !plan.stockLines.length) {
+      console.warn(`[bill ${billNumber}] ${withProduct} line(s) carry a productId but none matched a product in this company (or quantity <= 0) — stock NOT updated`);
+    } else if (!withProduct && plan.isInventoryPurchase) {
+      console.warn(`[bill ${billNumber}] inventory account selected but no line carries a productId — stock NOT updated. Check what the frontend sends in lines[].productId`);
     }
 
-    // Post journal entry
-    const apAccount = await Account.findOne({ companyId: req.user.companyId, code: '2000' }).session(session);
-    // expenseAccountDoc was already fetched above to determine isInventoryPurchase — reused here.
-    
-    if (!apAccount || !expenseAccountDoc) {
-      throw new Error('Required accounts not found');
-    }
-
-    const journalLines = [
-      { accountCode: expenseAccount, amount: total, type: 'debit' }
-    ];
-
-    // Add WHT if applicable
-    let whtAccount = null;
-    if (whtAmount > 0) {
-      whtAccount = await Account.findOne({ companyId: req.user.companyId, code: '2250' }).session(session);
-      if (!whtAccount) {
-        whtAccount = new Account({
-          companyId: req.user.companyId,
-          code: '2250',
-          name: 'WHT Payable (NRS)',
-          type: 'Liability',
-          balance: 0
-        });
-        await whtAccount.save({ session });
-      }
-      journalLines.push({ accountCode: whtAccount.code, amount: whtAmount, type: 'credit' });
-      journalLines.push({ accountCode: apAccount.code, amount: netPayable, type: 'credit' });
-    } else {
-      journalLines.push({ accountCode: apAccount.code, amount: total, type: 'credit' });
-    }
-
-    const journal = new JournalEntry({
-      companyId: req.user.companyId,
-      date,
-      description: `Bill ${billNumber} - ${isInventoryPurchase ? 'Inventory Purchase' : 'Expense'}`,
-      type: 'bill',
-      referenceType: 'bill',
-      referenceId: bill._id,
-      lines: journalLines
-    });
-    await journal.save({ session });
-
-    // Update account balances
-    expenseAccountDoc.balance += total;
-    await expenseAccountDoc.save({ session });
-    apAccount.balance += netPayable;
-    await apAccount.save({ session });
-    if (whtAccount && whtAmount > 0) {
-      whtAccount.balance += whtAmount;
-      await whtAccount.save({ session });
-    }
+    const { stockUpdates } = await postBill(
+      bill, plan, req.user.companyId, session,
+      `Bill ${billNumber} - ${plan.isInventoryPurchase ? 'Inventory Purchase' : 'Expense'}`
+    );
 
     await session.commitTransaction();
-    res.status(201).json(bill);
+    res.status(201).json({ ...bill.toObject(), stockUpdates });
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ error: err.message });
@@ -228,67 +306,19 @@ exports.approve = async (req, res) => {
       throw new Error('Bill is not pending approval');
     }
 
-    if (bill.isInventoryPurchase) {
-      for (const line of bill.lines) {
-        if (line.productId) {
-          const product = await Product.findById(line.productId).session(session);
-          if (product && line.quantity > 0) {
-            const oldStock = product.stock || 0;
-            const oldCost = product.cost || 0;
-            const unitCost = line.rate || 0;
-            if (unitCost > 0) {
-              const oldValue = oldStock * oldCost;
-              const newValue = line.quantity * unitCost;
-              product.cost = (oldValue + newValue) / (oldStock + line.quantity);
-            }
-            product.stock = oldStock + line.quantity;
-            await product.save({ session });
-          }
-        }
-      }
-    }
+    const plan = await planBillPosting(bill, req.user.companyId, session);
+    bill.isInventoryPurchase = plan.isInventoryPurchase;
 
-    const apAccount = await Account.findOne({ companyId: req.user.companyId, code: '2000' }).session(session);
-    const expenseAccountDoc = await Account.findOne({ companyId: req.user.companyId, code: bill.expenseAccount }).session(session);
-    if (!apAccount || !expenseAccountDoc) throw new Error('Required accounts not found');
-
-    const journalLines = [{ accountCode: bill.expenseAccount, amount: bill.total, type: 'debit' }];
-    let whtAccount = null;
-    if (bill.whtAmount > 0) {
-      whtAccount = await Account.findOne({ companyId: req.user.companyId, code: '2250' }).session(session);
-      if (whtAccount) {
-        journalLines.push({ accountCode: whtAccount.code, amount: bill.whtAmount, type: 'credit' });
-        journalLines.push({ accountCode: apAccount.code, amount: bill.netPayable, type: 'credit' });
-      }
-    } else {
-      journalLines.push({ accountCode: apAccount.code, amount: bill.total, type: 'credit' });
-    }
-
-    const journal = new JournalEntry({
-      companyId: req.user.companyId,
-      date: bill.date,
-      description: `Bill ${bill.number} - Approved (${bill.isInventoryPurchase ? 'Inventory Purchase' : 'Expense'})`,
-      type: 'bill',
-      referenceType: 'bill',
-      referenceId: bill._id,
-      lines: journalLines
-    });
-    await journal.save({ session });
-
-    expenseAccountDoc.balance += bill.total;
-    await expenseAccountDoc.save({ session });
-    apAccount.balance += bill.netPayable;
-    await apAccount.save({ session });
-    if (whtAccount && bill.whtAmount > 0) {
-      whtAccount.balance += bill.whtAmount;
-      await whtAccount.save({ session });
-    }
+    const { stockUpdates } = await postBill(
+      bill, plan, req.user.companyId, session,
+      `Bill ${bill.number} - Approved (${plan.isInventoryPurchase ? 'Inventory Purchase' : 'Expense'})`
+    );
 
     bill.approvalStatus = 'approved';
     await bill.save({ session });
 
     await session.commitTransaction();
-    res.json(bill);
+    res.json({ ...bill.toObject(), stockUpdates });
   } catch (err) {
     await session.abortTransaction();
     res.status(500).json({ error: err.message });
