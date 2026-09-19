@@ -3049,12 +3049,12 @@ window.openInvoiceModal = (presetCustomerId) => {
 <div id="recurringOptions" style="display:none;margin-top:8px;">
   <div class="form-row cols-2">
     <div class="form-group"><label class="form-label">Frequency</label>
-      <select class="form-control" id="invFrequency">
+<select class="form-control" id="invRecurFreq">
         <option value="monthly">Monthly</option>
         <option value="quarterly">Quarterly</option>
         <option value="weekly">Weekly</option>
-      </select></div>
-    <div class="form-group"><label class="form-label">End Date (optional)</label>
+        <option value="annually">Annually</option>
+      </select></div>    <div class="form-group"><label class="form-label">End Date (optional)</label>
       <input type="date" class="form-control" id="invRecurEnd"></div>
   </div>
 </div>
@@ -3062,7 +3062,7 @@ window.openInvoiceModal = (presetCustomerId) => {
     <div class="section-label">Line Items</div>
     <div class="line-items-header" style="grid-template-columns:2fr 60px 100px 100px ${(settings.isSmallCompany && !settings.isProfessionalServices)?'36px':'70px 36px'};"><span>Product / Description</span><span>Qty</span><span>Unit Price</span><span>Amount</span>${(settings.isSmallCompany && !settings.isProfessionalServices)?'':'<span>VAT?</span>'}<span></span></div>
     <div id="invLines"></div>
-    <button class="btn btn-ghost btn-sm" onclick="addInvLine('${prodOpts.replace(/'/g,"\\'")}')"><i class="fas fa-plus"></i> Add Line</button>
+    <button class="btn btn-ghost btn-sm" onclick="addInvLine()"><i class="fas fa-plus"></i> Add Line</button>
     ${(settings.isSmallCompany && !settings.isProfessionalServices) ? `
     <div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin-top:10px;font-size:0.76rem;color:#166534;">
       <i class="fas fa-circle-check" style="margin-right:6px;"></i>Small Company status (NTA 2025) — VAT not applied to this invoice.
@@ -3076,24 +3076,7 @@ window.openInvoiceModal = (presetCustomerId) => {
     <div class="form-group">
       <label class="form-label"><i class="fas fa-lock" style="font-size:0.72rem;margin-right:4px;color:var(--text-3);"></i>Internal Note <span style="font-size:0.72rem;color:var(--text-3);">(private — not printed on invoice)</span></label>
       <textarea class="form-control" id="invInternalNote" rows="2" placeholder="Private notes visible only to your team..."></textarea>
-    </div>
-    </div>
-    <div class="form-row cols-2" style="align-items:center;margin-top:8px;">
-      <div class="form-group" style="display:flex;align-items:center;gap:10px;margin:0;">
-        <input type="checkbox" id="invRecurring" style="width:16px;height:16px;accent-color:var(--brand);cursor:pointer;" onchange="document.getElementById('recurFreqWrap').style.display=this.checked?'block':'none'">
-        <label for="invRecurring" style="font-size:0.82rem;font-weight:600;color:var(--text-1);cursor:pointer;margin:0;">
-          <i class="fas fa-rotate" style="color:var(--brand);margin-right:4px;"></i>Recurring Invoice</label>
-      </div>
-      <div id="recurFreqWrap" style="display:none;">
-        <label class="form-label">Frequency</label>
-        <select class="form-control" id="invRecurFreq">
-          <option value="monthly">Monthly</option>
-          <option value="weekly">Weekly</option>
-          <option value="quarterly">Quarterly</option>
-          <option value="annually">Annually</option>
-        </select>
-      </div>
-    </div>`,
+    </div>`,    
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveInvoice()"><i class="fas fa-save"></i> Save & Post</button>`,
     { width: '760px' }
