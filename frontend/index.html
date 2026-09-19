@@ -7614,16 +7614,16 @@ window.saveBill = async function() {
     const r = parseFloat(l.querySelector('.rate').value) || 0;
     const a = q * r;
     const desc = l.querySelector('input').value || 'Item';
-    lines.push({ description: desc, quantity: q, rate: r, amount: a });
+    const prodSelect = isInventoryPurchase ? l.querySelector('.bill-product') : null;
+    const prodId = (prodSelect && prodSelect.value) ? prodSelect.value : null;
+    const line = { description: desc, quantity: q, rate: r, amount: a };
+    if (prodId) {
+      line.productId = prodId;
+      productLines.push({ productId: prodId, quantity: q, cost: r });
+    }
+    lines.push(line);
     total += a;
 
-    if (isInventoryPurchase) {
-      const prodSelect = l.querySelector('.bill-product');
-      if (prodSelect && prodSelect.value) {
-        const prodId = prodSelect.value;
-        productLines.push({ productId: prodId, quantity: q, cost: r });
-      }
-    }
   });
   if (total <= 0) return alert('Bill total must be > 0.');
 
@@ -7647,9 +7647,10 @@ window.saveBill = async function() {
     if (createdBill?.approvalStatus === 'pending_approval') {
       showToast(`Bill exceeds the approval threshold — sent to an admin for approval before it posts to the ledger or updates stock.`, 'info');
     } else if (isInventoryPurchase && productLines.length) {
-      showToast(`Bill posted. Inventory updated for ${productLines.length} product(s).`, 'success');
+      showToast(`Bill posted. Inventory updated for ${createdBill?.stockUpdates?.length ?? productLines.length} product(s).`, 'success');
+    } else if (isInventoryPurchase) {
+      showToast('No product was linked on any line, so Products stock was not updated. Void this bill and re-enter it with a product selected on each line.', 'info');
     }
-
     logAction('BILL_CREATED', 'Bill created — Vendor: ' + (vendors.find(v=>String(v._id||v.id)===String(vendorId))?.name||vendorId) + ' — Total: ₦' + total.toLocaleString());
     closeTopModal();
     await loadAllData();
