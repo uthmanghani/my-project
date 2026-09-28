@@ -76,6 +76,22 @@ function makeModel(store) {
         return { deletedCount: before - store.length };
       });
     }
+    static deleteMany(filter = {}) {
+      return queryOf(() => {
+        const before = store.length;
+        const keep = store.filter(d => !matches(d, filter));
+        store.length = 0;
+        store.push(...keep);
+        return { deletedCount: before - store.length };
+      });
+    }
+    static updateMany(filter = {}, update = {}) {
+      return queryOf(() => {
+        const hits = store.filter(d => matches(d, filter));
+        for (const d of hits) Object.assign(d, update.$set || update);
+        return { modifiedCount: hits.length };
+      });
+    }
     static findOneAndUpdate(filter, update, opts = {}) {
       return queryOf(() => {
         const doc = store.find(d => matches(d, filter));
@@ -105,7 +121,7 @@ function createDB() {
     accounts: [], products: [], bills: [], invoices: [], journalEntries: [],
     assets: [], purchaseOrders: [], recurringBillings: [], companies: [],
     payments: [], bankAccounts: [], bankTransactions: [], employees: [],
-    auditLogs: [], customers: [], vendors: [],
+    auditLogs: [], customers: [], vendors: [], budgets: [],
   };
   db.models = {
     '../models/Account': makeModel(db.accounts),
@@ -123,6 +139,7 @@ function createDB() {
     '../models/AuditLog': makeModel(db.auditLogs),
     '../models/Customer': makeModel(db.customers),
     '../models/Vendor': makeModel(db.vendors),
+    '../models/Budget': makeModel(db.budgets),
     // Company is looked up a lot but never asserted on in these tests --
     // a fixed, reasonable default is enough.
     '../models/Company': {

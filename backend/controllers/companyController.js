@@ -4,6 +4,11 @@ const Account = require('../models/Account');
 const JournalEntry = require('../models/JournalEntry');
 const mongoose = require('mongoose');
 const { logAudit } = require('../utils/auditLog');
+const INDUSTRIES = require('../utils/industryData');
+
+// Version fingerprint -- reported by GET /health so a deploy of this fix can
+// be verified from a browser, the same way bankController/billController are.
+exports.__VERSION__ = 'company-controller-2026-clear-removes-orphan-bank-ledger-accounts';
 
 // Get company settings
 exports.getSettings = async (req, res) => {
@@ -127,19 +132,49 @@ exports.clearCompanyData = async (req, res) => {
   try {
     const companyId = req.user.companyId;
 
-    // Remove every bank account's linked ledger account along with the bank
-    // accounts themselves. (Deactivating them instead — the old behavior —
-    // left the stale 15xx/10xx codes in the Chart of Accounts, useless
-    // once their bank account was gone.) Deleting is safe here, unlike a
-    // single-bank-account delete: every journal entry is wiped in this same
+    // Remove every bank account's ledger account from the Chart of Accounts.
+    // Bank ledger accounts are created automatically by the Banking module
+    // (createBankAccount), so once the bank accounts themselves are cleared
+    // and re-created there, the old ones are just dead rows. Two groups:
+    //
+    //  1. Ledger accounts a BankAccount record still points at, active or
+    //     not. (Deleting a bank account in the Banking module only
+    //     DEACTIVATES it, so these are still linked.)
+    //  2. ORPHANS: ledger accounts whose BankAccount record is already
+    //     gone -- left behind by an earlier clear, which used to delete the
+    //     BankAccount rows but only deactivate their ledger accounts. With
+    //     no BankAccount to point at them, group 1 can never find these, so
+    //     they piled up in the Chart of Accounts forever. They are
+    //     recognised by what the Banking module leaves behind: an INACTIVE
+    //     Asset account inside the code ranges it allocates from (legacy
+    //     1010-1090, current 1500-1990). Codes any industry template seeds
+    //     (e.g. 1500 Land & Building, 1050 Central Bank Reserve) are never
+    //     treated as orphans, whatever their state.
+    //
+    // Deleting is safe: every journal entry is wiped in this same
     // transaction, so nothing is left referencing these codes. '1000' is
-    // never removed — it's the default Cash account seeded with the
+    // never removed -- it's the default Cash account seeded with the
     // company, which a legacy bank account may also point at.
     const BankAccount = require('../models/BankAccount');
-    const staleBankAccounts = await BankAccount.find({ companyId }).session(session);
-    const staleCodes = staleBankAccounts.map(b => b.code).filter(c => c && c !== '1000');
+    const AccountModel = require('../models/Account');
+    const linkedBankAccounts = await BankAccount.find({ companyId }).session(session);
+    const linkedCodes = linkedBankAccounts.map(b => b.code).filter(c => c && c !== '1000');
+
+    const templateCodes = new Set();
+    for (const industry of INDUSTRIES) {
+      for (const acc of industry.accounts) templateCodes.add(acc.code);
+    }
+    const BANK_LEDGER_CODE = /^(10[1-9]0|1[5-9]\d0)$/;
+    const inactiveAssets = await AccountModel.find(
+      { companyId, type: 'Asset', isActive: false }
+    ).session(session);
+    const orphanCodes = inactiveAssets
+      .map(a => a.code)
+      .filter(c => BANK_LEDGER_CODE.test(c) && !templateCodes.has(c));
+
+    const staleCodes = [...new Set([...linkedCodes, ...orphanCodes])];
     if (staleCodes.length) {
-      await require('../models/Account').deleteMany(
+      await AccountModel.deleteMany(
         { companyId, code: { $in: staleCodes } }
       ).session(session);
     }
@@ -176,10 +211,10 @@ exports.clearCompanyData = async (req, res) => {
       { $set: { balance: 0, openingBalance: 0 } }
     ).session(session);
 
-    await logAudit(req, 'COMPANY_DATA_CLEARED', 'Cleared all transactional data (Chart of Accounts preserved).', session);
+    await logAudit(req, 'COMPANY_DATA_CLEARED', `Cleared all transactional data (Chart of Accounts preserved; ${staleCodes.length} bank ledger account(s) removed).`, session);
 
     await session.commitTransaction();
-    res.json({ message: 'All transactional data cleared. Chart of Accounts preserved.' });
+    res.json({ message: 'All transactional data cleared. Chart of Accounts preserved.', bankLedgerAccountsRemoved: staleCodes.length });
   } catch (err) {
     await session.abortTransaction();
     if (err instanceof AppError) return res.status(err.status).json({ error: err.message });

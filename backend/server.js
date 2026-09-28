@@ -41,6 +41,7 @@ const exchangeRateRoutes = require('./routes/exchangeRateRoutes');
 // verifiable from any browser, no shell or git access required.
 const bankControllerCheck = require('./controllers/bankController');
 const billControllerCheck = require('./controllers/billController');
+const companyControllerCheck = require('./controllers/companyController');
 
 const app = express();
 
@@ -117,7 +118,9 @@ app.get('/health', (req, res) => {
       bankControllerVersion: bankControllerCheck.__VERSION__ || 'UNKNOWN (no version marker found — likely an old file)',
       bankControllerHasFix: typeof bankControllerCheck.__VERSION__ === 'string',
       billControllerVersion: billControllerCheck.__VERSION__ || 'UNKNOWN (no version marker found — likely an old file)',
-      billControllerHasFix: typeof billControllerCheck.__VERSION__ === 'string'
+      billControllerHasFix: typeof billControllerCheck.__VERSION__ === 'string',
+      companyControllerVersion: companyControllerCheck.__VERSION__ || 'UNKNOWN (no version marker found — likely an old file)',
+      companyControllerHasFix: typeof companyControllerCheck.__VERSION__ === 'string'
     }
   });
 });
