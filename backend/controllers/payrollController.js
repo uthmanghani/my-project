@@ -1,6 +1,9 @@
 const Employee = require('../models/Employee');
+const AppError = require('../utils/AppError');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
+const BankAccount = require('../models/BankAccount');
+const BankTransaction = require('../models/BankTransaction');
 const { calculatePAYE } = require('../utils/taxCalculations');
 const mongoose = require('mongoose');
 
@@ -8,12 +11,15 @@ exports.recordSinglePayroll = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { employeeId, date, monthlyGross, monthlyNet, monthlyPAYE, monthlyPension } = req.body;
-    const employee = await Employee.findById(employeeId).session(session);
-    if (!employee) throw new Error('Employee not found');
+    const { employeeId, date, monthlyGross, monthlyNet, monthlyPAYE, monthlyPension, bankCode } = req.body;
+    // SECURITY: was Employee.findById with no companyId check â any user of
+    // ANY company could run payroll against another company's employee,
+    // posting the pay out of THEIR OWN cash and salary accounts.
+    const employee = await Employee.findOne({ _id: employeeId, companyId: req.user.companyId }).session(session);
+    if (!employee) throw new AppError('Employee not found', 404);
 
     const salaryAccount = await Account.findOne({ companyId: req.user.companyId, code: '6000' }).session(session);
-    const cashAccount = await Account.findOne({ companyId: req.user.companyId, code: '1000' }).session(session);
+    const cashAccount = await Account.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
     let payeAccount = await Account.findOne({ companyId: req.user.companyId, code: '2200' }).session(session);
     if (!payeAccount) {
       payeAccount = new Account({
@@ -60,11 +66,35 @@ exports.recordSinglePayroll = async (req, res) => {
     await payeAccount.save({ session });
     await pensionAccount.save({ session });
 
+    // Without this, the ledger's Cash account correctly goes down by every
+    // payroll run, but the Banking module (which computes a bank account's
+    // balance from openingBalance + its own BankTransaction records, not
+    // from the ledger) never reflects it -- payroll was the one money-out
+    // path in this app that skipped this, so Banking silently overstated
+    // cash by the running total of every payroll ever run.
+    const bankAccountDoc = await BankAccount.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
+    if (bankAccountDoc) {
+      const bankTx = new BankTransaction({
+        companyId: req.user.companyId,
+        bankId: bankAccountDoc._id,
+        bankAccountCode: bankCode || '1000',
+        date,
+        type: 'debit',
+        amount: monthlyNet,
+        description: `Salary payment - ${employee.name}`,
+        reference: null,
+        reconciled: false
+      });
+      await bankTx.save({ session });
+    }
+
     await session.commitTransaction();
     res.json({ message: 'Payroll recorded' });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -74,10 +104,10 @@ exports.runBatchPayroll = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { month, year } = req.body;
+    const { month, year, bankCode } = req.body;
     const payDate = `${year}-${String(month).padStart(2, '0')}-28`;
     const employees = await Employee.find({ companyId: req.user.companyId }).session(session);
-    if (!employees.length) throw new Error('No employees found');
+    if (!employees.length) throw new AppError('No employees found', 400);
 
     let totalGross = 0, totalPAYE = 0, totalPension = 0, totalNet = 0;
     for (const emp of employees) {
@@ -89,7 +119,7 @@ exports.runBatchPayroll = async (req, res) => {
     }
 
     const salaryAccount = await Account.findOne({ companyId: req.user.companyId, code: '6000' }).session(session);
-    const cashAccount = await Account.findOne({ companyId: req.user.companyId, code: '1000' }).session(session);
+    const cashAccount = await Account.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
     let payeAccount = await Account.findOne({ companyId: req.user.companyId, code: '2200' }).session(session);
     if (!payeAccount) {
       payeAccount = new Account({
@@ -136,11 +166,32 @@ exports.runBatchPayroll = async (req, res) => {
     await payeAccount.save({ session });
     await pensionAccount.save({ session });
 
+    // Same fix as recordSinglePayroll -- see the comment there. One summary
+    // transaction for the whole run, matching how the journal entry above
+    // posts one summary line rather than one per employee.
+    const bankAccountDoc = await BankAccount.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
+    if (bankAccountDoc) {
+      const bankTx = new BankTransaction({
+        companyId: req.user.companyId,
+        bankId: bankAccountDoc._id,
+        bankAccountCode: bankCode || '1000',
+        date: payDate,
+        type: 'debit',
+        amount: totalNet,
+        description: `Payroll run - ${month}/${year} (${employees.length} employees)`,
+        reference: null,
+        reconciled: false
+      });
+      await bankTx.save({ session });
+    }
+
     await session.commitTransaction();
     res.json({ message: 'Batch payroll processed', totalGross, totalNet, totalPAYE, totalPension });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

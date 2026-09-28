@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const AppError = require('../utils/AppError');
 const Company = require('../models/Company');
 const Account = require('../models/Account');
 const INDUSTRIES = require('../utils/industryData');
@@ -39,12 +40,12 @@ exports.register = async (req, res) => {
   try {
     const existingCompany = await Company.findOne({ email: company.email }).session(session);
     if (existingCompany) {
-      throw Object.assign(new Error('A company with this email already exists'), { status: 400 });
+      throw new AppError('A company with this email already exists', 400);
     }
 
     const existingUser = await User.findOne({ email: emailQuery(admin.email) }).session(session);
     if (existingUser) {
-      throw Object.assign(new Error('Admin email already registered'), { status: 400 });
+      throw new AppError('Admin email already registered', 400);
     }
 
     const newCompany = new Company({
@@ -104,7 +105,8 @@ exports.register = async (req, res) => {
   } catch (err) {
     await session.abortTransaction();
     console.error('Registration error:', err);
-    res.status(err.status || 500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -138,7 +140,9 @@ exports.login = async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err);
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -164,7 +168,9 @@ exports.inviteUser = async (req, res) => {
       user: { id: newUser._id, firstName, lastName, email, role }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -173,7 +179,9 @@ exports.getUsers = async (req, res) => {
     const users = await User.find({ companyId: req.user.companyId }).select('-password');
     res.json(users);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -209,28 +217,38 @@ exports.verifyOTP = async (req, res) => {
     await user.save();
     res.json({ verified: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
 exports.forgotPassword = async (req, res) => {
+  // SECURITY: always respond identically whether or not the email has an
+  // account, and always in roughly the same amount of work, so this
+  // endpoint can't be used to find out which emails have accounts on this
+  // platform. The previous version returned 404 for an unknown email and
+  // 200 for a known one — a direct enumeration oracle.
+  const GENERIC = { message: 'If an account exists for that email, a password reset link has been sent.' };
   try {
     const { email } = req.body;
     const user = await User.findOne({ email: emailQuery(email) });
-    if (!user) return res.status(404).json({ error: 'No account found with that email' });
+    if (!user) return res.json(GENERIC);
     const token = crypto.randomBytes(32).toString('hex');
     user.resetPasswordToken = token;
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     await user.save();
     const { sendPasswordResetEmail } = require('../utils/emailService');
     await sendPasswordResetEmail({ to: email, token, firstName: user.firstName });
-    res.json({ message: 'Password reset email sent' });
+    res.json(GENERIC);
   } catch (err) {
     // Log the real error server-side for debugging, but never expose raw
     // internals (network errors, stack traces, provider details) to the
     // person using the app — they just need to know it didn't go through.
+    // Still generic, and still 200: an email-sending failure shouldn't leak
+    // account existence either.
     console.error('forgotPassword error:', err.message);
-    res.status(500).json({ error: 'Could not send the reset email right now. Please try again shortly.' });
+    res.json(GENERIC);
   }
 };
  
@@ -248,7 +266,9 @@ exports.resetPassword = async (req, res) => {
     await user.save();
     res.json({ message: 'Password reset successfully. You can now log in.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -258,7 +278,9 @@ exports.getMyCompanies = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user.companies || []);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -277,7 +299,9 @@ exports.switchCompany = async (req, res) => {
     );
     res.json({ token, companyId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -293,7 +317,9 @@ exports.addUserToCompany = async (req, res) => {
     }
     res.json({ message: 'User added to company' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -307,6 +333,8 @@ exports.removeUser = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ message: 'User removed' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

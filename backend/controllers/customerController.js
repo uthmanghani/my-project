@@ -1,12 +1,15 @@
 const Customer = require('../models/Customer');
 const { logAudit } = require('../utils/auditLog');
+const AppError = require('../utils/AppError');
 
 exports.getAll = async (req, res) => {
   try {
     const customers = await Customer.find({ companyId: req.user.companyId, isActive: { $ne: false } }).sort({ name: 1 });
     res.json(customers);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -19,7 +22,9 @@ exports.getOne = async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json(customer);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -29,7 +34,9 @@ exports.create = async (req, res) => {
     await customer.save();
     res.status(201).json(customer);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -43,7 +50,9 @@ exports.update = async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json(customer);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -55,7 +64,9 @@ exports.bulkImport = async (req, res) => {
     await Customer.insertMany(docs, { ordered: false });
     res.json({ message: `${docs.length} customers imported` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -70,6 +81,8 @@ exports.delete = async (req, res) => {
     await logAudit(req, 'CUSTOMER_DEACTIVATED', `Deactivated customer ${customer.name}`);
     res.json({ message: 'Customer deactivated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

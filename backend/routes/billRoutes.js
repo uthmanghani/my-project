@@ -9,7 +9,8 @@ const { checkPeriodLock } = require('../middleware/periodLock');
 router.post('/', authenticateToken, checkPeriodLock, billController.create);
 router.put('/:id', authenticateToken, billController.update);
 router.put('/:id/pay', authenticateToken, billController.recordPayment);
-router.put('/:id/approve', authenticateToken, billController.approve);
+router.put('/:id/approve', authenticateToken, requireRole('admin'), billController.approve);
+router.put('/:id/reject', authenticateToken, requireRole('admin'), billController.reject);
 router.delete('/:id', authenticateToken, requireRole('admin', 'accountant'), billController.delete);
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const JournalEntry = require('../models/JournalEntry');
+const AppError = require('../utils/AppError');
 const Account = require('../models/Account');
 const mongoose = require('mongoose');
 const { reverseJournalEntry } = require('../utils/journalReversal');
@@ -9,7 +10,9 @@ exports.getAll = async (req, res) => {
     const entries = await JournalEntry.find({ companyId: req.user.companyId }).sort({ date: -1 });
     res.json(entries);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -43,7 +46,9 @@ exports.create = async (req, res) => {
     await logAudit(req, 'JOURNAL_CREATED', `Posted manual journal — ${description} (₦${debits.toLocaleString()})`);
     res.status(201).json(journal);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -63,7 +68,9 @@ exports.voidEntry = async (req, res) => {
     res.json({ message: 'Journal entry voided. A reversing entry has been posted.', reversalEntry: reversal });
   } catch (err) {
     await session.abortTransaction();
-    res.status(400).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

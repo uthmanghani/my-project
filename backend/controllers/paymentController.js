@@ -1,4 +1,5 @@
 const Payment = require('../models/Payment');
+const AppError = require('../utils/AppError');
 
 exports.getCustomerPayments = async (req, res) => {
   try {
@@ -8,7 +9,9 @@ exports.getCustomerPayments = async (req, res) => {
       .sort({ date: -1 });
     res.json(payments);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -20,6 +23,8 @@ exports.getVendorPayments = async (req, res) => {
       .sort({ date: -1 });
     res.json(payments);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

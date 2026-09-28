@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const AppError = require('../utils/AppError');
 const fs = require('fs');
 const path = require('path');
 
@@ -32,7 +33,9 @@ exports.exportData = async (req, res) => {
     data.company = company;
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -86,7 +89,9 @@ exports.importData = async (req, res) => {
     res.json({ message: 'Data imported successfully' });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

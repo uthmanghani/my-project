@@ -1,12 +1,15 @@
 const Account = require('../models/Account');
 const { logAudit } = require('../utils/auditLog');
+const AppError = require('../utils/AppError');
 
 exports.getAll = async (req, res) => {
   try {
     const accounts = await Account.find({ companyId: req.user.companyId }).sort({ code: 1 });
     res.json(accounts);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -26,7 +29,9 @@ exports.create = async (req, res) => {
     await account.save();
     res.status(201).json(account);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -40,7 +45,9 @@ exports.updateOpeningBalance = async (req, res) => {
     await account.save();
     res.json(account);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -58,6 +65,8 @@ exports.delete = async (req, res) => {
     await logAudit(req, 'ACCOUNT_DEACTIVATED', `Deactivated account ${account.code} — ${account.name}`);
     res.json({ message: 'Account deactivated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

@@ -1,5 +1,6 @@
 const Vendor = require('../models/Vendor');
 const { logAudit } = require('../utils/auditLog');
+const AppError = require('../utils/AppError');
 
 // Get all vendors
 exports.getAll = async (req, res) => {
@@ -8,7 +9,9 @@ exports.getAll = async (req, res) => {
       .sort({ name: 1 });
     res.json(vendors);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -22,7 +25,9 @@ exports.getOne = async (req, res) => {
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
     res.json(vendor);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -42,7 +47,9 @@ exports.create = async (req, res) => {
     await vendor.save();
     res.status(201).json(vendor);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -57,7 +64,9 @@ exports.update = async (req, res) => {
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
     res.json(vendor);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -73,6 +82,8 @@ exports.delete = async (req, res) => {
     await logAudit(req, 'VENDOR_DEACTIVATED', `Deactivated vendor ${vendor.name}`);
     res.json({ message: 'Vendor deactivated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

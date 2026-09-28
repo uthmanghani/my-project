@@ -42,9 +42,9 @@
       --radius-md:  12px;
       --radius-lg:  18px;
       --radius-xl:  24px;
-      --shadow-sm:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-      --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-      --shadow-lg:  0 20px 40px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06);
+      --shadow-sm:  0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
+      --shadow-md:  0 2px 6px rgba(15,23,42,0.05), 0 8px 20px rgba(15,23,42,0.08);
+      --shadow-lg:  0 8px 16px rgba(15,23,42,0.06), 0 24px 48px rgba(15,23,42,0.12);
       --font:       'DM Sans', sans-serif;
     }
     body.dark {
@@ -62,9 +62,9 @@
       --text-2:     #b1bac4;
       --text-3:     #8b949e;
       --text-4:     #6e7681;
-      --shadow-sm:  0 1px 3px rgba(0,0,0,0.3);
-      --shadow-md:  0 4px 12px rgba(0,0,0,0.4);
-      --shadow-lg:  0 20px 40px rgba(0,0,0,0.5);
+      --shadow-sm:  0 1px 2px rgba(0,0,0,0.2);
+      --shadow-md:  0 2px 6px rgba(0,0,0,0.25), 0 8px 20px rgba(0,0,0,0.35);
+      --shadow-lg:  0 8px 16px rgba(0,0,0,0.3), 0 24px 48px rgba(0,0,0,0.45);
     }
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html { font-size: 14px; }
@@ -76,6 +76,23 @@
       height: 100vh;
       overflow: hidden;
       transition: background 0.3s, color 0.3s;
+      /* Money is the whole point of this product — digits must line up in
+         columns wherever they appear (KPI tiles, table cells, line-item
+         totals). Proportional figures make a column of amounts look
+         ragged; tabular figures cost nothing for non-numeric text since
+         this only changes digit width, not letters. */
+      font-variant-numeric: tabular-nums;
+    }
+    /* Visible keyboard focus on every element that can natively receive
+       it. (.action-btn, .nav-item and a few other click targets are still
+       plain <div onclick> rather than real buttons, so they're not part
+       of the tab order at all yet — that's a bigger structural change
+       than a focus ring can fix, and is worth doing as its own pass.) */
+    a:focus-visible, button:focus-visible, input:focus-visible,
+    select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid var(--brand-lt);
+      outline-offset: 2px;
+      border-radius: 4px;
     }
 
     /* ── SIDEBAR ── */
@@ -309,12 +326,13 @@
       font-weight: 600;
       border: none;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
       white-space: nowrap;
       text-decoration: none;
     }
-    .btn-primary { background: var(--brand); color: white; }
-    .btn-primary:hover { background: var(--brand-mid); transform: translateY(-1px); box-shadow: 0 4px 12px var(--brand-glow); }
+    .btn:active { transform: translateY(0) scale(0.98); }
+    .btn-primary { background: linear-gradient(155deg, var(--brand-lt) -40%, var(--brand) 60%); color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+    .btn-primary:hover { background: linear-gradient(155deg, var(--brand-lt) -20%, var(--brand-mid) 70%); transform: translateY(-1px); box-shadow: 0 6px 16px var(--brand-glow); }
     .btn-secondary { background: var(--surface); color: var(--text-2); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--surface2); border-color: var(--border-md); }
     .btn-danger { background: var(--danger); color: white; }
@@ -352,10 +370,25 @@
       padding: 18px 18px 14px;
       position: relative;
       overflow: hidden;
-      transition: box-shadow 0.2s, transform 0.2s;
+      transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
       box-shadow: var(--shadow-sm);
     }
-    .kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--border-md); }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: -30px; right: -30px;
+      width: 110px; height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle, currentColor 0%, transparent 72%);
+      opacity: 0.06;
+      pointer-events: none;
+    }
+    .kpi-card.green  { color: var(--success); }
+    .kpi-card.red    { color: var(--danger); }
+    .kpi-card.blue   { color: var(--info); }
+    .kpi-card.amber  { color: var(--accent); }
+    .kpi-card.purple { color: #7c3aed; }
     .kpi-card::after {
       content: '';
       position: absolute;
@@ -421,6 +454,9 @@
       background: var(--surface2);
       border-bottom: 1px solid var(--border);
       white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
     tbody td {
       padding: 12px 14px;
@@ -430,6 +466,7 @@
       vertical-align: middle;
     }
     tbody tr:last-child td { border-bottom: none; }
+    tbody tr { transition: background 0.12s ease; }
     tbody tr:hover { background: var(--surface2); }
     .td-bold { font-weight: 600; color: var(--text-1); }
     .td-mono { font-family: 'Courier New', monospace; font-size: 0.75rem; }
@@ -443,9 +480,10 @@
       cursor: pointer;
       color: var(--text-3);
       font-size: 0.72rem;
-      transition: all 0.15s;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
     }
     .action-btn:hover { background: var(--brand-glow); color: var(--brand-mid); border-color: var(--brand-mid); }
+    .action-btn:active { transform: scale(0.92); }
     .action-btn.danger:hover { background: #fee2e2; color: var(--danger); border-color: #fca5a5; }
 
     /* ── BADGES & STATUSES ── */
@@ -666,10 +704,36 @@
     .empty-state {
       text-align: center;
       padding: 48px 24px;
-      color: var(--text-4);
+      color: var(--text-3);
     }
-    .empty-state i { font-size: 2rem; margin-bottom: 12px; display: block; opacity: 0.4; }
-    .empty-state p { font-size: 0.82rem; }
+    .empty-state i {
+      font-size: 1.3rem;
+      width: 56px; height: 56px;
+      margin: 0 auto 14px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: var(--brand-glow);
+      color: var(--brand-mid);
+      opacity: 1;
+    }
+    .empty-state p { font-size: 0.82rem; max-width: 320px; margin: 0 auto; line-height: 1.5; }
+
+    /* ── DARK MODE: components that hard-code light pastel fills ──
+       The status badges, KPI icon tiles and trend chips above use fixed
+       light backgrounds (#dcfce7, #fee2e2, ...) that read as glaring
+       white-ish blocks on the dark surface. Re-tint them as translucent
+       washes of their own semantic color so they sit in the dark theme. */
+    body.dark .badge-success, body.dark .kpi-icon.green, body.dark .kpi-trend.up   { background: rgba(34,197,94,0.15);  color: #4ade80; }
+    body.dark .badge-danger,  body.dark .kpi-icon.red,   body.dark .kpi-trend.down { background: rgba(248,113,113,0.15); color: #f87171; }
+    body.dark .badge-warning, body.dark .kpi-icon.amber  { background: rgba(251,191,36,0.15);  color: #fbbf24; }
+    body.dark .badge-info,    body.dark .kpi-icon.blue   { background: rgba(56,189,248,0.15);  color: #38bdf8; }
+    body.dark .kpi-icon.purple { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    body.dark .action-btn.danger:hover, body.dark .modal-close:hover { background: rgba(248,113,113,0.15); color: #f87171; border-color: rgba(248,113,113,0.4); }
+
+    /* ── REDUCED MOTION ── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    }
 
     /* ── UPGRADE BANNER (hidden in Pro) ── */
     .upgrade-bar { display: none !important; }
@@ -1121,6 +1185,7 @@
       <div class="nav-section-label">Sales</div>
       <div class="nav-item" data-page="customers" data-label="Customers"><i class="fas fa-users"></i> <span>Customers</span></div>
       <div class="nav-item" data-page="invoices" data-label="Invoices"><i class="fas fa-file-invoice-dollar"></i> <span>Invoices</span></div>
+      <div class="nav-item" data-page="quotes" data-label="Quotes"><i class="fas fa-file-signature"></i> <span>Quotes</span></div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Purchasing</div>
@@ -1184,6 +1249,7 @@
     <div id="reportsView"    class="view"></div>
     <div id="customersView"  class="view"></div>
     <div id="invoicesView"   class="view"></div>
+    <div id="quotesView"     class="view"></div>
     <div id="vendorsView"    class="view"></div>
     <div id="purchaseordersView" class="view"></div>
     <div id="recurringbillingView" class="view"></div>
@@ -1320,25 +1386,51 @@ function isViewer() { return getCurrentUser().role === 'viewer'; }
 function rbacHide(selector) {
   document.querySelectorAll(selector).forEach(el => el.style.display = 'none');
 }
+
+// Every function name that creates, edits, deletes, pays, posts, or otherwise
+// mutates data. Matched EXACTLY against the first identifier in each
+// element's onclick, not by substring — the old version matched on
+// substrings like "add"/"pay"/"post" but never matched "open...Modal",
+// which is what almost every "New X" button actually calls, so those
+// buttons were never hidden for viewers. Mirrors the requireRole() gates
+// already enforced on the backend routes, so hidden here == rejected there.
+const RBAC_WRITE_ACTIONS = new Set([
+  'openAddAccountModal','openAssetModal','openBankModal','openBankTxModal','openBillModal',
+  'openBillPaymentSelector','openBudgetModal','openCustomerModal','openCustomerPaymentModal',
+  'openDrawingsModal','openEditProductModal','openEmployeeModal','openInvoiceModal','openJournalModal',
+  'openOBModal','openPOModal','openPayrollRunModal','openProductModal','openRBModal',
+  'openQuoteModal',
+  'openReconcileView','openReturnModal','openStockModal','openVendorModal','openVendorPaymentModal',
+  'openYearEndWizard','showAddCustomer',
+  'saveAccount','saveAsset','saveBankAccount','saveBankTx','saveBill','saveBudget','saveCustomer',
+  'saveDrawings','saveEmployee','saveInvoice','saveJournalEntry','saveOpeningBalances',
+  'saveOpeningBalancesFromPage','savePO','saveProduct','saveProductEdit','saveRB','saveReturn',
+  'saveQuote',
+  'saveSettings','saveStockAdj','saveVendor',
+  'deleteAccount','deleteAsset','deleteBankAccount','deleteBill','deleteCustomer','deleteEmployee',
+  'deleteInvoice','deleteJournalEntry','deletePO','deleteProduct','deleteRB','deleteVendor',
+  'deleteQuote',
+  'bulkDeleteBills','bulkDeleteCustomers','bulkDeleteInvoices',
+  'markBillPaid','markInvoicePaid','markSelectedReconciled','reconcileTx',
+  'submitCustomerPayment','submitVendorPayment',
+  'postDepreciation','issueCreditNote','convertPOtoBill','convertQuoteToInvoice','sendQuoteAction','recordQuoteResponse','toggleRB','runRB',
+  'recordPayroll','confirmAndRunPayroll',
+  'closeFiscalYear','confirmYearEndClose','reopenFiscalPeriod',
+  'importBankStatement','importCustomersCSV','importData','processStatementFile',
+  'sendInvoiceEmail','sendInvoiceReminder','uploadCompanyLogo','exportData',
+  'clearAuditLog','clearData'
+]);
+
 function applyRBAC() {
   const user = getCurrentUser();
   const role = user.role || 'admin';
 
   if (role === 'viewer') {
-    // Hide ALL create/edit/delete buttons for viewers
-    rbacHide('.btn-primary:not(.rbac-allow)');
-    rbacHide('.btn-danger');
-    rbacHide('.btn-success');
-    rbacHide('[onclick*="save"], [onclick*="Save"]');
-    rbacHide('[onclick*="add"], [onclick*="Add"]');
-    rbacHide('[onclick*="create"], [onclick*="Create"]');
-    rbacHide('[onclick*="delete"], [onclick*="Delete"]');
-    rbacHide('[onclick*="remove"], [onclick*="Remove"]');
-    rbacHide('[onclick*="pay"], [onclick*="Pay"]');
-    rbacHide('[onclick*="run"], [onclick*="Run"]');
-    rbacHide('[onclick*="post"], [onclick*="Post"]');
+    document.querySelectorAll('[onclick]').forEach(el => {
+      const m = (el.getAttribute('onclick') || '').match(/^\s*(?:window\.)?([A-Za-z_$][\w$]*)\s*\(/);
+      if (m && RBAC_WRITE_ACTIONS.has(m[1])) el.style.display = 'none';
+    });
     rbacHide('#collapseSidebarBtn');
-    showToast('You are logged in as Viewer — read only access', 'info');
   }
 
   if (role === 'accountant') {
@@ -1392,8 +1484,9 @@ let accounts = [], journalEntries = [], customers = [], invoices = [];
 let vendors = [], bills = [], bankAccounts = [], bankTransactions = [];
 let products = [], inventoryMovements = [], budgets = [], employees = [];
 let customerPayments = [], vendorPayments = [], assets = [], payrollRuns = [], openingBalances = {};
-let purchaseOrders = JSON.parse(localStorage.getItem('at_pos')||'[]');
-let recurringBillings = JSON.parse(localStorage.getItem('at_recurring')||'[]');
+let purchaseOrders = []; // populated from the backend by loadAllData(), like every other collection
+let quotes = []; // populated from the backend by loadAllData()
+let recurringBillings = []; // populated from the backend by loadAllData()
 let settings = {};
 let currentPage = 'dashboard';
 let allTransactionRows = [];
@@ -1406,6 +1499,7 @@ const PAGE_LABELS = {
   budgets:'Budgets', products:'Products & Inventory', employees:'Payroll',
   settings:'Settings', help:'Help', assets:'Asset Register', audittrail:'Audit Trail',
   purchaseorders:'Purchase Orders',
+  quotes:'Quotes',
   recurringbilling:'Recurring Billing',
 };
 
@@ -1451,7 +1545,7 @@ async function loadAllData() {
           : `Stale — last successful update: ${new Date(exchangeRates._lastUpdated).toLocaleString()}`;
       }
     });
-    const [acc, je, cust, inv, vend, bill, prod, emp, ast, set] = await Promise.all([  apiFetch('/accounts').catch(() => []),
+    const [acc, je, cust, inv, vend, bill, prod, emp, ast, set, po] = await Promise.all([  apiFetch('/accounts').catch(() => []),
   apiFetch('/journals').catch(() => []),
   apiFetch('/customers').catch(() => []),
   apiFetch('/invoices').catch(() => []),
@@ -1460,7 +1554,8 @@ async function loadAllData() {
   apiFetch('/products').catch(() => []),
   apiFetch('/employees').catch(() => []),
   apiFetch('/assets').catch(() => []),
-  apiFetch('/company/settings').catch(() => ({}))
+  apiFetch('/company/settings').catch(() => ({})),
+  apiFetch('/purchase-orders').catch(() => [])
 ]);
   const payrollData = await apiFetch('/payroll/runs').catch(() => []);
   payrollRuns = payrollData;
@@ -1477,18 +1572,21 @@ async function loadAllData() {
 })) : arr;
     accounts = norm(acc); journalEntries = norm(je); customers = norm(cust); invoices = norm(inv);
     vendors = norm(vend); bills = norm(bill); products = norm(prod); employees = norm(emp);
-    assets = norm(ast); settings = set;
+    assets = norm(ast); settings = set; purchaseOrders = norm(po);
 
-    const [bankAcc, bankTx, budgetData, custPay, vendPay, obData] = await Promise.all([
+    const [bankAcc, bankTx, budgetData, custPay, vendPay, obData, rbData, quoteData] = await Promise.all([
       apiFetch('/bankaccounts').catch(() => []),
       apiFetch('/banktransactions').catch(() => []),
       apiFetch('/budgets').catch(() => []),
       apiFetch('/customerpayments').catch(() => []),
       apiFetch('/vendorpayments').catch(() => []),
-      apiFetch('/openingbalances').catch(() => ({}))
+      apiFetch('/openingbalances').catch(() => ({})),
+      apiFetch('/recurring-billings').catch(() => []),
+      apiFetch('/quotes').catch(() => [])
     ]);
     bankAccounts = norm(bankAcc); bankTransactions = norm(bankTx); budgets = norm(budgetData);
     customerPayments = norm(custPay); vendorPayments = norm(vendPay); openingBalances = obData;
+    recurringBillings = norm(rbData); quotes = norm(quoteData);
 
     applySettings();
     checkOverdueInvoices();
@@ -1541,7 +1639,7 @@ function getNotifItems() {
   (products || []).filter(p => (p.stock || 0) <= 5)
     .forEach(p => items.push({
       icon: 'fa-boxes', color: '#d97706',
-      text: `${p.name} is low on stock`,
+      text: `${esc(p.name)} is low on stock`,
       sub: `${p.stock || 0} unit(s) remaining`,
       page: 'products'
     }));
@@ -1566,7 +1664,7 @@ function renderNotifPanel() {
     : '<div class="notif-panel-header">Notifications</div>' + items.map(n =>
         `<div class="notif-item" onclick="navigateTo('${n.page}'); toggleNotifPanel(true);">
           <i class="fas ${n.icon}" style="color:${n.color};"></i>
-          <div><div class="notif-text">${n.text}</div><div class="notif-sub">${n.sub}</div></div>
+          <div><div class="notif-text">${esc(n.text)}</div><div class="notif-sub">${esc(n.sub)}</div></div>
         </div>`
       ).join('');
 }
@@ -1600,7 +1698,7 @@ function checkBudgetAlerts() {
     if (actual > budget) {
       const percent = Math.round((actual / budget) * 100);
       if (percent > 100) {
-        showToast(`⚠️ Budget exceeded: ${acc.name} is ${fmt(actual - budget)} over budget (${percent}%).`, 'warning');
+        showToast(`⚠️ Budget exceeded: ${esc(acc.name)} is ${fmt(actual - budget)} over budget (${percent}%).`, 'warning');
       }
     }
   });
@@ -2067,6 +2165,20 @@ function obSetActiveDot(step) {
 
 
 // ─── UTILITIES ───────────────────────────────────────────────────────
+// HTML-escapes any value before it's interpolated into a template literal
+// that gets assigned to innerHTML. Applied to every field a user can type
+// into a form (names, addresses, notes, descriptions, ...) -- none of
+// those were escaped before, so a customer/product/vendor/employee name (or
+// company settings, invoice notes, etc.) containing HTML would render as
+// live markup for anyone who viewed that record, including things like an
+// <img onerror=...> tag that runs script. Safe to call on numbers/undefined
+// too -- they pass through unchanged.
+function esc(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 const fmt = (n) => (settings.currency || '₦') + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 });
 const genId = () => Date.now() + Math.floor(Math.random() * 9999);
 const today = () => new Date().toISOString().split('T')[0];
@@ -2153,6 +2265,7 @@ function showModal(head, body, footer, opts = {}) {
     </div>`;
   m.addEventListener('click', e => { if (e.target === m) m.remove(); });
   document.getElementById('modalContainer').appendChild(m);
+  applyRBAC();
   return id;
 }
 function closeTopModal() { document.querySelector('.modal-overlay:last-child')?.remove(); }
@@ -2348,7 +2461,7 @@ window.openCustomerPaymentModal = (invoiceId) => {
   const c = customers.find(x => x.id == inv.customerId || x._id == inv.customerId);
   const balance = inv.balance !== undefined ? inv.balance : inv.total;
   const bankOpts = [{ code:'1000', name:'Cash & Cash Equivalents' }, ...bankAccounts]
-    .map(b => `<option value="${b.code||'1000'}">${b.name}</option>`).join('');
+    .map(b => `<option value="${esc(b.code||'1000')}">${esc(b.name)}</option>`).join('');
   const payHistory = (inv.payments||[]).length
     ? inv.payments.map(p =>
         `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:0.78rem;border-bottom:1px solid var(--border);">
@@ -2429,7 +2542,7 @@ window.openVendorPaymentModal = (billId) => {
   let vendor = vendors.find(v => v.id == (bill.vendorId?._id || bill.vendorId) || v._id == (bill.vendorId?._id || bill.vendorId));
   const balance = bill.balance !== undefined ? bill.balance : bill.total;
   const bankOpts = [{ code:'1000', name:'Cash & Cash Equivalents' }, ...bankAccounts]
-    .map(b => `<option value="${b.code||'1000'}">${b.name}</option>`).join('');
+    .map(b => `<option value="${esc(b.code||'1000')}">${esc(b.name)}</option>`).join('');
   const payHistory = (bill.payments||[]).length
     ? bill.payments.map(p =>
         `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:0.78rem;border-bottom:1px solid var(--border);">
@@ -2505,7 +2618,7 @@ async function recordVendorPayment(vendorId, billId, amount, date, bankCode) {
 
 // ─── OWNER DRAWINGS ──────────────────────────────────────────────────
 window.openDrawingsModal = function() {
-  var opts = bankAccounts.map(b => `<option value="${b.code||'1000'}">${b.name}</option>`).join('');
+  var opts = bankAccounts.map(b => `<option value="${esc(b.code||'1000')}">${esc(b.name)}</option>`).join('');
   showModal('Record Owner Drawings',
     `<div class="form-group"><label class="form-label required">Date</label><input type="date" class="form-control" id="drDate" value="${today()}"></div>
     <div class="form-row cols-2">
@@ -2583,7 +2696,7 @@ function renderDashboard() {
   const recentActivity = [
     ...invoices.slice(-5).map(i=> ({ type:'invoice', text:`Invoice <strong>${i.number}</strong> — ${fmt(i.total)}`, time: i.date, color:'blue' })),
     ...bills.slice(-3).map(b => ({ type:'bill', text:`Bill <strong>${b.number}</strong> received`, time: b.date, color:'amber' })),
-    ...employees.slice(-2).map(e=> ({ type:'payroll', text:`Employee <strong>${e.name}</strong> added`, time: today(), color:'green' }))
+    ...employees.slice(-2).map(e=> ({ type:'payroll', text:`Employee <strong>${esc(e.name)}</strong> added`, time: today(), color:'green' }))
   ].sort((a,b)=>b.time>a.time?1:-1).slice(0,7);
 
   // Nigerian compliance deadlines
@@ -2772,7 +2885,7 @@ if (recurringDue.length > 0) {
                 const c = customers.find(c=>(c._id||c.id)==(inv.customerId?._id||inv.customerId));
                 return `<tr>
                   <td class="td-bold td-mono">${inv.number}${inv.currency&&inv.currency!=='NGN'?' <span class="badge badge-info">'+inv.currency+'</span>':''}</td>
-                  <td>${c?.name||'—'}</td>
+                  <td>${esc(c?.name||'—')}</td>
                   <td>${inv.date}</td>
                   <td class="td-bold">${fmt(inv.total)}</td>
                   <td>${statusBadge(inv.status==='unpaid' && inv.dueDate < today() ? 'overdue' : inv.status)}</td>
@@ -2790,7 +2903,7 @@ if (recurringDue.length > 0) {
           ${recentActivity.length===0 ? `<div class="empty-state" style="padding:24px"><i class="fas fa-inbox"></i><p>No activity yet</p></div>` :
           recentActivity.map(a=>`<div class="activity-item">
             <div class="activity-dot ${a.color}" style="margin-top:4px;"></div>
-            <div><div class="activity-text">${a.text}</div><div class="activity-time">${a.time}</div></div>
+            <div><div class="activity-text">${esc(a.text)}</div><div class="activity-time">${esc(a.time)}</div></div>
           </div>`).join('')}
         </div>
       </div>
@@ -2809,10 +2922,10 @@ function renderCustomersView() {
     const safeId = String(c.id);
     return `<tr>
       <td><input type="checkbox" class="cust-check" value="${safeId}" onchange="updateCustBulkBar()"></td>
-      <td class="td-bold">${c.name}</td>
-      <td>${c.email||'—'}</td>
-      <td>${c.phone||'—'}</td>
-      <td>${c.address||'—'}</td>
+      <td class="td-bold">${esc(c.name)}</td>
+      <td>${esc(c.email||'—')}</td>
+      <td>${esc(c.phone||'—')}</td>
+      <td>${esc(c.address||'—')}</td>
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
         <div class="action-btn" onclick="openInvoiceModal('${safeId}')" title="New Invoice"><i class="fas fa-file-invoice-dollar"></i></div>
@@ -2854,14 +2967,14 @@ window.openCustomerModal = (id) => {
   const mid = showModal(
     c ? 'Edit Customer' : 'New Customer',
     `<div class="form-row cols-2">
-      <div class="form-group"><label class="form-label required">Full Name</label><input class="form-control" id="custName" value="${c?.name||''}" placeholder="e.g. Dangote Industries Ltd"></div>
-      <div class="form-group"><label class="form-label">Email</label><input class="form-control" id="custEmail" value="${c?.email||''}" placeholder="info@company.com"></div>
+      <div class="form-group"><label class="form-label required">Full Name</label><input class="form-control" id="custName" value="${esc(c?.name||'')}" placeholder="e.g. Dangote Industries Ltd"></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-control" id="custEmail" value="${esc(c?.email||'')}" placeholder="info@company.com"></div>
     </div>
     <div class="form-row cols-2">
-      <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="custPhone" value="${c?.phone||''}" placeholder="+234..."></div>
-      <div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="custTin" value="${c?.tin||''}" placeholder="TIN number"></div>
+      <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="custPhone" value="${esc(c?.phone||'')}" placeholder="+234..."></div>
+      <div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="custTin" value="${esc(c?.tin||'')}" placeholder="TIN number"></div>
     </div>
-    <div class="form-group"><label class="form-label">Billing Address</label><textarea class="form-control" id="custAddress" rows="2" placeholder="Street, City, State">${c?.address||''}</textarea></div>
+    <div class="form-group"><label class="form-label">Billing Address</label><textarea class="form-control" id="custAddress" rows="2" placeholder="Street, City, State">${esc(c?.address||'')}</textarea></div>
     <div class="form-group"><label class="form-label"><i class="fas fa-paperclip"></i> Attachment (Contract/ID)</label>
     <input type="file" class="form-control" id="custAttachment" accept=".pdf,.jpg,.png"></div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
@@ -3023,9 +3136,9 @@ window.openInvoiceModal = (presetCustomerId) => {
   if (customers.length===0) return alert('Please add a customer first.');
   const custOpts = customers.map(c => {
     const cid = String(c.id);
-    return `<option value="${cid}" ${cid === presetCustomerId ? 'selected' : ''}>${c.name}</option>`;
+    return `<option value="${cid}" ${cid === presetCustomerId ? 'selected' : ''}>${esc(c.name)}</option>`;
   }).join('');
-  const prodOpts = products.map(p=>`<option value="${p._id||p.id}" data-price="${p.price}" data-cost="${p.cost}">${p.name} (${fmt(p.price)})</option>`).join('');
+  const prodOpts = products.map(p=>`<option value="${p._id||p.id}" data-price="${p.price}" data-cost="${p.cost}">${esc(p.name)} (${fmt(p.price)})</option>`).join('');
   const mid = showModal(
     'New Invoice', `
     <div class="form-row cols-3">
@@ -3049,12 +3162,13 @@ window.openInvoiceModal = (presetCustomerId) => {
 <div id="recurringOptions" style="display:none;margin-top:8px;">
   <div class="form-row cols-2">
     <div class="form-group"><label class="form-label">Frequency</label>
-<select class="form-control" id="invRecurFreq">
+      <select class="form-control" id="invRecurFreq">
         <option value="monthly">Monthly</option>
         <option value="quarterly">Quarterly</option>
         <option value="weekly">Weekly</option>
         <option value="annually">Annually</option>
-      </select></div>    <div class="form-group"><label class="form-label">End Date (optional)</label>
+      </select></div>
+    <div class="form-group"><label class="form-label">End Date (optional)</label>
       <input type="date" class="form-control" id="invRecurEnd"></div>
   </div>
 </div>
@@ -3076,7 +3190,7 @@ window.openInvoiceModal = (presetCustomerId) => {
     <div class="form-group">
       <label class="form-label"><i class="fas fa-lock" style="font-size:0.72rem;margin-right:4px;color:var(--text-3);"></i>Internal Note <span style="font-size:0.72rem;color:var(--text-3);">(private — not printed on invoice)</span></label>
       <textarea class="form-control" id="invInternalNote" rows="2" placeholder="Private notes visible only to your team..."></textarea>
-    </div>`,    
+    </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
      <button class="btn btn-primary" onclick="saveInvoice()"><i class="fas fa-save"></i> Save & Post</button>`,
     { width: '760px' }
@@ -3333,7 +3447,7 @@ window.showCustomerStatement = function(customerId) {
 
   // (the rest of the statement window remains unchanged – copy it from your existing function)
   const w = window.open('','_blank','width=800,height=700');
-  w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${cust.name}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${esc(cust.name)}</title>
   <style>body{font-family:Arial,sans-serif;max-width:760px;margin:32px auto;color:#1a1a1a;font-size:13px;}
   .hdr{display:flex;justify-content:space-between;margin-bottom:24px;}
   .co{font-size:18px;font-weight:700;color:#0a4f45;}
@@ -3346,14 +3460,14 @@ window.showCustomerStatement = function(customerId) {
   .footer{text-align:center;margin-top:32px;font-size:11px;color:#999;}
   @media print{button{display:none;}}</style></head><body>
   <div class="hdr">
-    <div><div class="co">${settings.companyName||'My Company'}</div>
-      <div style="font-size:11px;color:#666;">${settings.companyAddress||''}<br>TIN: ${settings.companyTaxId||'N/A'}</div></div>
+    <div><div class="co">${esc(settings.companyName||'My Company')}</div>
+      <div style="font-size:11px;color:#666;">${esc(settings.companyAddress||'')}<br>TIN: ${esc(settings.companyTaxId||'N/A')}</div></div>
     <div style="text-align:right;"><div style="font-size:16px;font-weight:700;">Account Statement</div>
       <div style="font-size:11px;color:#666;">As at ${today()}</div></div>
   </div>
   <div style="background:#e8f5e9;padding:12px 16px;border-radius:6px;margin-bottom:16px;">
-    <div style="font-weight:700;font-size:14px;">${cust.name}</div>
-    <div style="font-size:11px;color:#555;">${cust.email||''} · ${cust.phone||''} · ${cust.address||''}</div>
+    <div style="font-weight:700;font-size:14px;">${esc(cust.name)}</div>
+    <div style="font-size:11px;color:#555;">${esc(cust.email||'')} · ${esc(cust.phone||'')} · ${esc(cust.address||'')}</div>
   </div>
   <table>
     <thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Paid</th><th>Balance</th></tr></thead>
@@ -3364,7 +3478,7 @@ window.showCustomerStatement = function(customerId) {
     <div class="sum-box"><div style="font-size:11px;color:#666;">Total Paid</div><div class="sum-val" style="color:#16a34a;">${fmt(custPayments)}</div></div>
     <div class="sum-box"><div style="font-size:11px;color:#666;">Outstanding Balance</div><div class="sum-val" style="color:${custOutstanding>0?'#dc2626':'#16a34a'};">${fmt(custOutstanding)}</div></div>
   </div>
-  <div class="footer">Generated by AccounTrack™ Pro · ${settings.companyName||''} · ${today()}</div>
+  <div class="footer">Generated by AccounTrack™ Pro · ${esc(settings.companyName||'')} · ${today()}</div>
   <div style="text-align:center;margin-top:16px;">
     <button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">Print / Save as PDF</button>
   </div>
@@ -3454,11 +3568,11 @@ window.viewInvoice = (id) => {
   const c = customers.find(x=>(x._id||x.id)==(inv._customerName?inv.customerId:(inv.customerId?._id||inv.customerId)));
   showModal(`Invoice ${inv.number}`,`
     <div style="display:flex;justify-content:space-between;margin-bottom:16px;">
-      <div><div style="font-size:0.8rem;color:var(--text-3);">Bill To</div><strong>${c?.name||'—'}</strong><div style="font-size:0.78rem;color:var(--text-3);">${c?.email||''}</div></div>
+      <div><div style="font-size:0.8rem;color:var(--text-3);">Bill To</div><strong>${esc(c?.name||'—')}</strong><div style="font-size:0.78rem;color:var(--text-3);">${esc(c?.email||'')}</div></div>
       <div style="text-align:right;"><div style="font-size:0.8rem;color:var(--text-3);">Date: ${inv.date}</div><div style="font-size:0.8rem;color:var(--text-3);">Due: ${inv.dueDate}</div><div style="margin-top:6px;">${statusBadge(inv.status)}</div></div>
     </div>
     <table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
-    <tbody>${inv.lines.map(l=>`<tr><td>${l.description}</td><td>${l.quantity}</td><td>${fmt(l.rate)}</td><td>${fmt(l.amount)}</td></tr>`).join('')}</tbody></table>
+    <tbody>${inv.lines.map(l=>`<tr><td>${esc(l.description)}</td><td>${l.quantity}</td><td>${fmt(l.rate)}</td><td>${fmt(l.amount)}</td></tr>`).join('')}</tbody></table>
     <div style="margin-top:12px;text-align:right;">
       <div>Subtotal: <strong>${fmt(inv.subtotal||inv.total)}</strong></div>
       <div>VAT: <strong>${fmt(inv.vat||0)}</strong></div>
@@ -3717,7 +3831,7 @@ function buildInvoiceLineRows(inv) {
   return inv.lines.map(function(line, index) {
     return `<tr>
       <td>${index + 1}</td>
-      <td>${line.description}</td>
+      <td>${esc(line.description)}</td>
       <td style="text-align:center;">${line.quantity}</td>
       <td style="text-align:right;">${invFmt(line.rate, inv)}</td>
       <td style="text-align:right;">${invFmt(line.amount, inv)}</td>
@@ -3744,16 +3858,16 @@ function invoiceActionBar() {
 }
 function invoiceFooter(inv, settings) {
   return `<div class="footer" style="margin-top:32px;padding-top:12px;border-top:2px solid #0a4f45;display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;color:#555;">
-    <div><strong>${settings.companyName || ''}</strong><br>TIN: ${settings.companyTaxId || 'N/A'}<br>Tel: ${settings.companyPhone || ''}</div>
+    <div><strong>${esc(settings.companyName || '')}</strong><br>TIN: ${esc(settings.companyTaxId || 'N/A')}<br>Tel: ${esc(settings.companyPhone || '')}</div>
     <div style="text-align:center;font-size:10px;color:#999;">Generated by AccounTrack™ Pro<br>NTA 2025 Compliant · ${today()}</div>
-    <div style="text-align:right;">Payment Terms: ${settings.defaultDueDays || 30} days<br><em>${settings.defaultInvoiceNotes || 'Thank you for your business.'}</em></div>
+    <div style="text-align:right;">Payment Terms: ${settings.defaultDueDays || 30} days<br><em>${esc(settings.defaultInvoiceNotes || 'Thank you for your business.')}</em></div>
   </div>`;
 }
 function invoiceLogoHtml(settings, color) {
-  const logo = settings.companyLogo || localStorage.getItem('at_logo') || '';
+  const logo = settings.companyLogo || '';
   return logo
     ? `<img src="${logo}" style="height:52px;object-fit:contain;border-radius:4px;">`
-    : `<div style="font-size:22px;font-weight:800;color:${color};">${settings.companyName || 'My Company'}</div>`;
+    : `<div style="font-size:22px;font-weight:800;color:${color};">${esc(settings.companyName || 'My Company')}</div>`;
 }
 
 // CLASSIC — light header band, centered green rule, traditional invoice look.
@@ -3773,10 +3887,10 @@ function renderClassicInvoiceTemplate(inv, customer, settings) {
   </style></head><body>
     <div style="background:#f9f9f9;border-bottom:2px solid #0a4f45;padding:20px 32px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>${invoiceLogoHtml(settings, '#0a4f45')}<div style="font-size:11px;color:#666;margin-top:4px;">${settings.companyAddress || ''}</div></div>
+        <div>${invoiceLogoHtml(settings, '#0a4f45')}<div style="font-size:11px;color:#666;margin-top:4px;">${esc(settings.companyAddress || '')}</div></div>
         <div style="text-align:right;"><div style="font-size:22px;font-weight:800;color:#0a4f45;">INVOICE</div>
-          <div style="font-size:11px;color:#64748b;margin-top:3px;">${settings.companyEmail || ''}&nbsp;&nbsp;${settings.companyPhone || ''}</div>
-          ${settings.companyTaxId ? `<div style="font-size:11px;color:#64748b;">TIN: ${settings.companyTaxId}</div>` : ''}
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">${esc(settings.companyEmail || '')}&nbsp;&nbsp;${esc(settings.companyPhone || '')}</div>
+          ${settings.companyTaxId ? `<div style="font-size:11px;color:#64748b;">TIN: ${esc(settings.companyTaxId)}</div>` : ''}
         </div>
         <div style="text-align:right;">
           <div style="font-size:22px;font-weight:700;color:#0a4f45;font-family:Arial,sans-serif;">TAX INVOICE</div>
@@ -3790,9 +3904,9 @@ function renderClassicInvoiceTemplate(inv, customer, settings) {
     <div style="margin:28px 32px;">
       <div class="bt-label">Bill To</div>
       <div class="bt-name">${customer ? customer.name : '—'}</div>
-      ${customer && customer.email ? `<div style="color:#64748b;font-family:Arial,sans-serif;">${customer.email}</div>` : ''}
-      ${customer && customer.address ? `<div style="color:#64748b;font-family:Arial,sans-serif;">${customer.address}</div>` : ''}
-      ${customer && customer.tin ? `<div style="color:#64748b;font-family:Arial,sans-serif;">TIN: ${customer.tin}</div>` : ''}
+      ${customer && customer.email ? `<div style="color:#64748b;font-family:Arial,sans-serif;">${esc(customer.email)}</div>` : ''}
+      ${customer && customer.address ? `<div style="color:#64748b;font-family:Arial,sans-serif;">${esc(customer.address)}</div>` : ''}
+      ${customer && customer.tin ? `<div style="color:#64748b;font-family:Arial,sans-serif;">TIN: ${esc(customer.tin)}</div>` : ''}
     </div>
     <div style="margin:0 32px;">
     <table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${buildInvoiceLineRows(inv)}</tbody></table>
@@ -3802,7 +3916,7 @@ function renderClassicInvoiceTemplate(inv, customer, settings) {
       <div class="tot-row grand"><span>TOTAL DUE:</span><span>${invFmt(inv.total, inv)}</span></div>
     </div>
     ${buildInvoiceCurrencyNote(inv)}
-    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;font-family:Arial,sans-serif;"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;font-family:Arial,sans-serif;"><strong>Notes:</strong> ${esc(inv.notes)}</div>` : ''}
     ${invoiceActionBar()}
     ${invoiceFooter(inv, settings)}
     </div>
@@ -3826,9 +3940,9 @@ function renderModernInvoiceTemplate(inv, customer, settings) {
   </style></head><body>
     <div style="background:#0a4f45;color:white;padding:36px 40px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>${invoiceLogoHtml(settings, 'white')}<div style="font-size:11px;color:rgba(255,255,255,0.75);margin-top:6px;">${settings.companyAddress || ''}</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.75);">${settings.companyEmail || ''}&nbsp;&nbsp;${settings.companyPhone || ''}</div>
-          ${settings.companyTaxId ? `<div style="font-size:11px;color:rgba(255,255,255,0.75);">TIN: ${settings.companyTaxId}</div>` : ''}
+        <div>${invoiceLogoHtml(settings, 'white')}<div style="font-size:11px;color:rgba(255,255,255,0.75);margin-top:6px;">${esc(settings.companyAddress || '')}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.75);">${esc(settings.companyEmail || '')}&nbsp;&nbsp;${esc(settings.companyPhone || '')}</div>
+          ${settings.companyTaxId ? `<div style="font-size:11px;color:rgba(255,255,255,0.75);">TIN: ${esc(settings.companyTaxId)}</div>` : ''}
         </div>
         <div style="text-align:right;">
           <div style="font-size:30px;font-weight:800;letter-spacing:0.03em;">INVOICE</div>
@@ -3842,9 +3956,9 @@ function renderModernInvoiceTemplate(inv, customer, settings) {
       <div style="margin-bottom:24px;">
         <div class="bt-label">Bill To</div>
         <div class="bt-name">${customer ? customer.name : '—'}</div>
-        ${customer && customer.email ? `<div style="color:#64748b;">${customer.email}</div>` : ''}
-        ${customer && customer.address ? `<div style="color:#64748b;">${customer.address}</div>` : ''}
-        ${customer && customer.tin ? `<div style="color:#64748b;">TIN: ${customer.tin}</div>` : ''}
+        ${customer && customer.email ? `<div style="color:#64748b;">${esc(customer.email)}</div>` : ''}
+        ${customer && customer.address ? `<div style="color:#64748b;">${esc(customer.address)}</div>` : ''}
+        ${customer && customer.tin ? `<div style="color:#64748b;">TIN: ${esc(customer.tin)}</div>` : ''}
       </div>
       <table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${buildInvoiceLineRows(inv)}</tbody></table>
       <div style="display:flex;justify-content:flex-end;">
@@ -3855,7 +3969,7 @@ function renderModernInvoiceTemplate(inv, customer, settings) {
         </div>
       </div>
       ${buildInvoiceCurrencyNote(inv)}
-      ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+      ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;"><strong>Notes:</strong> ${esc(inv.notes)}</div>` : ''}
       ${invoiceActionBar()}
       ${invoiceFooter(inv, settings)}
     </div>
@@ -3878,8 +3992,8 @@ function renderMinimalInvoiceTemplate(inv, customer, settings) {
   </style></head><body>
     <div style="border-bottom:3px solid #0a4f45;padding-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>${invoiceLogoHtml(settings, '#0a4f45')}<div style="font-size:11px;color:#666;margin-top:4px;">${settings.companyAddress || ''}</div>
-          <div style="font-size:11px;color:#666;">${settings.companyEmail || ''}&nbsp;&nbsp;${settings.companyPhone || ''}</div>
+        <div>${invoiceLogoHtml(settings, '#0a4f45')}<div style="font-size:11px;color:#666;margin-top:4px;">${esc(settings.companyAddress || '')}</div>
+          <div style="font-size:11px;color:#666;">${esc(settings.companyEmail || '')}&nbsp;&nbsp;${esc(settings.companyPhone || '')}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:18px;font-weight:600;letter-spacing:0.08em;color:#1a202c;">INVOICE</div>
@@ -3892,8 +4006,8 @@ function renderMinimalInvoiceTemplate(inv, customer, settings) {
     <div style="margin:24px 0;">
       <div class="bt-label">Bill To</div>
       <div class="bt-name">${customer ? customer.name : '—'}</div>
-      ${customer && customer.email ? `<div style="color:#64748b;">${customer.email}</div>` : ''}
-      ${customer && customer.address ? `<div style="color:#64748b;">${customer.address}</div>` : ''}
+      ${customer && customer.email ? `<div style="color:#64748b;">${esc(customer.email)}</div>` : ''}
+      ${customer && customer.address ? `<div style="color:#64748b;">${esc(customer.address)}</div>` : ''}
     </div>
     <table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${buildInvoiceLineRows(inv)}</tbody></table>
     <div class="totals">
@@ -3902,7 +4016,7 @@ function renderMinimalInvoiceTemplate(inv, customer, settings) {
       <div class="tot-row grand"><span>Total Due</span><span>${invFmt(inv.total, inv)}</span></div>
     </div>
     ${buildInvoiceCurrencyNote(inv)}
-    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;">${inv.notes}</div>` : ''}
+    ${inv.notes ? `<div style="margin-top:20px;font-size:11px;color:#64748b;">${esc(inv.notes)}</div>` : ''}
     ${invoiceActionBar()}
     ${invoiceFooter(inv, settings)}
   </body></html>`;
@@ -3947,7 +4061,7 @@ window.exportInvoicesCSV = () => {
   const csv = 'Invoice#,Customer,Date,Due,Subtotal,VAT,Total,Status\n' +
     invoices.map(i => {
       const c = customers.find(x=>x.id===i.customerId);
-      return `${i.number},"${c?.name||''}",${i.date},${i.dueDate},${i.subtotal||i.total},${i.vat||0},${i.total},${i.status}`;
+      return `${i.number},"${esc(c?.name||'')}",${i.date},${i.dueDate},${i.subtotal||i.total},${i.vat||0},${i.total},${i.status}`;
     }).join('\n');
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv],{type:'text/csv'})), download:'invoices.csv' });
   a.click();
@@ -3996,7 +4110,7 @@ function renderVendorsView() {
   const rows = pagedVend.map(v => {
     const out = bills.filter(b=>String(b.vendorId?._id||b.vendorId)===String(v._id||v.id)&&b.status!=='paid').reduce((s,b)=>s+(b.balance!==undefined?b.balance:b.total),0);
     return `<tr>
-      <td class="td-bold">${v.name}${v.notes?`<div style="font-size:0.7rem;color:var(--text-3);margin-top:2px;"><i class="fas fa-sticky-note"></i> ${v.notes.substring(0,40)}${v.notes.length>40?'...':''}</div>`:''}</td><td>${v.email||'—'}</td><td>${v.phone||'—'}</td>
+      <td class="td-bold">${esc(v.name)}${v.notes?`<div style="font-size:0.7rem;color:var(--text-3);margin-top:2px;"><i class="fas fa-sticky-note"></i> ${v.notes.substring(0,40)}${v.notes.length>40?'...':''}</div>`:''}</td><td>${esc(v.email||'—')}</td><td>${esc(v.phone||'—')}</td>
       <td class="td-bold">${fmt(out)}</td>
       <td><div class="table-actions">
         <div class="action-btn" title="New Bill" onclick="openBillModal('${v.id}')"><i class="fas fa-file-invoice"></i></div>
@@ -4068,7 +4182,7 @@ window.showVendorStatement = function(vendorId) {
     </tr>`;
   }).join('');
   const w = window.open('','_blank','width=820,height=700');
-  w.document.write(`<!DOCTYPE html><html><head><title>Vendor Statement — ${vendor.name}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>Vendor Statement — ${esc(vendor.name)}</title>
   <style>
     body{font-family:Arial,sans-serif;max-width:780px;margin:32px auto;color:#1a1a1a;font-size:13px;}
     .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}
@@ -4085,8 +4199,8 @@ window.showVendorStatement = function(vendorId) {
   </style></head><body>
   <div class="hdr">
     <div>
-      <div class="co">${settings.companyName||'My Company'}</div>
-      <div style="font-size:11px;color:#666;margin-top:2px;">${settings.companyAddress||''}<br>TIN: ${settings.companyTaxId||'N/A'}</div>
+      <div class="co">${esc(settings.companyName||'My Company')}</div>
+      <div style="font-size:11px;color:#666;margin-top:2px;">${esc(settings.companyAddress||'')}<br>TIN: ${esc(settings.companyTaxId||'N/A')}</div>
     </div>
     <div style="text-align:right;">
       <div style="font-size:18px;font-weight:800;color:#0a4f45;">VENDOR STATEMENT</div>
@@ -4094,10 +4208,10 @@ window.showVendorStatement = function(vendorId) {
     </div>
   </div>
   <div class="vendor-box">
-    <div style="font-weight:700;font-size:14px;">${vendor.name}</div>
-    <div style="font-size:11px;color:#555;margin-top:3px;">${vendor.email||''} · ${vendor.phone||''}</div>
-    ${vendor.tin?`<div style="font-size:11px;color:#555;">TIN: ${vendor.tin}</div>`:''}
-    ${vendor.address?`<div style="font-size:11px;color:#555;">${vendor.address}</div>`:''}
+    <div style="font-weight:700;font-size:14px;">${esc(vendor.name)}</div>
+    <div style="font-size:11px;color:#555;margin-top:3px;">${esc(vendor.email||'')} · ${esc(vendor.phone||'')}</div>
+    ${vendor.tin?`<div style="font-size:11px;color:#555;">TIN: ${esc(vendor.tin)}</div>`:''}
+    ${vendor.address?`<div style="font-size:11px;color:#555;">${esc(vendor.address)}</div>`:''}
   </div>
   <table>
     <thead>
@@ -4122,7 +4236,7 @@ window.showVendorStatement = function(vendorId) {
     </div>
   </div>
   <div class="footer">
-    Generated by AccounTrack™ Pro &middot; ${settings.companyName||''} &middot; ${today()}
+    Generated by AccounTrack™ Pro &middot; ${esc(settings.companyName||'')} &middot; ${today()}
   </div>
   <div style="text-align:center;margin-top:16px;">
     <button onclick="window.print()" style="padding:10px 24px;background:#0a4f45;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">Print / Save as PDF</button>
@@ -4259,22 +4373,34 @@ function renderBillsView() {
       '<td class="td-bold" style="color:' +
         (balance > 0.005 ? 'var(--danger)' : 'var(--success)') + ';">' +
         fmt(balance) + '</td>' +
-      '<td>' + statusBadge(displayStatus) + '</td>' +
+      '<td>' + statusBadge(displayStatus) +
+        (b.approvalStatus === 'pending_approval'
+          ? ' <span class="badge" style="background:#dbeafe;color:#1e40af;" title="No journal entry or stock update has been posted yet">Awaiting Approval</span>'
+          : '') + '</td>' +
       '<td><div class="table-actions">' +
-        (b.status !== 'paid'
-          ? '<div class="action-btn" title="Pay Bill" ' +
-            'onclick="openVendorPaymentModal(\'' + bId + '\')" ' +
-            'style="color:var(--warning);border-color:var(--warning);">' +
-            '<i class="fas fa-money-bill-wave"></i></div>'
-          : '') +
-        (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${bId}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
-        '<div class="action-btn" title="Process Return" onclick="openReturnModal(\'purchase\',\'' + bId + '\')" style="color:#d97706;border-color:#d97706;"><i class="fas fa-rotate-left"></i></div>' +
-        '<div class="action-btn danger" title="Void Bill" onclick="deleteBill(\'' + bId + '\')">' +        '<i class="fas fa-trash"></i></div>' +
-        
+        (b.approvalStatus === 'pending_approval'
+          ? (isAdmin()
+              ? '<div class="action-btn" title="Approve Bill" onclick="approveBill(\'' + bId + '\')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-check"></i></div>' +
+                '<div class="action-btn danger" title="Reject Bill" onclick="rejectBill(\'' + bId + '\')"><i class="fas fa-times"></i></div>'
+              : '<span style="font-size:0.72rem;color:var(--text-3);">Awaiting admin sign-off</span>')
+          : (
+            (b.status !== 'paid'
+              ? '<div class="action-btn" title="Pay Bill" ' +
+                'onclick="openVendorPaymentModal(\'' + bId + '\')" ' +
+                'style="color:var(--warning);border-color:var(--warning);">' +
+                '<i class="fas fa-money-bill-wave"></i></div>'
+              : '') +
+            (b.attachment?`<div class="action-btn" title="View Attachment" onclick="viewAttachment('${bId}','bill')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paperclip"></i></div>`:'') +
+            '<div class="action-btn" title="Process Return" onclick="openReturnModal(\'purchase\',\'' + bId + '\')" style="color:#d97706;border-color:#d97706;"><i class="fas fa-rotate-left"></i></div>' +
+            '<div class="action-btn danger" title="Void Bill" onclick="deleteBill(\'' + bId + '\')">' +        '<i class="fas fa-trash"></i></div>'
+          )
+        ) +
       '</div></td></tr>';
   }).join('');
-  // TASK 1: Outstanding uses balance (not total)
-  const unpaid = bills.filter(b => b.status !== 'paid')
+  // TASK 1: Outstanding uses balance (not total). A bill still awaiting
+  // approval has no posted journal entry yet, so it isn't a recognized
+  // liability — counting it here would overstate what's actually owed.
+  const unpaid = bills.filter(b => b.status !== 'paid' && b.approvalStatus !== 'pending_approval')
     .reduce((s, b) => s + (b.balance !== undefined ? b.balance : b.total), 0);
   document.getElementById('billsView').innerHTML = `
     ${searchBar('bills', 'Search bills by number or status...', 'renderBillsView')}
@@ -4295,7 +4421,7 @@ function renderBillsView() {
 }
 // ── BILL PAYMENT SELECTOR ────────────────────────────
 window.openBillPaymentSelector = () => {
-  const unpaidBills = bills.filter(b => b.status !== 'paid');
+  const unpaidBills = bills.filter(b => b.status !== 'paid' && b.approvalStatus !== 'pending_approval');
   if (!unpaidBills.length)
     return showToast('No outstanding bills to pay.', 'info');
 
@@ -4322,7 +4448,7 @@ window.openBillPaymentSelector = () => {
 
 window.openBillModal = (presetVendorId) => {
   if (vendors.length===0) return alert('Please add a vendor first.');
-  const vOpts = vendors.map(v=>`<option value="${v._id||v.id}" ${(v._id||v.id)==presetVendorId?'selected':''}>${v.name}</option>`).join('');
+  const vOpts = vendors.map(v=>`<option value="${v._id||v.id}" ${(v._id||v.id)==presetVendorId?'selected':''}>${esc(v.name)}</option>`).join('');
     // Show every real inventory-stage account (Raw Materials, WIP, Finished
     // Goods, generic Inventory/Stock) with its actual name from the Chart
     // of Accounts — not a single hardcoded "1200" option that always said
@@ -4331,7 +4457,7 @@ window.openBillModal = (presetVendorId) => {
     a.type === 'Asset' && /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i.test(a.name)
   );
   const inventoryOpt = inventoryAccounts.map(a =>
-    `<option value="${a.code}">${a.code} – ${a.name}</option>`
+    `<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`
   ).join('');
   const accOpts = inventoryOpt + accounts.filter(a => a.type === 'Expense').map(a => '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>').join('');
   showModal('Enter Bill',`
@@ -4582,7 +4708,7 @@ function renderEmployeesView() {
   const rows = employees.map(e => {
     const c = calculatePAYE(e.annualSalary, e.annualRent||0);
     return `<tr>
-      <td class="td-bold">${e.name}</td><td>${e.position||'—'}</td><td>${e.department||'—'}</td>
+      <td class="td-bold">${esc(e.name)}</td><td>${esc(e.position||'—')}</td><td>${esc(e.department||'—')}</td>
       <td>${fmt(e.annualSalary)}</td><td>${fmt(c.monthlyPAYE)}</td><td>${fmt(c.monthlyNet)}</td>
       <td><div class="table-actions">
         <div class="action-btn" title="Payslip" onclick="openPayslip('${e.id}')"><i class="fas fa-receipt"></i></div>
@@ -4644,10 +4770,10 @@ window.openPayslip = (id) => {
   const emp = employees.find(e=>String(e._id||e.id)===String(id)); if(!emp) return;
   _payEmpId = id;
   const c = calculatePAYE(emp.annualSalary, emp.annualRent||0);
-  showModal(`Payslip — ${emp.name}`,`
+  showModal(`Payslip — ${esc(emp.name)}`,`
     <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:0.78rem;color:var(--text-3);">
-      <div><div class="td-bold" style="color:var(--text-1);">${emp.name}</div><div>${emp.position||'Staff'} ${emp.department?'· '+emp.department:''}</div></div>
-      <div style="text-align:right;"><div>${settings.companyName}</div><div>NTA 2025 PAYE Schedule</div></div>
+      <div><div class="td-bold" style="color:var(--text-1);">${esc(emp.name)}</div><div>${esc(emp.position||'Staff')} ${emp.department?'· '+emp.department:''}</div></div>
+      <div style="text-align:right;"><div>${esc(settings.companyName)}</div><div>NTA 2025 PAYE Schedule</div></div>
     </div>
     <div class="payslip">
       <div class="payslip-row"><span class="pl">Monthly Gross Salary</span><span class="pv">${fmt(c.monthlyGross)}</span></div>
@@ -4681,7 +4807,7 @@ window.printPayslipFull = function(empId) {
   const levies = calculateLeviesClient(c.monthlyGross, c.monthlyGross*0.7);
   const month = new Date().toLocaleString('en-NG',{month:'long',year:'numeric'});
   const w = window.open('','_blank','width=700,height=600');
-  w.document.write(`<!DOCTYPE html><html><head><title>Payslip — ${emp.name}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>Payslip — ${esc(emp.name)}</title>
   <style>
     body{font-family:Arial,sans-serif;max-width:620px;margin:32px auto;color:#1a1a1a;font-size:13px;}
     .hdr{background:#0a4f45;color:white;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center;}
@@ -4699,14 +4825,14 @@ window.printPayslipFull = function(empId) {
     @media print{button{display:none;}}
   </style></head><body>
   <div class="hdr">
-    <div><h2>${settings.companyName||'My Company'}</h2><div class="hdr-sub">TIN: ${settings.companyTaxId||'N/A'} · ${settings.companyAddress||''}</div></div>
+    <div><h2>${esc(settings.companyName||'My Company')}</h2><div class="hdr-sub">TIN: ${esc(settings.companyTaxId||'N/A')} · ${esc(settings.companyAddress||'')}</div></div>
     <div style="text-align:right;"><div style="font-size:14px;font-weight:700;">PAYSLIP</div><div class="hdr-sub">${month}</div><div class="badge" style="background:rgba(255,255,255,0.2);color:white;margin-top:4px;">NTA 2025 Compliant</div></div>
   </div>
   <div class="body">
     <div class="emp-box">
-      <div><div style="font-weight:700;font-size:14px;">${emp.name}</div>
-           <div style="font-size:11px;color:#666;margin-top:2px;">${emp.position||'Staff'} ${emp.department?'· '+emp.department:''}</div>
-           <div style="font-size:11px;color:#666;">ID: ${emp.employeeId||'—'}</div></div>
+      <div><div style="font-weight:700;font-size:14px;">${esc(emp.name)}</div>
+           <div style="font-size:11px;color:#666;margin-top:2px;">${esc(emp.position||'Staff')} ${emp.department?'· '+emp.department:''}</div>
+           <div style="font-size:11px;color:#666;">ID: ${esc(emp.employeeId||'—')}</div></div>
       <div style="text-align:right;font-size:11px;color:#666;">
         <div>Pay Date: ${today()}</div>
         <div>Period: ${month}</div>
@@ -4753,14 +4879,14 @@ window.recordPayroll = () => {
   if (!payeAcc) { payeAcc={code:'2200',name:'PAYE Payable',type:'Liability',balance:0}; accounts.push(payeAcc); }
   let pensAcc  = accounts.find(a=>a.code==='2300');
   if (!pensAcc) { pensAcc={code:'2300',name:'Pension Payable',type:'Liability',balance:0}; accounts.push(pensAcc); }
-  journalEntries.push({ id:genId(), date:pDate, description:`Salary – ${emp.name}`, type:'payroll', lines:[
+  journalEntries.push({ id:genId(), date:pDate, description:`Salary – ${esc(emp.name)}`, type:'payroll', lines:[
     { accountCode:salAcc.code, amount:c.monthlyGross, type:'debit' },
     { accountCode:cashAcc.code, amount:c.monthlyNet, type:'credit' },
     { accountCode:payeAcc.code, amount:c.monthlyPAYE, type:'credit' },
     { accountCode:pensAcc.code, amount:c.monthlyPension, type:'credit' }
   ]});
   recalcBalances(); closeTopModal(); renderEmployeesView(); renderDashboard();
-  showToast(`Payroll for ${emp.name} (${fmt(c.monthlyNet)} net) posted to ledger.`, 'success');
+  showToast(`Payroll for ${esc(emp.name)} (${fmt(c.monthlyNet)} net) posted to ledger.`, 'success');
 };
 // ════ BATCH PAYROLL ════════════════════════════════════
 // Storage for payroll runs (which months have been processed)
@@ -4924,9 +5050,9 @@ function renderAccountingView() {
     <div class="table-wrap" style="margin-bottom:12px;">
       <table><thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th style="text-align:right;">Balance</th><th></th><th></th></tr></thead>
       <tbody>${accs.map(a=>`<tr>
-        <td class="td-mono td-bold">${a.code}</td>
-        <td>${a.name}</td>
-        <td><span class="badge badge-neutral">${a.type}</span></td>
+        <td class="td-mono td-bold">${esc(a.code)}</td>
+        <td>${esc(a.name)}</td>
+        <td><span class="badge badge-neutral">${esc(a.type)}</span></td>
         <td class="td-bold" style="text-align:right;color:${a.balance===0?'var(--text-3)':a.balance>0?'var(--success)':'var(--danger)'}">${fmt(Math.abs(a.balance))}</td>
             <td style="font-size:0.72rem;color:var(--text-3);text-align:right;">${a.balance===0?'—':(['Asset','Expense'].includes(a.type)?'Dr':'Cr')}</td>        <td><div class="action-btn danger" onclick="deleteAccount('${a._id||a.id}')"><i class="fas fa-trash"></i></div></td>
       </tr>`).join('')}</tbody></table>
@@ -5051,7 +5177,7 @@ window.deleteAccount = (code) => {
   saveAllData(); renderAccountingView();
 };
 window.openJournalModal = () => {
-  const accOpts = accounts.map(a=>`<option value="${a.code}">${a.code} – ${a.name}</option>`).join('');
+  const accOpts = accounts.map(a=>`<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`).join('');
   showModal('New Journal Entry',`
     <div class="form-row cols-2">
       <div class="form-group"><label class="form-label">Date</label><input type="date" class="form-control" id="jeDate" value="${today()}"></div>
@@ -5070,7 +5196,7 @@ window.openJournalModal = () => {
 };
 window.addJeLine = () => {
   const c = document.getElementById('jeLines'); if(!c) return;
-  const accOpts = accounts.map(a=>`<option value="${a.code}">${a.code} – ${a.name}</option>`).join('');
+  const accOpts = accounts.map(a=>`<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`).join('');
   const d = document.createElement('div'); d.className = 'journal-line';
   d.style.gridTemplateColumns = '1fr 90px 120px 40px';
   d.innerHTML = `
@@ -5287,9 +5413,9 @@ function renderBankingView() {
         const bal = b.openingBalance + txTotal;
         return `<div class="card" style="padding:0;">
           <div style="padding:16px 18px;background:linear-gradient(135deg,var(--brand),var(--brand-mid));border-radius:var(--radius-lg) var(--radius-lg) 0 0;">
-            <div style="font-size:0.7rem;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.08em;">${b.bank||'Bank'}</div>
+            <div style="font-size:0.7rem;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.08em;">${esc(b.bank||'Bank')}</div>
             <div style="font-size:1.3rem;font-weight:700;color:white;margin:6px 0;">${fmt(bal)}</div>
-            <div style="font-size:0.75rem;color:rgba(255,255,255,0.7);">${b.name} · ${b.accountNumber||''}</div>
+            <div style="font-size:0.75rem;color:rgba(255,255,255,0.7);">${esc(b.name)} · ${esc(b.accountNumber||'')}</div>
           </div>
           <div style="padding:12px 18px;display:flex;gap:8px;">
             <button class="btn btn-secondary btn-sm" onclick="openBankTxModal('${b.id}')"><i class="fas fa-plus"></i> Transaction</button>
@@ -5305,10 +5431,10 @@ function renderBankingView() {
       <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th><th>Ref</th><th>Status</th></tr></thead>
       <tbody>${[...bankTransactions].sort((a,b)=>b.date>a.date?1:-1).slice(0,20).map(t=>{
         const ba = bankAccounts.find(x=>x.id===t.bankId);
-        return `<tr><td>${t.date}</td><td>${ba?.name||'—'}</td><td>${t.description}</td>
+        return `<tr><td>${t.date}</td><td>${esc(ba?.name||'—')}</td><td>${esc(t.description)}</td>
           <td style="color:var(--danger);">${t.type==='debit'?fmt(t.amount):''}</td>
           <td style="color:var(--success);">${t.type==='credit'?fmt(t.amount):''}</td>
-          <td class="td-mono">${t.reference||''}</td>
+          <td class="td-mono">${esc(t.reference||'')}</td>
           <td>${t.reconciled?'<span class="badge badge-success">Cleared</span>':'<span class="badge badge-neutral">Uncleared</span>'}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`:''}`;
@@ -5398,8 +5524,8 @@ window.openReconcileView = function(bankId) {
           <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
             <input type="checkbox" id="rec_${t.id}" style="width:16px;height:16px;cursor:pointer;">
             <div style="flex:1;">
-              <div style="font-size:0.82rem;font-weight:600;">${t.description}</div>
-              <div style="font-size:0.72rem;color:var(--text-3);">${t.date} · ${t.reference||''}</div>
+              <div style="font-size:0.82rem;font-weight:600;">${esc(t.description)}</div>
+              <div style="font-size:0.72rem;color:var(--text-3);">${t.date} · ${esc(t.reference||'')}</div>
             </div>
             <div style="font-weight:700;color:${t.type==='credit'?'var(--success)':'var(--danger)'};">
               ${t.type==='credit'?'+':'-'}${fmt(t.amount)}
@@ -5431,54 +5557,129 @@ window.markSelectedReconciled = async function(bankId) {
 
 window.importBankStatement = function() {
   if (!bankAccounts.length) return showToast('Add a bank account first', 'info');
-  const acOpts = bankAccounts.map(b=>'<option value="'+b.id+'">'+b.name+' — '+(b.bank||'')+'</option>').join('');
+  const acOpts = bankAccounts.map(b=>'<option value="'+(b._id||b.id)+'">'+esc(b.name)+' — '+esc(b.bank||'')+'</option>').join('');
   showModal('Import Bank Statement', `
-    <p style="font-size:0.82rem;color:var(--text-3);margin-bottom:12px;">Upload a CSV from your internet banking. Common columns: <strong>Date, Description, Debit, Credit</strong>.</p>
+    <p style="font-size:0.82rem;color:var(--text-3);margin-bottom:12px;">Upload a statement from your internet banking as <strong>CSV</strong> or <strong>OFX/QFX</strong>. Re-importing a period you've already imported is safe — matching transactions are skipped automatically.</p>
     <div class="form-group"><label class="form-label required">Bank Account</label><select class="form-control" id="stmtBank">${acOpts}</select></div>
-    <div class="form-group"><label class="form-label required">CSV File</label><input type="file" class="form-control" id="stmtFile" accept=".csv"></div>
-    <div class="form-row cols-2">
-      <div class="form-group"><label class="form-label">Date Column</label><input class="form-control" id="stmtDateCol" value="Date"></div>
-      <div class="form-group"><label class="form-label">Description Column</label><input class="form-control" id="stmtDescCol" value="Description"></div>
-    </div>
-    <div class="form-row cols-2">
-      <div class="form-group"><label class="form-label">Debit Column</label><input class="form-control" id="stmtDebitCol" value="Debit"></div>
-      <div class="form-group"><label class="form-label">Credit Column</label><input class="form-control" id="stmtCreditCol" value="Credit"></div>
+    <div class="form-group"><label class="form-label required">Statement File</label><input type="file" class="form-control" id="stmtFile" accept=".csv,.ofx,.qfx"></div>
+    <div id="stmtCsvCols">
+      <p style="font-size:0.76rem;color:var(--text-3);margin:10px 0 6px;">CSV column names (ignored for OFX/QFX — those carry their own fields):</p>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Date Column</label><input class="form-control" id="stmtDateCol" value="Date"></div>
+        <div class="form-group"><label class="form-label">Description Column</label><input class="form-control" id="stmtDescCol" value="Description"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Debit Column</label><input class="form-control" id="stmtDebitCol" value="Debit"></div>
+        <div class="form-group"><label class="form-label">Credit Column</label><input class="form-control" id="stmtCreditCol" value="Credit"></div>
+      </div>
     </div>`,
     `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
-     <button class="btn btn-primary" onclick="processStatementCSV()"><i class="fas fa-upload"></i> Import</button>`
+     <button class="btn btn-primary" onclick="processStatementFile()"><i class="fas fa-upload"></i> Import</button>`
   );
 };
 
-window.processStatementCSV = function() {
-  const file = document.getElementById('stmtFile')?.files[0];
-  const bankId = parseInt(document.getElementById('stmtBank')?.value);
-  const dateCol = (document.getElementById('stmtDateCol')?.value||'Date').toLowerCase();
-  const descCol = (document.getElementById('stmtDescCol')?.value||'Description').toLowerCase();
-  const debitCol = (document.getElementById('stmtDebitCol')?.value||'Debit').toLowerCase();
-  const creditCol = (document.getElementById('stmtCreditCol')?.value||'Credit').toLowerCase();
-  if (!file||!bankId) return showToast('Select a bank account and CSV file', 'danger');
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const lines = e.target.result.split('\n').filter(l=>l.trim());
-    if (lines.length < 2) return showToast('CSV appears empty', 'danger');
-    const headers = lines[0].split(',').map(h=>h.trim().replace(/"/g,'').toLowerCase());
-    const di = headers.findIndex(h=>h.includes(dateCol));
-    const ni = headers.findIndex(h=>h.includes(descCol));
-    const dbi = headers.findIndex(h=>h.includes(debitCol));
-    const cri = headers.findIndex(h=>h.includes(creditCol));
-    if (di<0) return showToast('Cannot find Date column. Check the column name.', 'danger');
-    let imported=0, skipped=0;
-    lines.slice(1).forEach(line => {
-      const cols = line.split(',').map(c=>c.trim().replace(/"/g,''));
-      const date = cols[di]; const desc = cols[ni]||'Imported';
-      const debit = parseFloat((cols[dbi]||'').replace(/[^0-9.]/g,''))||0;
-      const credit = parseFloat((cols[cri]||'').replace(/[^0-9.]/g,''))||0;
-      if (!date||(!debit&&!credit)){skipped++;return;}
-      if (credit>0){bankTransactions.push({id:genId(),bankId,date,type:'credit',amount:credit,description:desc,reference:'IMPORT',reconciled:false});imported++;}
-      if (debit>0){bankTransactions.push({id:genId(),bankId,date,type:'debit',amount:debit,description:desc,reference:'IMPORT',reconciled:false});imported++;}
+// Parses a bank-exported OFX/QFX file (Open Financial Exchange — the
+// format virtually every bank's "download as OFX/Quicken" option produces).
+// OFX is SGML-flavored, not strict XML (tags routinely aren't closed), so
+// a full XML parser is the wrong tool; each <STMTTRN>...</STMTTRN> block is
+// pulled out and its known tags read with a plain regex, which is the
+// standard, robust way to read OFX in the wild.
+function parseOFXStatement(text) {
+  const rows = [];
+  const blocks = text.split(/<STMTTRN>/i).slice(1);
+  blocks.forEach(chunk => {
+    const body = chunk.split(/<\/STMTTRN>/i)[0];
+    const field = (tag) => {
+      const m = body.match(new RegExp('<' + tag + '>([^<\\r\\n]*)', 'i'));
+      return m ? m[1].trim() : '';
+    };
+    const rawDate = field('DTPOSTED');
+    const dm = rawDate.match(/^(\d{4})(\d{2})(\d{2})/);
+    if (!dm) return;
+    const date = `${dm[1]}-${dm[2]}-${dm[3]}`;
+    const amt = parseFloat(field('TRNAMT'));
+    if (!amt) return;
+    const name = field('NAME') || field('PAYEE') || 'Imported';
+    const memo = field('MEMO');
+    rows.push({
+      date,
+      type: amt >= 0 ? 'credit' : 'debit',
+      amount: Math.abs(amt),
+      description: memo && memo !== name ? `${name} — ${memo}` : name,
+      // FITID is the bank's own unique transaction id — far more reliable
+      // for dedup on re-import than anything computed from the row text.
+      reference: field('FITID') || 'IMPORT'
     });
-    saveAllData();closeTopModal();renderBankingView();
-    showToast('Imported '+imported+' transactions. '+skipped+' rows skipped.','success');
+  });
+  return rows;
+}
+
+function parseCSVStatement(text, dateCol, descCol, debitCol, creditCol) {
+  const rows = [];
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return rows;
+  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+  const di = headers.findIndex(h => h.includes(dateCol));
+  const ni = headers.findIndex(h => h.includes(descCol));
+  const dbi = headers.findIndex(h => h.includes(debitCol));
+  const cri = headers.findIndex(h => h.includes(creditCol));
+  if (di < 0) return null; // signals "date column not found" to the caller
+  lines.slice(1).forEach(line => {
+    const cols = line.split(',').map(c => c.trim().replace(/"/g, ''));
+    const date = cols[di];
+    const desc = cols[ni] || 'Imported';
+    const debit = parseFloat((cols[dbi] || '').replace(/[^0-9.-]/g, '')) || 0;
+    const credit = parseFloat((cols[cri] || '').replace(/[^0-9.-]/g, '')) || 0;
+    if (!date || (!debit && !credit)) return;
+    if (credit > 0) rows.push({ date, type: 'credit', amount: credit, description: desc, reference: 'IMPORT' });
+    if (debit > 0) rows.push({ date, type: 'debit', amount: debit, description: desc, reference: 'IMPORT' });
+  });
+  return rows;
+}
+
+window.processStatementFile = function() {
+  const file = document.getElementById('stmtFile')?.files[0];
+  const bankId = document.getElementById('stmtBank')?.value;
+  if (!file || !bankId) return showToast('Select a bank account and a statement file', 'danger');
+  const isOFX = /\.(ofx|qfx)$/i.test(file.name);
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    let rows;
+    if (isOFX) {
+      rows = parseOFXStatement(e.target.result);
+      if (!rows.length) return showToast('No transactions found in this OFX/QFX file.', 'danger');
+    } else {
+      const dateCol = (document.getElementById('stmtDateCol')?.value || 'Date').toLowerCase();
+      const descCol = (document.getElementById('stmtDescCol')?.value || 'Description').toLowerCase();
+      const debitCol = (document.getElementById('stmtDebitCol')?.value || 'Debit').toLowerCase();
+      const creditCol = (document.getElementById('stmtCreditCol')?.value || 'Credit').toLowerCase();
+      rows = parseCSVStatement(e.target.result, dateCol, descCol, debitCol, creditCol);
+      if (rows === null) return showToast('Cannot find the Date column. Check the column name.', 'danger');
+      if (!rows.length) return showToast('CSV appears empty or has no valid rows.', 'danger');
+    }
+    // The backend is the one that dedupes and posts the Suspense-account
+    // journal entry for each row (identical to entering one by hand via
+    // "Record Transaction") — previously this just pushed rows into the
+    // in-memory bankTransactions array and called a no-op saveAllData()
+    // stub, so imported statements never reached the database, never
+    // posted anywhere, and disappeared on refresh or on another device.
+    try {
+      const result = await apiFetch('/banktransactions/import', {
+        method: 'POST',
+        body: JSON.stringify({ bankId, transactions: rows })
+      });
+      await loadAllData();
+      closeTopModal();
+      renderBankingView();
+      showToast(
+        `Imported ${result.imported} transaction(s).` +
+        (result.duplicates ? ` ${result.duplicates} already in the ledger, skipped.` : '') +
+        (result.invalid ? ` ${result.invalid} row(s) couldn't be read.` : ''),
+        'success'
+      );
+    } catch (err) {
+      showToast(err.message || 'Import failed.', 'danger');
+    }
   };
   reader.readAsText(file);
 };
@@ -5536,8 +5737,8 @@ window.filterTx = () => {
   document.getElementById('txBody').innerHTML = filtered.map(r=>`
     <tr>
       <td>${r.date}</td>
-      <td><span class="badge ${badgeMap[r.type]||'badge-neutral'}">${r.type}</span></td>
-      <td>${r.description}</td><td>${r.account}</td>
+      <td><span class="badge ${badgeMap[r.type]||'badge-neutral'}">${esc(r.type)}</span></td>
+      <td>${esc(r.description)}</td><td>${esc(r.account)}</td>
       <td class="td-bold">${r.debit?fmt(r.debit):''}</td>
       <td class="td-bold">${r.credit?fmt(r.credit):''}</td>
     </tr>`).join('');
@@ -5602,11 +5803,11 @@ window.exportPAYEReturn = function() {
     ].join(',');
   }).join('\n');
   const total = employees.reduce((s,e)=>s+calculatePAYE(e.annualSalary||0,e.annualRent||0).monthlyPAYE,0);
-  const summary = `\n\nSUMMARY,,,,,,,${total.toFixed(2)},,,,${month},${yr},${settings.companyName||''}`;
+  const summary = `\n\nSUMMARY,,,,,,,${total.toFixed(2)},,,,${month},${yr},${esc(settings.companyName||'')}`;
   const csv = header + '\n' + rows + summary;
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
-    download: `PAYE_Return_${yr}_${month}_${settings.companyName||'Company'}.csv`
+    download: `PAYE_Return_${yr}_${month}_${esc(settings.companyName||'Company')}.csv`
   });
   a.click();
    showToast('PAYE schedule exported — use it to fill the current Rev360 template', 'success');
@@ -5640,13 +5841,13 @@ window.exportVATReturn = function() {
     }).join('\n');
   const totalOutput = invoices.reduce((s,i)=>s+(i.vat||0),0);
   const totalInput = bills.reduce((s,b)=>s+(b.vat||0),0);
-  const csv = `NRS VAT MONTHLY SCHEDULE (working copy — re-enter into the official Rev360 template)\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Period:,${month}/${yr}\n\n`
+  const csv = `NRS VAT MONTHLY SCHEDULE (working copy — re-enter into the official Rev360 template)\nCompany:,${esc(settings.companyName||'')},TIN:,${esc(settings.companyTaxId||'')},Period:,${month}/${yr}\n\n`
     + `SALES SCHEDULE (Output VAT)\n${outputHeader}\n${outputRows||'No VAT invoices'}\n\n`
     + `PURCHASES SCHEDULE (Input VAT)\n${inputHeader}\n${inputRows||'No VAT bills'}\n\n`
     + `SUMMARY\nTotal Output VAT,${totalOutput.toFixed(2)}\nTotal Input VAT,${totalInput.toFixed(2)}\nNet VAT Payable,${(totalOutput-totalInput).toFixed(2)}`;
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
-    download: `VAT_Schedule_${yr}_${month}_${settings.companyName||'Company'}.csv`
+    download: `VAT_Schedule_${yr}_${month}_${esc(settings.companyName||'Company')}.csv`
   });
   a.click();
   showToast('VAT Schedule exported — use it to fill the current Rev360 Sales/Purchase template', 'success');
@@ -5668,11 +5869,11 @@ window.exportWHTReturn = function() {
       ].join(',');
     }).join('\n');
   const totalWHT = bills.reduce((s,b)=>s+(b.whtAmount||0),0);
-  const csv = `NRS WITHHOLDING TAX SCHEDULE\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Period:,${month}/${yr}\n\n`
+  const csv = `NRS WITHHOLDING TAX SCHEDULE\nCompany:,${esc(settings.companyName||'')},TIN:,${esc(settings.companyTaxId||'')},Period:,${month}/${yr}\n\n`
     + `${header}\n${rows||'No WHT deductions this period'}\n\nTotal WHT Deducted:,${totalWHT.toFixed(2)}`;
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
-    download: `WHT_Schedule_${yr}_${month}_${settings.companyName||'Company'}.csv`
+    download: `WHT_Schedule_${yr}_${month}_${esc(settings.companyName||'Company')}.csv`
   });
   a.click();
   showToast('WHT Schedule exported', 'success');
@@ -5687,7 +5888,7 @@ window.exportCITReturn = function() {
   const assessableProfit = Math.max(0, totalRevenue - totalExpensesAll);
   const citRate = totalRevenue > 100000000 ? 0.30 : totalRevenue > 25000000 ? 0.20 : 0;
   const estimatedCIT = assessableProfit * citRate;
-const csv = `NRS COMPANIES INCOME TAX SUMMARY (working copy)\nCompany:,${settings.companyName||''},TIN:,${settings.companyTaxId||''},Year:,${yr}\n\n`
+const csv = `NRS COMPANIES INCOME TAX SUMMARY (working copy)\nCompany:,${esc(settings.companyName||'')},TIN:,${esc(settings.companyTaxId||'')},Year:,${yr}\n\n`
     + `INCOME STATEMENT SUMMARY\nTotal Revenue (Turnover):,${totalRevenue.toFixed(2)}\n`
     + `Cost of Sales / Expenses:,${totalExpensesAll.toFixed(2)}\n`
     + `Assessable Profit:,${assessableProfit.toFixed(2)}\n\n`
@@ -5697,7 +5898,7 @@ const csv = `NRS COMPANIES INCOME TAX SUMMARY (working copy)\nCompany:,${setting
     + `NOTE: This is an estimate. Engage a Tax Consultant for final CIT computation and filing.`;
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
-    download: `CIT_Summary_${yr}_${settings.companyName||'Company'}.csv`
+    download: `CIT_Summary_${yr}_${esc(settings.companyName||'Company')}.csv`
   });
   a.click();
   showToast('CIT Summary exported — review with your tax consultant', 'success');
@@ -5711,13 +5912,13 @@ window.exportPayeSchedule = () => {
                  'Rent Relief (N),Taxable Income (N),Monthly PAYE (N),Net Pay (N)';
   const rows = employees.map(e => {
     const c = calculatePAYE(e.annualSalary, e.annualRent||0);
-    return [`"${e.name}"`, `"${e.employeeId||''}"`, `"${e.position||''}"`, `"${e.department||''}"`,
+    return [`"${esc(e.name)}"`, `"${esc(e.employeeId||'')}"`, `"${esc(e.position||'')}"`, `"${esc(e.department||'')}"`,
       e.annualSalary.toFixed(2), c.monthlyGross.toFixed(2),
       c.monthlyPension.toFixed(2), c.monthlyRentRelief.toFixed(2),
       c.monthlyTaxable.toFixed(2), c.monthlyPAYE.toFixed(2), c.monthlyNet.toFixed(2)].join(',');
   }).join('\n');
-  const csv = `PAYE SCHEDULE — ${settings.companyName}\n` +
-    `TIN: ${settings.companyTaxId||'N/A'} | Month: ${month} | NTA 2025 Compliant\n\n` +
+  const csv = `PAYE SCHEDULE — ${esc(settings.companyName)}\n` +
+    `TIN: ${esc(settings.companyTaxId||'N/A')} | Month: ${month} | NTA 2025 Compliant\n\n` +
     header + '\n' + rows;
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
@@ -5728,7 +5929,7 @@ window.exportPayeSchedule = () => {
 };
 
 window.exportTxCSV = () => {
-  const csv = 'Date,Type,Description,Account,Debit,Credit\n'+allTransactionRows.map(r=>`${r.date},${r.type},"${r.description}","${r.account}",${r.debit},${r.credit}`).join('\n');
+  const csv = 'Date,Type,Description,Account,Debit,Credit\n'+allTransactionRows.map(r=>`${r.date},${esc(r.type)},"${esc(r.description)}","${esc(r.account)}",${r.debit},${r.credit}`).join('\n');
   const a = Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'transactions.csv'});
   a.click();
 };
@@ -5784,6 +5985,7 @@ function renderReportsView() {
       <button class="report-tab" onclick="showRpt('cf',this)">Cash Flow</button>
       <button class="report-tab" onclick="showRpt('vat',this)">VAT Summary</button>
       <button class="report-tab" onclick="showRpt('aging',this)">AR Aging</button>
+      <button class="report-tab" onclick="showRpt('apaging',this)">AP Aging</button>
       <button class="report-tab" onclick="showRpt('dept',this)">By Department</button>
       <button class="report-tab" onclick="showRpt('health',this)">Financial Health</button>
     </div>
@@ -5806,23 +6008,23 @@ window.showRpt = (type, btn) => {
   if (type === 'pl') {
     cont.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid var(--brand);">
-        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${settings.companyName||'My Company'}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Profit or Loss</div></div>
+        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${esc(settings.companyName||'My Company')}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Profit or Loss</div></div>
         <div style="text-align:right;font-size:0.75rem;color:var(--text-3);">For the period ended<br><strong style="color:var(--text-2);">${today()}</strong></div>
       </div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Revenue</h4>${accounts.filter(a=>a.type==='Revenue').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No revenue recorded</div>'}<div class="report-row total"><span>Total Revenue</span><span>${fmt(revenue)}</span></div></div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Expenses</h4>${accounts.filter(a=>a.type==='Expense').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No expenses recorded</div>'}<div class="report-row total"><span>Total Expenses</span><span>${fmt(expenses)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Revenue</h4>${accounts.filter(a=>a.type==='Revenue').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No revenue recorded</div>'}<div class="report-row total"><span>Total Revenue</span><span>${fmt(revenue)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Expenses</h4>${accounts.filter(a=>a.type==='Expense').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No expenses recorded</div>'}<div class="report-row total"><span>Total Expenses</span><span>${fmt(expenses)}</span></div></div>
       <div style="display:flex;justify-content:space-between;padding:14px 16px;margin-top:16px;border-radius:8px;font-size:1rem;font-weight:800;background:${netIncome>=0?'var(--brand)':'var(--danger)'};color:white;"><span>${netIncome>=0?'Net Profit':'Net Loss'}</span><span>${fmt(Math.abs(netIncome))}</span></div>`;
     return;
   }
   if (type === 'bs') {
     cont.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid var(--brand);">
-        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${settings.companyName||'My Company'}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Financial Position</div></div>
+        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${esc(settings.companyName||'My Company')}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Financial Position</div></div>
         <div style="text-align:right;font-size:0.75rem;color:var(--text-3);">As at<br><strong style="color:var(--text-2);">${today()}</strong></div>
       </div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Assets</h4>${accounts.filter(a=>a.type==='Asset').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Assets</span><span>${fmt(assets)}</span></div></div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Liabilities</h4>${accounts.filter(a=>a.type==='Liability').map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(Math.abs(a.balance))}</span></div>`).join('')}<div class="report-row total"><span>Total Liabilities</span><span>${fmt(liabs)}</span></div></div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Equity</h4>${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${a.name}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>`<div class="report-row" style="color:var(--danger);"><span>${a.name} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}<div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Assets</h4>${accounts.filter(a=>a.type==='Asset').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Assets</span><span>${fmt(assets)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Liabilities</h4>${accounts.filter(a=>a.type==='Liability').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(Math.abs(a.balance))}</span></div>`).join('')}<div class="report-row total"><span>Total Liabilities</span><span>${fmt(liabs)}</span></div></div>
+      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Equity</h4>${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>`<div class="report-row" style="color:var(--danger);"><span>${esc(a.name)} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}<div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
       <div style="display:flex;justify-content:space-between;padding:14px 16px;margin-top:16px;border-radius:8px;font-size:1rem;font-weight:800;background:${Math.abs(assets-(liabs+equity))<0.01?'var(--brand)':'var(--danger)'};color:white;"><span>Total Liabilities + Equity</span><span>${fmt(liabs+equity)}</span></div>
       ${Math.abs(assets-(liabs+equity))>=0.01?`<div style="margin-top:8px;font-size:0.75rem;color:var(--danger);text-align:right;">⚠ Balance sheet does not balance — check journal entries.</div>`:''}`;
     return;
@@ -5928,37 +6130,68 @@ window.showRpt = (type, btn) => {
       ${depts.length===0?'<div style="text-align:center;padding:32px;color:var(--text-3);"><i class="fas fa-chart-pie" style="font-size:2rem;margin-bottom:8px;"></i><p>Add departments to employees to see department breakdown.</p></div>':''}`;
     return;
   }
-  if (type === 'aging') {
+  if (type === 'aging' || type === 'apaging') {
+    const isAP = type === 'apaging';
     const todayMs = new Date();
     const buckets = { current:[], d1_30:[], d31_60:[], d61_90:[], d90plus:[] };
-    invoices.filter(i=>i.status!=='paid').forEach(inv => {
-      const due  = inv.dueDate ? new Date(inv.dueDate) : new Date(inv.date);
+    // Voided invoices/bills keep whatever balance they had the instant before
+    // voiding (the pre-save hook returns early on voided docs without
+    // re-zeroing balance) — so status!=='paid' alone would wrongly list a
+    // cancelled, never-paid document as outstanding. Excluding voided
+    // explicitly is required, not just excluding paid.
+    // A bill still awaiting approval has no posted journal entry yet (see
+    // billController.create), so it isn't a recognized liability — it
+    // would inflate AP aging with money that isn't actually owed until an
+    // admin approves it.
+    const openDocs = (isAP ? bills : invoices).filter(d => d.status !== 'paid' && d.status !== 'voided' && !d.voided && d.approvalStatus !== 'pending_approval');
+    openDocs.forEach(doc => {
+      const due  = doc.dueDate ? new Date(doc.dueDate) : new Date(doc.date);
       const diff = Math.floor((todayMs - due) / 86400000);
-      const c = customers.find(x=>(x._id||x.id)==(inv._customerName?inv.customerId:(inv.customerId?._id||inv.customerId)));
-      const balance = inv.balance !== undefined ? inv.balance : inv.total;
-      const row = { customer:c?.name||'Unknown', invoice:inv.number, dueDate:inv.dueDate||inv.date, amount:balance };
+      const partyName = isAP
+        ? (doc.vendorId?.name || vendors.find(x=>(x._id||x.id)==(doc.vendorId?._id||doc.vendorId))?.name || 'Unknown')
+        : (customers.find(x=>(x._id||x.id)==(doc._customerName?doc.customerId:(doc.customerId?._id||doc.customerId)))?.name || 'Unknown');
+      const amountOwed = doc.balance !== undefined ? doc.balance
+        : (isAP ? (doc.netPayable !== undefined && doc.netPayable !== null ? doc.netPayable : doc.total) : doc.total);
+      const row = { party:partyName, docNo:doc.number, dueDate:doc.dueDate||doc.date, amount:amountOwed, daysOverdue:Math.max(0,diff) };
       if (diff <= 0) buckets.current.push(row);
       else if (diff <= 30) buckets.d1_30.push(row);
       else if (diff <= 60) buckets.d31_60.push(row);
       else if (diff <= 90) buckets.d61_90.push(row);
       else buckets.d90plus.push(row);
     });
+    const partyCol = isAP ? 'Vendor' : 'Customer';
+    const docCol = isAP ? 'Bill #' : 'Invoice #';
+    const docLabel = isAP ? 'bill' : 'invoice';
     const bucket = (label, rows, color) => {
       if (!rows.length) return '';
+      rows.sort((a,b) => b.daysOverdue - a.daysOverdue);
       const tot = rows.reduce((s,r)=>s+r.amount,0);
-      return `<div class="report-section"><h4 style="color:${color};">${label} (${rows.length} invoice${rows.length!==1?'s':''})</h4>
-        <table><thead><tr><th>Customer</th><th>Invoice #</th><th>Due Date</th><th style="text-align:right;">Amount</th></tr></thead>
-        <tbody>${rows.map(r=>`<tr><td>${r.customer}</td><td class="td-mono">${r.invoice}</td><td>${r.dueDate}</td><td style="text-align:right;font-weight:600;">${fmt(r.amount)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="3" style="font-weight:700;">Subtotal</td><td style="text-align:right;font-weight:700;color:${color};">${fmt(tot)}</td></tr></tfoot></table></div>`;
+      return `<div class="report-section"><h4 style="color:${color};">${label} (${rows.length} ${docLabel}${rows.length!==1?'s':''})</h4>
+        <table><thead><tr><th>${partyCol}</th><th>${docCol}</th><th>Due Date</th><th>Days Overdue</th><th style="text-align:right;">Amount</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr><td>${esc(r.party)}</td><td class="td-mono">${esc(r.docNo)}</td><td>${r.dueDate}</td><td>${r.daysOverdue||'—'}</td><td style="text-align:right;font-weight:600;">${fmt(r.amount)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="4" style="font-weight:700;">Subtotal</td><td style="text-align:right;font-weight:700;color:${color};">${fmt(tot)}</td></tr></tfoot></table></div>`;
     };
-    const grand = invoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+(i.balance!==undefined?i.balance:i.total),0);
-    cont.innerHTML = `<div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:16px;">Accounts Receivable Aging Report<span style="float:right;font-size:0.78rem;font-weight:400;color:var(--text-3);">As at: ${today()}</span></div>
+    const grand = openDocs.reduce((s,d)=>s+(d.balance!==undefined?d.balance:(isAP?(d.netPayable??d.total):d.total)),0);
+    const summaryChip = (label, rows, color) => {
+      const tot = rows.reduce((s,r)=>s+r.amount,0);
+      return `<div style="flex:1;min-width:110px;text-align:center;padding:10px 8px;background:var(--surface2);border-radius:8px;border-top:3px solid ${color};">
+        <div style="font-size:0.66rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">${label}</div>
+        <div style="font-size:0.92rem;font-weight:800;color:${color};margin-top:2px;">${fmt(tot)}</div></div>`;
+    };
+    cont.innerHTML = `<div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:12px;">Accounts ${isAP?'Payable':'Receivable'} Aging Report<span style="float:right;font-size:0.78rem;font-weight:400;color:var(--text-3);">As at: ${today()}</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+        ${summaryChip('Current', buckets.current, 'var(--success)')}
+        ${summaryChip('1–30 Days', buckets.d1_30, 'var(--warning)')}
+        ${summaryChip('31–60 Days', buckets.d31_60, '#f97316')}
+        ${summaryChip('61–90 Days', buckets.d61_90, 'var(--danger)')}
+        ${summaryChip('90+ Days', buckets.d90plus, '#7f1d1d')}
+      </div>
       ${bucket('Current (Not Yet Due)', buckets.current, 'var(--success)')}
       ${bucket('1 – 30 Days Overdue', buckets.d1_30, 'var(--warning)')}
       ${bucket('31 – 60 Days Overdue', buckets.d31_60, '#f97316')}
       ${bucket('61 – 90 Days Overdue', buckets.d61_90, 'var(--danger)')}
       ${bucket('Over 90 Days Overdue', buckets.d90plus, '#7f1d1d')}
-      ${grand===0?'<div class="empty-state" style="padding:32px"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No outstanding receivables.</p></div>': `<div class="report-row total" style="font-size:0.95rem;margin-top:16px;"><span>Total Outstanding Receivables</span><span>${fmt(grand)}</span></div>`}`;
+      ${grand===0?`<div class="empty-state" style="padding:32px"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No outstanding ${isAP?'payables':'receivables'}.</p></div>`: `<div class="report-row total" style="font-size:0.95rem;margin-top:16px;"><span>Total Outstanding ${isAP?'Payables':'Receivables'}</span><span>${fmt(grand)}</span></div>`}`;
     return;
   }
   if (type === 'cf') {
@@ -5999,11 +6232,11 @@ window.showRpt = (type, btn) => {
     const netVAT    = outputVAT - inputVAT;
     const vatInvRows = invoices.filter(i => (i.vat||0) > 0).map(i => {
       const c = customers.find(x => x.id === i.customerId);
-      return `<tr><td class="td-mono">${i.number}</td><td>${c?.name||'—'}</td><td>${i.date}</td><td>${fmt(i.subtotal||i.total)}</td><td style="color:var(--danger);font-weight:600;">${fmt(i.vat)}</td></tr>`;
+      return `<tr><td class="td-mono">${i.number}</td><td>${esc(c?.name||'—')}</td><td>${i.date}</td><td>${fmt(i.subtotal||i.total)}</td><td style="color:var(--danger);font-weight:600;">${fmt(i.vat)}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px;">No invoices with VAT found</td></tr>';
     const vatBillRows = bills.filter(b => (b.vat||0) > 0).map(b => {
       const v = vendors.find(x => (x._id||x.id) == b.vendorId);
-      return `<tr><td class="td-mono">${b.number}</td><td>${v?.name||'—'}</td><td>${b.date}</td><td>${fmt(b.subtotal||b.total)}</td><td style="color:var(--success);font-weight:600;">${fmt(b.vat)}</td></tr>`;
+      return `<tr><td class="td-mono">${b.number}</td><td>${esc(v?.name||'—')}</td><td>${b.date}</td><td>${fmt(b.subtotal||b.total)}</td><td style="color:var(--success);font-weight:600;">${fmt(b.vat)}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-4);padding:20px;">No bills with VAT found</td></tr>';
     cont.innerHTML = `<div style="font-size:1rem;font-weight:700;margin-bottom:16px;">VAT Summary — NRS Monthly Return</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
@@ -6028,10 +6261,10 @@ window.showRpt = (type, btn) => {
       const finalD = isDebit  ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);
       const finalC = !isDebit ? (a.balance > 0 ? a.balance : 0) : (a.balance < 0 ? Math.abs(a.balance) : 0);
       tDebits += finalD; tCredits += finalC;
-      return `<tr><td class="td-mono">${a.code}</td><td>${a.name}</td><td><span class="badge badge-neutral">${a.type}${isDrawings?' <span style="font-size:0.6rem;background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:4px;">contra</span>':''}</span></td><td style="color:var(--brand);font-weight:600;">${finalD?fmt(finalD):''}</td><td style="color:var(--info);font-weight:600;">${finalC?fmt(finalC):''}</td></tr>`;
+      return `<tr><td class="td-mono">${esc(a.code)}</td><td>${esc(a.name)}</td><td><span class="badge badge-neutral">${esc(a.type)}${isDrawings?' <span style="font-size:0.6rem;background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:4px;">contra</span>':''}</span></td><td style="color:var(--brand);font-weight:600;">${finalD?fmt(finalD):''}</td><td style="color:var(--info);font-weight:600;">${finalC?fmt(finalC):''}</td></tr>`;
     }).join('');
     const tbBalanced = Math.abs(tDebits - tCredits) < 0.01;
-    cont.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;"><div><div style="font-size:1rem;font-weight:700;color:var(--text-1);">Trial Balance</div><div style="font-size:0.78rem;color:var(--text-3);">As at ${today()} · ${settings.companyName||'My Company'}</div></div><div style="display:flex;align-items:center;gap:10px;"><div style="padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;background:${tbBalanced?'#f0fdf4':'#fef2f2'};color:${tbBalanced?'#16a34a':'#dc2626'};border:1px solid ${tbBalanced?'#86efac':'#fca5a5'};">${tbBalanced?'✓ BALANCED':'✗ UNBALANCED — CHECK ENTRIES'}</div><button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button></div></div>`
+    cont.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;"><div><div style="font-size:1rem;font-weight:700;color:var(--text-1);">Trial Balance</div><div style="font-size:0.78rem;color:var(--text-3);">As at ${today()} · ${esc(settings.companyName||'My Company')}</div></div><div style="display:flex;align-items:center;gap:10px;"><div style="padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:700;background:${tbBalanced?'#f0fdf4':'#fef2f2'};color:${tbBalanced?'#16a34a':'#dc2626'};border:1px solid ${tbBalanced?'#86efac':'#fca5a5'};">${tbBalanced?'✓ BALANCED':'✗ UNBALANCED — CHECK ENTRIES'}</div><button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button></div></div>`
       + `<div class="table-wrap"><table><thead><tr><th>Account Code</th><th>Account Name</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${tbRows}<tr style="font-weight:700;background:var(--surface2);"><td colspan="3">TOTALS</td><td style="color:var(--brand);">${fmt(tDebits)}</td><td style="color:var(--info);">${fmt(tCredits)}</td></tr></tbody></table></div>`;
     return;
   }
@@ -6182,7 +6415,7 @@ function renderProductsView() {
   const filteredProd = filterItems('products', products, ['name','sku','category']);
   const { items: pagedProd, controls: prodControls } = paginate('products', filteredProd);
   const rows = pagedProd.map(p => `<tr>
-    <td class="td-bold">${p.name}</td><td>${p.sku||'—'}</td><td>${p.category||'—'}</td>
+    <td class="td-bold">${esc(p.name)}</td><td>${esc(p.sku||'—')}</td><td>${esc(p.category||'—')}</td>
     <td>${fmt(p.price)}</td><td>${fmt(p.cost)}</td>
     <td><span class="badge ${p.stock<=5?'badge-danger':p.stock<=20?'badge-warning':'badge-success'}">${p.stock} units</span></td>
     <td>${fmt(p.stock*p.cost)}</td>
@@ -6201,7 +6434,7 @@ function renderProductsView() {
             <i class="fas fa-boxes"></i> Low Stock Alert — ${lowStockItems.length} Product${lowStockItems.length!==1?'s':''} Need Restocking</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${lowStockItems.map(p => `<span style="background:#fee2e2;border:1px solid #fca5a5;border-radius:20px;padding:3px 10px;font-size:0.75rem;font-weight:600;color:#991b1b;">
-              ${p.name} — ${p.stock} units left</span>`).join('')}
+              ${esc(p.name)} — ${p.stock} units left</span>`).join('')}
           </div>
           <div style="margin-top:8px;font-size:0.75rem;color:#b91c1c;">
             <span onclick="openStockModal()" style="cursor:pointer;text-decoration:underline;font-weight:600;">Adjust Stock →</span>
@@ -6282,7 +6515,7 @@ window.saveProduct = () => {
 window.deleteProduct = (id) => { if(confirm('Delete product?')){ products=products.filter(p=>String(p._id||p.id)!==String(id)); recalcBalances(); renderProductsView(); }};
 window.openStockModal = () => {
   if (!products.length) return alert('No products to adjust.');
-  const opts = products.map(p=>`<option value="${p._id||p.id}">${p.name} (${p.stock} units)</option>`).join('');
+  const opts = products.map(p=>`<option value="${p._id||p.id}">${esc(p.name)} (${p.stock} units)</option>`).join('');
   showModal('Stock Adjustment',`
     <div class="form-group"><label class="form-label required">Product</label><select class="form-control" id="saProduct">${opts}</select></div>
     <div class="form-row cols-2">
@@ -6310,7 +6543,7 @@ window.saveStockAdj = () => {
   if (!adjAcct) {     adjAcct = { code:'6500', name:'Inventory Adjustment Expense', type:'Expense', balance:0 };     
   accounts.push(adjAcct);   }   if (invAcct && adjValue > 0) {     journalEntries.push({       id: genId(), date: today(),       description: 'Stock adjustment — ' + p.name + ' (' + (type==='in'?'+':'-') + qty + ' units × ' + fmt(p.cost) + ')',       type: 'journal',       lines: type === 'in'         ? [{ accountCode: '1200', amount: adjValue, type: 'debit'  },            { accountCode: '6500', amount: adjValue, type: 'credit' }]         : [{ accountCode: '6500', amount: adjValue, type: 'debit'  },            { accountCode: '1200', amount: adjValue, type: 'credit' }]     });   }   
   recalcBalances(); closeTopModal(); renderProductsView();   
-  showToast(`Stock ${type==='in'?'received':'issued'}: ${qty} unit(s) of ${p.name}.`, 'success');
+  showToast(`Stock ${type==='in'?'received':'issued'}: ${qty} unit(s) of ${esc(p.name)}.`, 'success');
 };
 
 // ════════════════════════════════════════════
@@ -6327,13 +6560,13 @@ function renderBudgetsView() {
     const pct = bud ? Math.min(100,(actual/bud*100)) : 0;
     const color = pct > 90 ? 'danger' : pct > 70 ? 'warning' : '';
     return `<tr>
-      <td class="td-bold">${acc.name}</td>
+      <td class="td-bold">${esc(acc.name)}</td>
       <td><span class="badge badge-neutral">${acc.type}</span></td>
       <td>${fmt(bud)}</td>
       <td>${fmt(actual)}</td>
       <td class="${variance<0?'':''}"><span style="color:${variance>=0?'var(--success)':'var(--danger)'}">${variance>=0?'+':''}${fmt(variance)}</span></td>
       <td style="min-width:120px;"><div class="progress-track"><div class="progress-fill ${color}" style="width:${pct}%"></div></div><div style="font-size:0.7rem;color:var(--text-4);margin-top:2px;">${pct.toFixed(0)}%</div></td>
-      <td><div class="action-btn" onclick="openBudgetModal('${acc.code}')"><i class="fas fa-edit"></i></div></td>
+      <td><div class="action-btn" onclick="openBudgetModal('${esc(acc.code)}')"><i class="fas fa-edit"></i></div></td>
     </tr>`;
   }).join('');
   document.getElementById('budgetsView').innerHTML = `
@@ -6347,7 +6580,7 @@ function renderBudgetsView() {
     </div>`;
 }
 window.openBudgetModal = (presetCode) => {
-  const accOpts = accounts.filter(a=>a.type==='Revenue'||a.type==='Expense').map(a=>`<option value="${a.code}" ${a.code===presetCode?'selected':''}>${a.name}</option>`).join('');
+  const accOpts = accounts.filter(a=>a.type==='Revenue'||a.type==='Expense').map(a=>`<option value="${esc(a.code)}" ${a.code===presetCode?'selected':''}>${esc(a.name)}</option>`).join('');
   showModal('Set Budget',`
     <div class="form-row cols-2">
       <div class="form-group"><label class="form-label required">Account</label><select class="form-control" id="bAcc">${accOpts}</select></div>
@@ -6382,10 +6615,10 @@ function renderSettingsView() {
           ${(()=>{const u=JSON.parse(localStorage.getItem('at_user_profile')||'{}');return u.firstName?`
           <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
             <div style="width:52px;height:52px;background:var(--brand);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:1.2rem;font-weight:700;flex-shrink:0;">${(u.firstName[0]||'').toUpperCase()}${(u.lastName?.[0]||'').toUpperCase()}</div>
-<div><div style="font-weight:700;font-size:0.95rem;">${u.firstName} ${u.lastName}</div><div style="color:var(--text-3);margin-top:2px;">${u.jobTitle||'Administrator'}</div></div>
+<div><div style="font-weight:700;font-size:0.95rem;">${esc(u.firstName)} ${esc(u.lastName)}</div><div style="color:var(--text-3);margin-top:2px;">${esc(u.jobTitle||'Administrator')}</div></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Email</span><span style="font-weight:500;">${u.email}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Email</span><span style="font-weight:500;">${esc(u.email)}</span></div>
             <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:var(--text-3);">Access Level</span><span class="badge ${u.role==='admin'||!u.role?'badge-success':u.role==='accountant'?'badge-info':'badge-neutral'}">${u.role==='admin'||!u.role?'Super Admin':u.role==='accountant'?'Accountant':'Viewer'}</span></div>
           </div>`:'<div style="color:var(--text-3);">No profile found.</div>';})()}
         </div>
@@ -6395,11 +6628,11 @@ function renderSettingsView() {
         <div class="card-body" style="font-size:0.82rem;">
           ${settings.companyName ? `
           <div style="display:flex;flex-direction:column;gap:7px;">
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">RC Number</span><span style="font-weight:600;">${settings.rcNumber||'—'}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">TIN</span><span style="font-weight:600;">${settings.companyTaxId||'—'}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Phone</span><span style="font-weight:600;">${settings.companyPhone||'—'}</span></div>
-            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Industry</span><span class="badge badge-info">${settings.industry||'General'}</span></div>
-            <div style="padding:5px 0;color:var(--text-3);font-size:0.75rem;">${settings.companyAddress||''}</div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">RC Number</span><span style="font-weight:600;">${esc(settings.rcNumber||'—')}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">TIN</span><span style="font-weight:600;">${esc(settings.companyTaxId||'—')}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Phone</span><span style="font-weight:600;">${esc(settings.companyPhone||'—')}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">Industry</span><span class="badge badge-info">${esc(settings.industry||'General')}</span></div>
+            <div style="padding:5px 0;color:var(--text-3);font-size:0.75rem;">${esc(settings.companyAddress||'')}</div>
           </div>` : '<div style="color:var(--text-3);">Set up your company to see details.</div>'}
         </div>
       </div>
@@ -6422,18 +6655,18 @@ function renderSettingsView() {
         <div class="card-header"><span class="card-title"><i class="fas fa-building" style="margin-right:8px;color:var(--brand);"></i>Company Profile</span></div>
 
         <div class="card-body">
-          <div class="form-row cols-1"><div class="form-group"><label class="form-label required">Company Name</label><input class="form-control" id="sCo" value="${settings.companyName}"></div></div>
-          <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Legal Name</label><input class="form-control" id="sLegal" value="${settings.companyLegalName}"></div>
-          <div class="form-row cols-2"><div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="sTin" value="${settings.companyTaxId}"></div>
-          <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="sPhone" value="${settings.companyPhone}"></div></div>
-          <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Email</label><input class="form-control" id="sEmail" value="${settings.companyEmail}"></div>
-          <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="sAddr" rows="2">${settings.companyAddress}</textarea></div>
+          <div class="form-row cols-1"><div class="form-group"><label class="form-label required">Company Name</label><input class="form-control" id="sCo" value="${esc(settings.companyName)}"></div></div>
+          <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Legal Name</label><input class="form-control" id="sLegal" value="${esc(settings.companyLegalName)}"></div>
+          <div class="form-row cols-2"><div class="form-group"><label class="form-label">Tax ID (TIN)</label><input class="form-control" id="sTin" value="${esc(settings.companyTaxId)}"></div>
+          <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="sPhone" value="${esc(settings.companyPhone)}"></div></div>
+          <div class="form-group" style="margin-bottom:12px;"><label class="form-label">Email</label><input class="form-control" id="sEmail" value="${esc(settings.companyEmail)}"></div>
+          <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="sAddr" rows="2">${esc(settings.companyAddress)}</textarea></div>
           <div class="form-group">
             <label class="form-label"><i class="fas fa-image" style="margin-right:4px;"></i>Company Logo</label>
             <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
               ${settings.companyLogo ? `<img id="logoPreview" src="${settings.companyLogo}" style="height:48px;border-radius:6px;border:1px solid var(--border);">` : `<img id="logoPreview" style="display:none;height:48px;border-radius:6px;">`}
               <button class="btn btn-secondary btn-sm" onclick="uploadCompanyLogo()"><i class="fas fa-upload"></i> Upload Logo</button>
-              ${settings.companyLogo ? `<button class="btn btn-ghost btn-sm" onclick="settings.companyLogo=null;localStorage.removeItem('at_logo');renderSettingsView();">Remove</button>` : ''}
+              ${settings.companyLogo ? `<button class="btn btn-ghost btn-sm" onclick="settings.companyLogo=null;renderSettingsView();">Remove (click Save to confirm)</button>` : ''}
             </div>
             <div class="form-hint">Appears on printed invoices. PNG or JPG, max 2MB.</div>
           </div>
@@ -6466,7 +6699,7 @@ function renderSettingsView() {
                     <div class="form-row cols-2">
             <div class="form-group"><label class="form-label">Default Currency</label>
               <select class="form-control" id="sCurrency">
-                ${Object.entries(CURRENCIES).map(([code, v]) => `<option value="${code}" ${(settings.currency||'NGN')===code?'selected':''}>${v.symbol} ${code} — ${v.name}</option>`).join('')}
+                ${Object.entries(CURRENCIES).map(([code, v]) => `<option value="${code}" ${(settings.currency||'NGN')===code?'selected':''}>${v.symbol} ${code} — ${esc(v.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group"><label class="form-label">Default Due (days)</label><input type="number" class="form-control" id="sDue" value="${settings.defaultDueDays}"></div>
@@ -6475,7 +6708,7 @@ function renderSettingsView() {
             <div class="form-group"><label class="form-label">Default Due (days)</label><input type="number" class="form-control" id="sDue" value="${settings.defaultDueDays}"></div>
             <div class="form-group"><label class="form-label">VAT Rate (%)</label><input type="number" class="form-control" id="sVat" value="${settings.defaultVatRate}" step="0.1"></div>
           </div>
-          <div class="form-group"><label class="form-label">Default Invoice Notes</label><textarea class="form-control" id="sNotes" rows="3">${settings.defaultInvoiceNotes}</textarea></div>
+          <div class="form-group"><label class="form-label">Default Invoice Notes</label><textarea class="form-control" id="sNotes" rows="3">${esc(settings.defaultInvoiceNotes)}</textarea></div>
         </div>
       </div>
       <div class="card" style="grid-column:1/-1;">
@@ -6516,6 +6749,17 @@ function renderSettingsView() {
           <div class="form-hint">Defaults reflect NTA 2025 Section 56/202 (₦100,000,000 turnover, ₦250,000,000 fixed assets) and the WHT de minimis exemption for payments under ₦2,000,000. Any bill under the WHT threshold automatically skips withholding tax, regardless of company size.</div>
         </div>
       </div>
+      ${isAdmin() ? `
+      <div class="card">
+        <div class="card-header"><span class="card-title"><i class="fas fa-user-check" style="margin-right:8px;color:var(--brand);"></i>Bill Approval Workflow</span></div>
+        <div class="card-body">
+          <p style="font-size:0.78rem;color:var(--text-3);margin-bottom:14px;">
+            When a non-admin user enters a bill above this amount, it's held as <strong>Awaiting Approval</strong> —
+            no journal entry, stock update, or payment is posted until an admin approves or rejects it from the Bills page.
+          </p>
+          <div class="form-group"><label class="form-label">Approval Threshold (₦)</label><input type="number" class="form-control" id="sApprovalThreshold" value="${settings.approvalThreshold||500000}"></div>
+        </div>
+      </div>` : ''}
       <div class="card" style="grid-column:1/-1;">
         <div class="card-header"><span class="card-title"><i class="fas fa-lock" style="margin-right:8px;color:var(--brand);"></i>Fiscal Period Management</span></div>
         <div class="card-body">
@@ -6773,70 +7017,6 @@ window.openAssetModal = function() {
   );
 };
  
-window.saveAsset = function() {
-  var name = (document.getElementById("aName") || {}).value;
-  if (name) name = name.trim();
-  var cost = parseFloat((document.getElementById("aCost") || {}).value);
-  var life = parseFloat((document.getElementById("aLife") || {}).value);
-  if (!name || !cost || !life) { alert("Asset name, cost, and useful life are required."); return; }
-  assets.push({
-    id: genId(),
-    name: name,
-    category:        (document.getElementById("aCat")   || {}).value || "",
-    purchaseDate:    (document.getElementById("aPDate") || {}).value || today(),
-    purchaseCost:    cost,
-    usefulLifeYears: life,
-    residualValue:   parseFloat((document.getElementById("aResid") || {}).value) || 0
-  });
-  saveAllData(); closeTopModal(); renderAssetsView();
-  showToast("Asset added successfully.", "success");
-};
- 
-window.postDepreciation = function(id) {
-  var asset = assets.find(function(a) { return a.id === id; });
-  if (!asset) return;
-  var d = calculateDepreciation(asset);
-  if (!d) { alert("Cannot calculate depreciation for this asset."); return; }
- 
-  // Use account 6200 (Utilities/Depreciation Expense) or first Expense account
-  var depExp = accounts.find(function(a) { return a.code === "6200"; })
-             || accounts.find(function(a) { return a.type === "Expense"; });
-  // Use account 1500 (Fixed Assets) or first Asset account
-  var fixAcc = accounts.find(function(a) { return a.code === "1500"; })
-             || accounts.find(function(a) { return a.type === "Asset"; });
- 
-  if (!depExp || !fixAcc) { alert("Could not find required accounts."); return; }
- 
-  var confirmed = confirm(
-    "Post monthly depreciation of " + fmt(d.monthlyDep) + " for " + asset.name + "?\n\n"
-    + "This will:\n• Debit: " + depExp.name + "\n• Credit: " + fixAcc.name
-  );
-  if (!confirmed) return;
- 
-  journalEntries.push({
-    id: genId(),
-    date: today(),
-    description: "Depreciation — " + asset.name,
-    type: "depreciation",
-    source: "asset",
-    lines: [
-      { accountCode: depExp.code, amount: d.monthlyDep, type: "debit" },
-      { accountCode: fixAcc.code, amount: d.monthlyDep, type: "credit" }
-    ]
-  });
- 
-  recalcBalances();
-  showToast("Depreciation posted: " + fmt(d.monthlyDep), "success");
-};
- 
-window.deleteAsset = function(id) {
-  if (confirm("Delete this asset from the register?")) {
-    assets = assets.filter(function(a) { return a.id !== id; });
-    saveAllData();
-    renderAssetsView();
-  }
-};
-
 // ════════════════════════════════════════════
 // ─── HELP ───
 // ════════════════════════════════════════════
@@ -7035,8 +7215,8 @@ async function loadTeamMembers() {
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--brand);color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">${(u.firstName || '?')[0]}${(u.lastName || '')[0]}</div>
           <div>
-            <div style="font-size:0.82rem;font-weight:600;">${u.firstName} ${u.lastName}</div>
-            <div style="font-size:0.72rem;color:var(--text-3);">${u.email}</div>
+            <div style="font-size:0.82rem;font-weight:600;">${esc(u.firstName)} ${esc(u.lastName)}</div>
+            <div style="font-size:0.72rem;color:var(--text-3);">${esc(u.email)}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
@@ -7390,8 +7570,8 @@ function renderRecentlyViewed() {
   el.innerHTML = recent.map(r => `
     <div onclick="navigateTo('${r.type==='invoice'?'invoices':r.type==='bill'?'bills':r.type+'s'}')" style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
       <i class="fas ${icons[r.type]||'fa-file'}" style="color:var(--brand);font-size:0.78rem;width:14px;"></i>
-      <span style="font-size:0.8rem;color:var(--text-1);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.label}</span>
-      <span style="font-size:0.68rem;color:var(--text-4);">${r.type}</span>
+      <span style="font-size:0.8rem;color:var(--text-1);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.label)}</span>
+      <span style="font-size:0.68rem;color:var(--text-4);">${esc(r.type)}</span>
     </div>`).join('');
 }
 
@@ -7597,6 +7777,8 @@ window.saveBill = async function() {
     const r = parseFloat(l.querySelector('.rate').value) || 0;
     const a = q * r;
     const desc = l.querySelector('input').value || 'Item';
+    // Read the linked product FIRST so it travels with the line. The backend
+    // can only add stock for lines that carry a productId.
     const prodSelect = isInventoryPurchase ? l.querySelector('.bill-product') : null;
     const prodId = (prodSelect && prodSelect.value) ? prodSelect.value : null;
     const line = { description: desc, quantity: q, rate: r, amount: a };
@@ -7606,7 +7788,6 @@ window.saveBill = async function() {
     }
     lines.push(line);
     total += a;
-
   });
   if (total <= 0) return alert('Bill total must be > 0.');
 
@@ -7634,6 +7815,7 @@ window.saveBill = async function() {
     } else if (isInventoryPurchase) {
       showToast('No product was linked on any line, so Products stock was not updated. Void this bill and re-enter it with a product selected on each line.', 'info');
     }
+
     logAction('BILL_CREATED', 'Bill created — Vendor: ' + (vendors.find(v=>String(v._id||v.id)===String(vendorId))?.name||vendorId) + ' — Total: ₦' + total.toLocaleString());
     closeTopModal();
     await loadAllData();
@@ -7662,6 +7844,27 @@ window.deleteBill = async function(id) {
   } catch (err) { showToast(err.message || 'Void failed.', 'danger'); }
 };
 
+window.approveBill = async function(id) {
+  if (!confirm('Approve this bill? This will post its journal entry, update stock (if applicable), and make it payable.')) return;
+  try {
+    await apiFetch(`/bills/${id}/approve`, { method: 'PUT' });
+    await loadAllData();
+    if (currentPage === 'bills') renderBillsView();
+    showToast('Bill approved and posted.', 'success');
+  } catch (err) { showToast(err.message || 'Approval failed.', 'danger'); }
+};
+
+window.rejectBill = async function(id) {
+  const reason = prompt('Reject this bill? Nothing was posted yet, so this just cancels it.\n\nOptional: reason for rejecting (shown in the audit trail)');
+  if (reason === null) return;
+  try {
+    await apiFetch(`/bills/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) });
+    await loadAllData();
+    if (currentPage === 'bills') renderBillsView();
+    showToast('Bill rejected.', 'success');
+  } catch (err) { showToast(err.message || 'Rejection failed.', 'danger'); }
+};
+
 window.markBillPaid = function(id) {
   const b = bills.find(x => x.id === id);
   if (!b || b.status === 'paid') return;
@@ -7686,13 +7889,13 @@ window.openReturnModal = function(kind, docId) {
   const invAcc  = accounts.find(isInventoryAccount);
   const cogsAcc = accounts.find(a => /cost of goods|cogs/i.test(a.name)) || accounts.find(a => a.code === '5000');
   const expAcc  = kind === 'purchase' ? accounts.find(a => a.code === doc.expenseAccount) : null;
-  const acctOpts = list => accounts.map(a => `<option value="${a.code}" ${list && a.code===list.code?'selected':''}>${a.code} – ${a.name}</option>`).join('');
+  const acctOpts = list => accounts.map(a => `<option value="${esc(a.code)}" ${list && a.code===list.code?'selected':''}>${esc(a.code)} – ${esc(a.name)}</option>`).join('');
  
   const rows = doc.lines.map((l, idx) => {
     const already = 0; // future: track prior returns per line
     const maxQty = l.quantity - already;
     return `<tr>
-      <td style="font-size:0.8rem;">${l.description||'Item'}</td>
+      <td style="font-size:0.8rem;">${esc(l.description||'Item')}</td>
       <td style="font-size:0.8rem;text-align:center;">${l.quantity}</td>
       <td style="text-align:center;"><input type="number" class="form-control ret-qty" data-idx="${idx}" data-rate="${l.rate}" data-prod="${l.productId||''}" value="0" min="0" max="${maxQty}" step="1" style="width:80px;" oninput="updateReturnTotals()"></td>
       <td style="font-size:0.8rem;text-align:right;" class="ret-line-amt">₦0.00</td>
@@ -7859,7 +8062,7 @@ window.recordPayroll = async function() {
     await loadAllData();
     renderEmployeesView();
     renderDashboard();
-    showToast(`Payroll for ${emp.name} (${fmt(c.monthlyNet)} net) posted to ledger.`, 'success');
+    showToast(`Payroll for ${esc(emp.name)} (${fmt(c.monthlyNet)} net) posted to ledger.`, 'success');
   } catch (err) { showToast(err.message || 'Payroll failed.', 'danger'); }
 };
 
@@ -8001,12 +8204,12 @@ window.openEditProductModal = (id) => {
   if (!p) return;
   showModal('Edit Product',`
     <div class="form-row cols-2">
-      <div class="form-group"><label class="form-label required">Product Name</label><input class="form-control" id="pName" value="${p.name||''}"></div>
-      <div class="form-group"><label class="form-label">SKU / Code</label><input class="form-control" id="pSku" value="${p.sku||''}"></div>
+      <div class="form-group"><label class="form-label required">Product Name</label><input class="form-control" id="pName" value="${esc(p.name||'')}"></div>
+      <div class="form-group"><label class="form-label">SKU / Code</label><input class="form-control" id="pSku" value="${esc(p.sku||'')}"></div>
     </div>
     <div class="form-row cols-2">
-      <div class="form-group"><label class="form-label">Category</label><input class="form-control" id="pCat" value="${p.category||''}"></div>
-      <div class="form-group"><label class="form-label">Unit of Measure</label><input class="form-control" id="pUnit" value="${p.unit||''}"></div>
+      <div class="form-group"><label class="form-label">Category</label><input class="form-control" id="pCat" value="${esc(p.category||'')}"></div>
+      <div class="form-group"><label class="form-label">Unit of Measure</label><input class="form-control" id="pUnit" value="${esc(p.unit||'')}"></div>
     </div>
     <div class="form-group"><label class="form-label required">Item Type</label>
       <select class="form-control" id="pItemType" onchange="toggleProductPriceField(this.value)">
@@ -8067,7 +8270,7 @@ window.saveStockAdj = async function() {
     closeTopModal();
     await loadAllData();
     renderProductsView();
-    showToast(`Stock ${type==='in'?'received':'issued'}: ${qty} unit(s) of ${p.name}.`, 'success');
+    showToast(`Stock ${type==='in'?'received':'issued'}: ${qty} unit(s) of ${esc(p.name)}.`, 'success');
   } catch (err) { showToast(err.message || 'Adjustment failed.', 'danger'); }
 };
 
@@ -8096,10 +8299,9 @@ window.uploadCompanyLogo = function() {
     const reader = new FileReader();
     reader.onload = function(ev) {
       settings.companyLogo = ev.target.result;
-      localStorage.setItem('at_logo', ev.target.result);
       const preview = document.getElementById('logoPreview');
       if (preview) { preview.src = ev.target.result; preview.style.display='block'; }
-      showToast('Logo uploaded successfully', 'success');
+      showToast('Logo staged — click Save to keep it.', 'info');
     };
     reader.readAsDataURL(file);
   };
@@ -8125,7 +8327,14 @@ defaultInvoiceNotes: document.getElementById('sNotes')?.value,
     isProfessionalServices:          !!settings.isProfessionalServices,
     smallCompanyTurnoverThreshold:   parseFloat(document.getElementById('sSmallCoTurnover')?.value) || 100000000,
     smallCompanyFixedAssetThreshold: parseFloat(document.getElementById('sSmallCoAssets')?.value) || 250000000,
-    whtDeMinimisThreshold:           parseFloat(document.getElementById('sWhtDeMinimis')?.value) || 2000000
+    whtDeMinimisThreshold:           parseFloat(document.getElementById('sWhtDeMinimis')?.value) || 2000000,
+    // Bill maker-checker threshold — only rendered (and so only present in
+    // the DOM) for admins, so a non-admin's save must not clobber it back
+    // to the 500000 fallback; omit the key entirely when the field wasn't shown.
+    ...(document.getElementById('sApprovalThreshold') ? { approvalThreshold: parseFloat(document.getElementById('sApprovalThreshold').value) || 500000 } : {}),
+    // Was never included here before, so uploading a logo appeared to work
+    // (instant local preview) but never actually reached the server.
+    companyLogo: settings.companyLogo || ''
   };  try {
     await apiFetch('/company/settings', { method:'PUT', body:JSON.stringify(data) });
     // Refresh company profile in localStorage
@@ -8200,28 +8409,21 @@ window.postDepreciation = async function(id) {
   if (!asset) return;
   const d = calculateDepreciation(asset);
   if (!d) { alert('Cannot calculate depreciation for this asset.'); return; }
-  const depExp = accounts.find(a => a.code === '6200') || accounts.find(a => a.type === 'Expense');
-  const fixAcc = accounts.find(a => a.code === '1500') || accounts.find(a => a.type === 'Asset');
-  if (!depExp || !fixAcc) { alert('Could not find required accounts.'); return; }
-  if (!confirm(`Post monthly depreciation of ${fmt(d.monthlyDep)} for ${asset.name}?`)) return;
+  if (!confirm(`Post depreciation for ${esc(asset.name)}?`)) return;
   try {
-    await apiFetch('/journals', {
-      method: 'POST',
-      body: JSON.stringify({
-        date: today(), description: `Depreciation — ${asset.name}`, type: 'depreciation',
-        lines: [
-          { accountCode: depExp.code, amount: d.monthlyDep, type: 'debit' },
-          { accountCode: fixAcc.code, amount: d.monthlyDep, type: 'credit' }
-        ]
-      })
-    });
+    // Route through the backend's own /assets/:id/depreciate endpoint instead
+    // of building the journal entry here. That endpoint tracks each asset's
+    // lastDepreciationDate, so it charges only the months not yet posted and
+    // refuses to post twice for the same month — this client-side version
+    // had no such guard and would re-post the full amount every click.
+    const result = await apiFetch(`/assets/${id}/depreciate`, { method: 'POST' });
     await loadAllData();
-    recalcBalances();
-    showToast('Depreciation posted: ' + fmt(d.monthlyDep), 'success');
+    renderAssetsView();
+    showToast(`Depreciation posted: ${fmt(result.amount)}`, 'success');
   } catch (err) { showToast(err.message || 'Post failed.', 'danger'); }
 };
 
-// ─── DATA BACKUP / RESTORE ───────────────────────────────────────────
+// ─── DATA BACKUP / RESTORE// ─── DATA BACKUP / RESTORE ───────────────────────────────────────────
 window.importCustomersCSV = function() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = '.csv';
@@ -8264,8 +8466,8 @@ window.generateAnnualTaxReport = function() {
   showModal(`Annual Tax Summary — ${yr}`, `
     <div style="font-size:0.82rem;">
       <div style="background:var(--brand);color:white;padding:12px 16px;border-radius:8px;margin-bottom:16px;">
-        <div style="font-size:1rem;font-weight:700;">${settings.companyName||'My Company'} — FY ${yr}</div>
-        <div style="opacity:0.8;font-size:0.75rem;">TIN: ${settings.companyTaxId||'N/A'} | Industry: ${settings.industry||'N/A'}</div>
+        <div style="font-size:1rem;font-weight:700;">${esc(settings.companyName||'My Company')} — FY ${yr}</div>
+        <div style="opacity:0.8;font-size:0.75rem;">TIN: ${esc(settings.companyTaxId||'N/A')} | Industry: ${esc(settings.industry||'N/A')}</div>
       </div>
       ${[
         ['Total Revenue (excl. VAT)', fmt(totalRevenue), 'var(--success)'],
@@ -8465,6 +8667,7 @@ const PAGE_RENDERS = {
   products: renderProductsView, employees: renderEmployeesView,
   assets: renderAssetsView, settings: renderSettingsView,
   purchaseorders: renderPurchaseOrdersView,
+  quotes: renderQuotesView,
   recurringbilling: renderRecurringBillingView,
   help: renderHelpView, audittrail: renderAuditTrailView,
 };
@@ -8529,7 +8732,7 @@ window.printCurrentReport = function() {
   const content = document.getElementById('rptContent');
   if (!content) return showToast('No report loaded', 'info');
   const w = window.open('','_blank','width=900,height=700');
-  w.document.write(`<!DOCTYPE html><html><head><title>Report — ${settings.companyName||'AccounTrack'}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>Report — ${esc(settings.companyName||'AccounTrack')}</title>
   <style>body{font-family:Arial,sans-serif;padding:32px;color:#1a1a1a;font-size:12px;}
   table{width:100%;border-collapse:collapse;margin:12px 0;}
   th{background:#f5f5f5;padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;}
@@ -8537,8 +8740,8 @@ window.printCurrentReport = function() {
   h2{color:#0a4f45;} .footer{text-align:center;margin-top:32px;font-size:10px;color:#999;}
   @media print{button{display:none;}}</style></head><body>
   <div style="display:flex;justify-content:space-between;margin-bottom:20px;">
-    <div><div style="font-size:18px;font-weight:700;color:#0a4f45;">${settings.companyName||'My Company'}</div>
-    <div style="font-size:11px;color:#666;">TIN: ${settings.companyTaxId||'N/A'} · As at ${today()}</div></div>
+    <div><div style="font-size:18px;font-weight:700;color:#0a4f45;">${esc(settings.companyName||'My Company')}</div>
+    <div style="font-size:11px;color:#666;">TIN: ${esc(settings.companyTaxId||'N/A')} · As at ${today()}</div></div>
     <div style="text-align:right;font-size:11px;color:#666;">AccounTrack™ Pro<br>NTA 2025 Compliant</div>
   </div>
   ${content.innerHTML}
@@ -8551,10 +8754,19 @@ window.printCurrentReport = function() {
 window.exportReportCSV = function() {
   const content = document.getElementById('rptContent');
   if (!content) return showToast('No report loaded', 'info');
-  const table = content.querySelector('table');
-  if (!table) return showToast('No table data to export', 'info');
-  const rows = [...table.querySelectorAll('tr')].map(r=>[...r.querySelectorAll('th,td')].map(c=>'"'+c.textContent.trim().replace(/"/g,'""')+'"').join(','));
-  const csv = rows.join('\n');
+  const tables = [...content.querySelectorAll('table')];
+  if (!tables.length) return showToast('No table data to export', 'info');
+  // A report can render several section tables (e.g. each aging bucket is
+  // its own <table>) — querySelector('table') alone silently exported only
+  // the first section. Walk every table and, where a section has its own
+  // heading (an <h4> in the same .report-section), prefix a label row so
+  // the sections stay distinguishable once flattened into one CSV.
+  const csvBlocks = tables.map(table => {
+    const heading = table.closest('.report-section')?.querySelector('h4')?.textContent?.trim();
+    const rows = [...table.querySelectorAll('tr')].map(r=>[...r.querySelectorAll('th,td')].map(c=>'"'+c.textContent.trim().replace(/"/g,'""')+'"').join(','));
+    return (heading ? '"'+heading.replace(/"/g,'""')+'"\n' : '') + rows.join('\n');
+  });
+  const csv = csvBlocks.join('\n\n');
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'report_'+today()+'.csv'});
   a.click();
   showToast('Report exported as CSV','success');
@@ -8700,13 +8912,46 @@ window.viewAttachment = function(id, type) {
   if (att.type?.startsWith('image/')) {
     showModal('Attachment — '+att.name,
       `<img src="${att.data}" style="max-width:100%;border-radius:8px;">`,
-      `<a href="${att.data}" download="${att.name}" class="btn btn-primary"><i class="fas fa-download"></i> Download</a>`
+      `<a href="${att.data}" download="${esc(att.name)}" class="btn btn-primary"><i class="fas fa-download"></i> Download</a>`
     );
   } else {
     const link=document.createElement('a');
     link.href=att.data; link.download=att.name; link.click();
   }
 };
+
+// ─── KEYBOARD ACCESS FOR CLICKABLE <div>s ────────────────────
+// Sidebar items, table action buttons, top-bar buttons and FAQ rows are
+// plain <div onclick>, which a keyboard user can't Tab to or activate.
+// Rather than rewriting hundreds of generated templates into <button>s,
+// give them button semantics after the fact: focusable, announced as
+// buttons, and Enter/Space triggers the same click. A MutationObserver
+// covers views that re-render their markup on every navigation.
+(function initClickableA11y() {
+  const SEL = '.nav-item, .action-btn, .topbar-btn, .topbar-avatar, .faq-q, .modal-close';
+  function enhanceEl(el) {
+    if (el.tagName === 'BUTTON' || el.tagName === 'A') return;
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+    if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+    // Icon-only controls carry their meaning in the title attribute.
+    if (!el.hasAttribute('aria-label') && el.title) el.setAttribute('aria-label', el.title);
+  }
+  function enhance(root) {
+    if (root.matches && root.matches(SEL)) enhanceEl(root);
+    if (root.querySelectorAll) root.querySelectorAll(SEL).forEach(enhanceEl);
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target;
+    if (!el.matches || !el.matches(SEL) || el.tagName === 'BUTTON' || el.tagName === 'A') return;
+    e.preventDefault();
+    el.click();
+  });
+  enhance(document.body);
+  new MutationObserver(muts => {
+    muts.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) enhance(n); }));
+  }).observe(document.body, { childList: true, subtree: true });
+})();
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────
 (function initKeyboardShortcuts() {
@@ -8779,8 +9024,8 @@ async function showCompanySwitcher() {
       onmouseover="if('${c._id}'!=='${currentId}')this.style.background='var(--border)'"
       onmouseout="if('${c._id}'!=='${currentId}')this.style.background='var(--surface2)'">
       <div>
-        <div style="font-weight:700;font-size:0.88rem;">${c.name}</div>
-        <div style="font-size:0.72rem;opacity:0.7;margin-top:2px;">${c.industry||'General'}</div>
+        <div style="font-weight:700;font-size:0.88rem;">${esc(c.name)}</div>
+        <div style="font-size:0.72rem;opacity:0.7;margin-top:2px;">${esc(c.industry||'General')}</div>
       </div>
       ${c._id===currentId?'<span style="font-size:0.72rem;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;">Active</span>':'<i class="fas fa-chevron-right" style="font-size:0.75rem;opacity:0.5;"></i>'}
     </div>`).join('');
@@ -8827,23 +9072,23 @@ function showRegisterNewCompany() {
 function renderRecurringBillingView() {
   const rows = recurringBillings.map(rb => {
     const entity = rb.type==='invoice'
-      ? customers.find(x=>x.id===rb.entityId)
-      : vendors.find(x=>x.id===rb.entityId);
+      ? customers.find(x=>(x._id||x.id)===rb.entityId)
+      : vendors.find(x=>(x._id||x.id)===rb.entityId);
     const freqLabel = {weekly:'Weekly',monthly:'Monthly',quarterly:'Quarterly',yearly:'Yearly'}[rb.frequency]||rb.frequency;
     return `<tr>
-      <td class="td-bold">${rb.name}</td>
-      <td>${entity?.name||'—'}</td>
+      <td class="td-bold">${esc(rb.name)}</td>
+      <td>${esc(entity?.name||'—')}</td>
       <td><span class="badge ${rb.type==='invoice'?'badge-info':'badge-warning'}">${rb.type==='invoice'?'Invoice':'Bill'}</span></td>
       <td class="td-bold">${fmt(rb.amount)}</td>
       <td>${freqLabel}</td>
       <td>${rb.nextDate||'—'}</td>
       <td><span class="badge ${rb.active?'badge-success':'badge-neutral'}">${rb.active?'Active':'Paused'}</span></td>
       <td><div class="table-actions">
-        <div class="action-btn" onclick="toggleRB('${rb.id}')" title="${rb.active?'Pause':'Resume'}"
+        <div class="action-btn" onclick="toggleRB('${rb._id||rb.id}')" title="${rb.active?'Pause':'Resume'}"
           style="color:${rb.active?'var(--warning)':'var(--success)'};border-color:${rb.active?'var(--warning)':'var(--success)'};">
           <i class="fas fa-${rb.active?'pause':'play'}"></i></div>
-        <div class="action-btn" onclick="runRB('${rb.id}')" title="Generate Now" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-bolt"></i></div>
-        <div class="action-btn danger" onclick="deleteRB('${rb.id}')"><i class="fas fa-trash"></i></div>
+        <div class="action-btn" onclick="runRB('${rb._id||rb.id}')" title="Generate Now" style="color:var(--brand);border-color:var(--brand);"><i class="fas fa-bolt"></i></div>
+        <div class="action-btn danger" onclick="deleteRB('${rb._id||rb.id}')"><i class="fas fa-trash"></i></div>
       </div></td>
     </tr>`;
   }).join('');
@@ -8861,7 +9106,7 @@ function renderRecurringBillingView() {
 }
 
 window.openRBModal = () => {
-  const cOpts = customers.map(c=>`<option value="${c._id||c.id}">${c.name}</option>`).join('');
+  const cOpts = customers.map(c=>`<option value="${c._id||c.id}">${esc(c.name)}</option>`).join('');
   showModal('New Recurring Schedule',`
     <div class="form-group"><label class="form-label required">Schedule Name</label>
       <input class="form-control" id="rbName" placeholder="e.g. Monthly Retainer — Acme Ltd"></div>
@@ -8875,7 +9120,7 @@ window.openRBModal = () => {
         <input type="number" class="form-control" id="rbAmount" step="0.01" placeholder="0.00"></div>
     </div>
     <div class="form-group"><label class="form-label required">Customer / Vendor</label>
-      <select class="form-control" id="rbEntity">${custOpts}</select></div>
+      <select class="form-control" id="rbEntity">${cOpts}</select></div>
     <div class="form-row cols-2">
       <div class="form-group"><label class="form-label required">Frequency</label>
         <select class="form-control" id="rbFreq">
@@ -8901,87 +9146,80 @@ window.updateRBList = () => {
   const sel = document.getElementById('rbEntity');
   if (!sel) return;
   const list = type==='invoice' ? customers : vendors;
-  sel.innerHTML = list.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  sel.innerHTML = list.map(e=>`<option value="${e._id||e.id}">${esc(e.name)}</option>`).join('');
 };
 
-window.saveRB = () => {
+window.saveRB = async () => {
   const name = document.getElementById('rbName')?.value.trim();
   const type = document.getElementById('rbType')?.value;
   const amount = parseFloat(document.getElementById('rbAmount')?.value)||0;
-  const entityId = parseInt(document.getElementById('rbEntity')?.value);
+  const entityId = document.getElementById('rbEntity')?.value;
   const frequency = document.getElementById('rbFreq')?.value;
   const nextDate = document.getElementById('rbStart')?.value;
   const endDate = document.getElementById('rbEnd')?.value||null;
   const description = document.getElementById('rbDesc')?.value||'';
   if (!name||!amount||!entityId||!nextDate) return showToast('Please fill all required fields','danger');
-  recurringBillings.push({ id:genId(), name, type, amount, entityId, frequency, nextDate, endDate, description, active:true, createdAt:today() });
-  localStorage.setItem('at_recurring', JSON.stringify(recurringBillings));
-  closeTopModal(); renderRecurringBillingView();
-  showToast('Schedule created: '+name,'success');
+  try {
+    await apiFetch('/recurring-billings', { method:'POST', body: JSON.stringify({
+      name, type, entityId, amount, frequency, nextDate, endDate, description
+    })});
+    await loadAllData();
+    closeTopModal(); renderRecurringBillingView();
+    showToast('Schedule created: '+name,'success');
+  } catch(err) { showToast(err.message||'Failed to create schedule','danger'); }
 };
 
-window.toggleRB = (id) => {
-  const rb = recurringBillings.find(r=>r.id===id); if(!rb) return;
-  rb.active = !rb.active;
-  localStorage.setItem('at_recurring', JSON.stringify(recurringBillings));
-  renderRecurringBillingView();
-  showToast(rb.name+' '+(rb.active?'resumed':'paused'),'success');
+window.toggleRB = async (id) => {
+  const rb = recurringBillings.find(r=>(r._id||r.id)===id); if(!rb) return;
+  try {
+    await apiFetch('/recurring-billings/'+id, { method:'PUT', body: JSON.stringify({ active: !rb.active }) });
+    await loadAllData();
+    renderRecurringBillingView();
+    showToast(rb.name+' '+(!rb.active?'resumed':'paused'),'success');
+  } catch(err) { showToast(err.message||'Failed to update schedule','danger'); }
 };
 
 window.runRB = async (id) => {
-  const rb = recurringBillings.find(r=>r.id===id); if(!rb) return;
+  const rb = recurringBillings.find(r=>(r._id||r.id)===id); if(!rb) return;
   try {
-    if (rb.type==='invoice') {
-      await apiFetch('/invoices', { method:'POST', body: JSON.stringify({
-        customerId: rb.entityId,
-        date: today(), dueDate: futureDate(settings.defaultDueDays||30),
-        lines:[{description:rb.description||rb.name, quantity:1, rate:rb.amount, amount:rb.amount, vatApplicable:false, lineVat:0}],
-        subtotal: rb.amount, vat: 0, total: rb.amount,
-        status:'unpaid', payments:[], amountPaid:0, balance:rb.amount, recurringId: rb.id
-      })});
-    } else {
-      await apiFetch('/bills', { method:'POST', body: JSON.stringify({
-        vendorId: rb.entityId,
-        date: today(), dueDate: futureDate(30),
-        lines:[{description:rb.description||rb.name, quantity:1, rate:rb.amount, amount:rb.amount}],
-        total: rb.amount, status:'unpaid', amountPaid:0, balance:rb.amount, payments:[],
-        expenseAccount:'6000', whtRate:0, whtAmount:0, netPayable:rb.amount, recurringId: rb.id
-      })});
-    }
-    const next = new Date(rb.nextDate);
-    if (rb.frequency==='weekly') next.setDate(next.getDate()+7);
-    else if (rb.frequency==='monthly') next.setMonth(next.getMonth()+1);
-    else if (rb.frequency==='quarterly') next.setMonth(next.getMonth()+3);
-    else next.setFullYear(next.getFullYear()+1);
-    rb.nextDate = next.toISOString().split('T')[0];
-    localStorage.setItem('at_recurring', JSON.stringify(recurringBillings));
+    const result = await apiFetch('/recurring-billings/'+id+'/run', { method:'POST' });
     await loadAllData();
     recalcBalances();
     renderRecurringBillingView();
-    showToast((rb.type==='invoice'?'Invoice':'Bill')+' generated from schedule: '+rb.name,'success');
+    showToast(result.message || ((rb.type==='invoice'?'Invoice':'Bill')+' generated from schedule: '+rb.name), 'success');
   } catch(err) { showToast(err.message||'Failed to generate recurring entry','danger'); }
 };
 
-window.deleteRB = (id) => {
+window.deleteRB = async (id) => {
   if(!confirm('Delete this recurring schedule? This will not delete already generated records.')) return;
-  recurringBillings = recurringBillings.filter(r=>r.id!==id);
-  localStorage.setItem('at_recurring', JSON.stringify(recurringBillings));
-  renderRecurringBillingView();
+  try {
+    await apiFetch('/recurring-billings/'+id, { method:'DELETE' });
+    await loadAllData();
+    renderRecurringBillingView();
+  } catch(err) { showToast(err.message||'Failed to delete schedule','danger'); }
 };
 
 // ─── PURCHASE ORDERS ─────────────────────────────────────────
 function renderPurchaseOrdersView() {
   const rows = [...purchaseOrders].sort((a,b)=>b.date>a.date?1:-1).map(po=>{
-    const v=vendors.find(x=>x.id===po.vendorId);
-    const sc={draft:'badge-neutral',sent:'badge-info',received:'badge-success',cancelled:'badge-danger'}[po.status]||'badge-neutral';
+    const v=vendors.find(x=>(x._id||x.id)===po.vendorId);
+    const sc={open:'badge-info',converted:'badge-success',cancelled:'badge-danger'}[po.status]||'badge-neutral';
+    const poId = po._id||po.id;
+    const pending = po.approvalStatus === 'pending_approval';
     return `<tr>
-      <td class="td-bold td-mono">${po.number}</td><td>${v?.name||'—'}</td>
+      <td class="td-bold td-mono">${po.number}</td><td>${esc(v?.name||'—')}</td>
       <td>${po.date}</td><td>${po.expectedDate||'—'}</td>
       <td class="td-bold">${fmt(po.total)}</td>
-      <td><span class="badge ${sc}">${po.status}</span></td>
+      <td><span class="badge ${sc}">${po.status}</span>${pending?' <span class="badge" style="background:#dbeafe;color:#1e40af;" title="No conversion to a bill until an admin approves">Awaiting Approval</span>':''}</td>
       <td><div class="table-actions">
-        ${po.status!=='received'&&po.status!=='cancelled'?`<div class="action-btn" title="Convert to Bill" onclick="convertPOtoBill('${po.id}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-file-invoice"></i></div>`:''}
-        <div class="action-btn danger" onclick="deletePO('${po.id}')"><i class="fas fa-trash"></i></div>
+        ${pending
+          ? (isAdmin()
+              ? `<div class="action-btn" title="Approve PO" onclick="approvePO('${poId}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-check"></i></div>
+                 <div class="action-btn danger" title="Reject PO" onclick="rejectPO('${poId}')"><i class="fas fa-times"></i></div>`
+              : `<span style="font-size:0.72rem;color:var(--text-3);">Awaiting admin sign-off</span>`)
+          : `${po.status==='open'?`<div class="action-btn" title="Convert to Bill" onclick="convertPOtoBill('${poId}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-file-invoice"></i></div>`:''}
+             <div class="action-btn danger" onclick="deletePO('${poId}')"><i class="fas fa-trash"></i></div>`
+        }
       </div></td>
     </tr>`;
   }).join('');
@@ -8998,8 +9236,8 @@ function renderPurchaseOrdersView() {
 
 window.openPOModal = () => {
   if (!vendors.length) return alert('Add a vendor first.');
-  const vOpts=vendors.map(v=>`<option value="${v.id}">${v.name}</option>`).join('');
-  const accOpts=accounts.filter(a=>a.type==='Expense').map(a=>`<option value="${a.code}">${a.code} – ${a.name}</option>`).join('');
+  const vOpts=vendors.map(v=>`<option value="${v._id||v.id}">${esc(v.name)}</option>`).join('');
+  const accOpts=accounts.filter(a=>a.type==='Expense').map(a=>`<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`).join('');
   showModal('New Purchase Order',`
     <div class="form-row cols-3">
       <div class="form-group"><label class="form-label required">Vendor</label><select class="form-control" id="poVendor">${vOpts}</select></div>
@@ -9022,14 +9260,35 @@ window.openPOModal = () => {
 window.addPOLine = () => {
   const c=document.getElementById('poLines'); if(!c) return;
   const id=Date.now();
+  // Linking a product here is what lets Convert to Bill carry productId
+  // through to the generated bill, which is what actually updates stock —
+  // a PO line with no product link creates a bill line with no product
+  // link either, and no stock movement, same as any other bill.
+  const prodOpts = products.map(p =>
+    `<option value="${p._id||p.id}" data-cost="${p.cost||0}">${esc(p.name)} (${p.stock} in stock)</option>`
+  ).join('');
   const d=document.createElement('div');
-  d.style.cssText='display:grid;grid-template-columns:2fr 80px 120px 36px;gap:8px;margin-bottom:8px;';
+  d.style.cssText='display:grid;grid-template-columns:1.3fr 1.3fr 70px 110px 36px;gap:8px;margin-bottom:8px;';
   d.id='pol_'+id;
   d.innerHTML=`<input class="form-control" placeholder="Description" id="pold_${id}">
+    <select class="form-control" id="polprod_${id}" onchange="poLineProductChanged(${id})">
+      <option value="">— No product link —</option>${prodOpts}
+    </select>
     <input type="number" class="form-control" placeholder="Qty" id="polq_${id}" value="1" min="1" oninput="updatePOTotal()">
     <input type="number" class="form-control" placeholder="Unit Price" id="polp_${id}" step="0.01" oninput="updatePOTotal()">
     <button class="btn btn-ghost btn-icon" onclick="document.getElementById('pol_${id}').remove();updatePOTotal()"><i class="fas fa-times"></i></button>`;
   c.appendChild(d);
+};
+
+window.poLineProductChanged = (id) => {
+  const sel = document.getElementById('polprod_'+id);
+  const opt = sel?.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  const descEl = document.getElementById('pold_'+id);
+  const priceEl = document.getElementById('polp_'+id);
+  if (descEl && !descEl.value.trim()) descEl.value = opt.textContent.replace(/\s*\(\d+ in stock\)$/, '');
+  if (priceEl) priceEl.value = opt.dataset.cost || 0;
+  updatePOTotal();
 };
 
 window.updatePOTotal = () => {
@@ -9041,68 +9300,53 @@ window.updatePOTotal = () => {
   const el=document.getElementById('poTotal'); if(el) el.textContent=fmt(total);
 };
 
-window.savePO = () => {
-  const vendorId=parseInt(document.getElementById('poVendor')?.value);
+window.savePO = async () => {
+  const vendorId = document.getElementById('poVendor')?.value;
   const lines=[]; let total=0;
   document.querySelectorAll('#poLines > div').forEach(row=>{
     const id=row.id.replace('pol_','');
     const desc=document.getElementById('pold_'+id)?.value.trim();
+    const productId=document.getElementById('polprod_'+id)?.value||null;
     const qty=parseFloat(document.getElementById('polq_'+id)?.value)||0;
-    const price=parseFloat(document.getElementById('polp_'+id)?.value)||0;
-    if(desc&&qty&&price){lines.push({description:desc,quantity:qty,unitPrice:price,amount:qty*price});total+=qty*price;}
+    const rate=parseFloat(document.getElementById('polp_'+id)?.value)||0;
+    if(desc&&qty&&rate){
+      const line={description:desc,quantity:qty,rate,amount:qty*rate};
+      if(productId) line.productId=productId;
+      lines.push(line);total+=qty*rate;
+    }
   });
   if(!lines.length) return alert('Add at least one line item.');
-  const po={id:genId(),number:'PO-'+String(purchaseOrders.length+1).padStart(4,'0'),
-    vendorId,date:document.getElementById('poDate')?.value,
-    expectedDate:document.getElementById('poExp')?.value,
-    expenseAccount:document.getElementById('poAcc')?.value,
-    notes:document.getElementById('poNotes')?.value,
-    lines,total,status:'draft'};
-  purchaseOrders.push(po);
-  localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
-  closeTopModal();renderPurchaseOrdersView();
-  showToast('Purchase Order '+po.number+' created','success');
+  try {
+    const po = await apiFetch('/purchase-orders', { method:'POST', body: JSON.stringify({
+      vendorId,
+      date: document.getElementById('poDate')?.value,
+      expectedDate: document.getElementById('poExp')?.value,
+      expenseAccount: document.getElementById('poAcc')?.value,
+      notes: document.getElementById('poNotes')?.value,
+      lines, total
+    })});
+    await loadAllData();
+    closeTopModal(); renderPurchaseOrdersView();
+    showToast('Purchase Order '+po.number+' created','success');
+  } catch(err) { showToast(err.message||'Failed to create purchase order','danger'); }
 };
 
 window.convertPOtoBill = async (poId) => {
-  const po = purchaseOrders.find(p => p.id === poId);
+  const po = purchaseOrders.find(p => (p._id||p.id) === poId);
   if (!po) return;
-
   if (!confirm('Convert ' + po.number + ' to a Bill?')) return;
-
-  const attFile = document.getElementById('billAttachment')?.files[0];
-  let attachment = null;
-
-  if (attFile) {
-    if (attFile.size > 5 * 1024 * 1024) {
-      showToast('File too large. Max 5MB.', 'danger');
-      return;
-    }
-    attachment = await new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = e => resolve({
-        name: attFile.name,
-        type: attFile.type,
-        data: e.target.result
-      });
-      reader.readAsDataURL(attFile);
-    });
-  }
-
-  if (total <= 0) return alert('Bill total must be > 0.');
+  if (!(po.total > 0)) return alert('Bill total must be > 0.');
   try {
-    await apiFetch('/bills', { method:'POST', body: JSON.stringify({
-      vendorId: String(po.vendorId),
-      date: today(), dueDate: futureDate(30),
-      lines: po.lines, total: po.total, status: 'unpaid',
-      amountPaid: 0, balance: po.total, payments: [],
+    // The server marks the PO converted and creates the bill in one step --
+    // this used to be two separate client-side actions (an /bills POST,
+    // then a localStorage-only po.status='received'), which meant the PO's
+    // own status never left this browser: on another device, or after
+    // clearing storage, it would still show 'draft' and could be converted
+    // again, creating a second bill for the same PO.
+    const result = await apiFetch('/purchase-orders/'+poId+'/convert', { method:'POST', body: JSON.stringify({
       expenseAccount: po.expenseAccount || '6000',
-      isInventoryPurchase: false,
-      whtRate: 0, whtAmount: 0, netPayable: po.total, poRef: po.number,
-      ...(attachment ? { attachment } : {})
+      whtRate: 0
     })});
-    po.status = 'received';
-    localStorage.setItem('at_pos', JSON.stringify(purchaseOrders));
     await loadAllData();
     recalcBalances();
     renderPurchaseOrdersView();
@@ -9110,12 +9354,229 @@ window.convertPOtoBill = async (poId) => {
   } catch(err) { showToast(err.message||'Failed to create bill from PO','danger'); }
 };
 
-window.deletePO = (id) => {
+window.deletePO = async (id) => {
   if(!confirm('Delete this purchase order?')) return;
-  purchaseOrders=purchaseOrders.filter(p=>p.id!==id);
-  localStorage.setItem('at_pos',JSON.stringify(purchaseOrders));
-  renderPurchaseOrdersView();
+  try {
+    await apiFetch('/purchase-orders/'+id, { method:'DELETE' });
+    await loadAllData();
+    renderPurchaseOrdersView();
+  } catch(err) { showToast(err.message||'Failed to delete purchase order','danger'); }
 };
+
+window.approvePO = async (id) => {
+  if (!confirm('Approve this purchase order? It can then be converted to a bill or sent to the vendor.')) return;
+  try {
+    await apiFetch('/purchase-orders/'+id+'/approve', { method:'PUT' });
+    await loadAllData();
+    renderPurchaseOrdersView();
+    showToast('Purchase order approved.', 'success');
+  } catch(err) { showToast(err.message||'Approval failed.','danger'); }
+};
+
+window.rejectPO = async (id) => {
+  if (!confirm('Reject this purchase order? It will be cancelled and cannot be converted to a bill.')) return;
+  try {
+    await apiFetch('/purchase-orders/'+id+'/reject', { method:'PUT' });
+    await loadAllData();
+    renderPurchaseOrdersView();
+    showToast('Purchase order rejected.', 'success');
+  } catch(err) { showToast(err.message||'Rejection failed.','danger'); }
+};
+
+// ─── QUOTES / ESTIMATES ─────────────────────────────────────────────────
+// A quote has zero accounting impact of its own (no journal entry, no
+// stock movement, no account balance) — it only becomes real money the
+// moment it's converted to an Invoice, which reuses invoiceController's
+// own posting logic on the backend, the same "convert" pattern already
+// used for Purchase Orders -> Bills above.
+function renderQuotesView() {
+  const rows = [...quotes].sort((a,b)=>b.date>a.date?1:-1).map(q=>{
+    const custId = q.customerId?._id || q.customerId;
+    const custName = q.customerId?.name || customers.find(x=>(x._id||x.id)==custId)?.name || '—';
+    const qId = q._id || q.id;
+    const sc = {draft:'badge-neutral',sent:'badge-info',accepted:'badge-success',declined:'badge-danger',expired:'badge-neutral',converted:'badge-success'}[q.status]||'badge-neutral';
+    const expired = q.status !== 'converted' && q.status !== 'declined' && q.expiryDate && q.expiryDate.split('T')[0] < today();
+    const displayStatus = (expired && (q.status==='sent'||q.status==='draft')) ? 'expired' : q.status;
+    return `<tr>
+      <td class="td-bold td-mono">${q.number}</td><td>${esc(custName)}</td>
+      <td>${(q.date||'').split('T')[0]}</td><td>${(q.expiryDate||'').split('T')[0]||'—'}</td>
+      <td class="td-bold">${fmt(q.total)}</td>
+      <td><span class="badge ${sc}">${displayStatus}</span></td>
+      <td><div class="table-actions">
+        ${q.status==='draft'?`<div class="action-btn" title="Mark as Sent" onclick="sendQuoteAction('${qId}')" style="color:var(--info);border-color:var(--info);"><i class="fas fa-paper-plane"></i></div>`:''}
+        ${q.status==='sent'?`<div class="action-btn" title="Customer Accepted" onclick="recordQuoteResponse('${qId}','accepted')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-check"></i></div>
+           <div class="action-btn danger" title="Customer Declined" onclick="recordQuoteResponse('${qId}','declined')"><i class="fas fa-times"></i></div>`:''}
+        ${q.status==='accepted'?`<div class="action-btn" title="Convert to Invoice" onclick="convertQuoteToInvoice('${qId}')" style="color:var(--success);border-color:var(--success);"><i class="fas fa-file-invoice-dollar"></i></div>`:''}
+        ${q.status!=='converted'?`<div class="action-btn danger" title="Delete Quote" onclick="deleteQuote('${qId}')"><i class="fas fa-trash"></i></div>`:''}
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('quotesView').innerHTML = `
+    <div class="page-header">
+      <div class="page-title"><h2>Quotes / Estimates</h2><p>${quotes.length} quote${quotes.length!==1?'s':''}</p></div>
+      <div class="page-actions"><button class="btn btn-primary" onclick="openQuoteModal()"><i class="fas fa-plus"></i> New Quote</button></div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Quote #</th><th>Customer</th><th>Date</th><th>Valid Until</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="7"><div class="empty-state" style="padding:32px"><i class="fas fa-file-signature"></i><p>No quotes yet.</p></div></td></tr>'}</tbody>
+      </table></div>`;
+}
+
+window.openQuoteModal = (presetCustomerId) => {
+  if (!customers.length) return alert('Please add a customer first.');
+  presetCustomerId = presetCustomerId ? String(presetCustomerId) : null;
+  const custOpts = customers.map(c => {
+    const cid = String(c._id||c.id);
+    return `<option value="${cid}" ${cid===presetCustomerId?'selected':''}>${esc(c.name)}</option>`;
+  }).join('');
+  const vatExempt = settings.isSmallCompany && !settings.isProfessionalServices;
+  showModal('New Quote', `
+    <div class="form-row cols-3">
+      <div class="form-group"><label class="form-label required">Customer</label><select class="form-control" id="quoCustomer">${custOpts}</select></div>
+      <div class="form-group"><label class="form-label">Quote Date</label><input type="date" class="form-control" id="quoDate" value="${today()}"></div>
+      <div class="form-group"><label class="form-label">Valid Until</label><input type="date" class="form-control" id="quoExpiry" value="${futureDate(14)}"></div>
+    </div>
+    <div class="section-label">Line Items</div>
+    <div class="line-items-header" style="grid-template-columns:2fr 60px 100px 100px ${vatExempt?'36px':'70px 36px'};"><span>Product / Description</span><span>Qty</span><span>Unit Price</span><span>Amount</span>${vatExempt?'':'<span>VAT?</span>'}<span></span></div>
+    <div id="quoLines"></div>
+    <button class="btn btn-ghost btn-sm" onclick="addQuoteLine()"><i class="fas fa-plus"></i> Add Line</button>
+    <div style="margin-top:16px; background:var(--surface2); border-radius:var(--radius-md); padding:12px 16px;">
+      <div class="line-total-row"><span class="lt-label">Subtotal</span><span class="lt-value" id="quoSubtotal">${fmt(0)}</span></div>
+      ${vatExempt?'':`<div class="line-total-row"><span class="lt-label">VAT (${settings.defaultVatRate||7.5}%)</span><span class="lt-value" id="quoVat">${fmt(0)}</span></div>`}
+      <div class="line-total-row grand"><span class="lt-label">Total</span><span class="lt-value" id="quoTotal">${fmt(0)}</span></div>
+    </div>
+    <div class="form-group" style="margin-top:12px;"><label class="form-label">Notes</label><textarea class="form-control" id="quoNotes" rows="2" placeholder="Terms, scope of work, anything the customer should see..."></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeTopModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="saveQuote()"><i class="fas fa-save"></i> Save Quote</button>`,
+    { width:'760px' }
+  );
+  addQuoteLine();
+};
+
+window.addQuoteLine = () => {
+  const prodOpts = products.filter(p=>p.itemType!=='raw_material').map(p=>
+    '<option value="'+(p._id||p.id)+'" data-price="'+p.price+'">'+esc(p.name)+' ('+fmt(p.price)+')</option>').join('');
+  const c = document.getElementById('quoLines'); if (!c) return;
+  const vatExempt = settings.isSmallCompany && !settings.isProfessionalServices;
+  const d = document.createElement('div');
+  d.className = 'invoice-line';
+  d.style.gridTemplateColumns = vatExempt ? '2fr 60px 100px 100px 36px' : '2fr 60px 100px 100px 70px 36px';
+  d.innerHTML =
+    '<select class="form-control prod-sel" onchange="quoteLineChanged(this)">' +
+    '<option value="">— Select Product / Custom —</option>' + prodOpts + '</select>' +
+    '<input class="form-control qty" type="number" value="1" min="1" oninput="quoteLineCalc(this)">' +
+    '<input class="form-control rate" type="number" value="0" step="0.01" oninput="quoteLineCalc(this)">' +
+    '<input class="form-control amt" readonly>' +
+    (vatExempt ? '' :
+    '<label style="display:flex;align-items:center;gap:5px;font-size:0.72rem;color:var(--text-2);cursor:pointer;white-space:nowrap;">' +
+    '<input type="checkbox" class="vat-check" checked onchange="updateQuoteTotal()"> VAT</label>') +
+    '<button class="btn btn-icon btn-ghost" onclick="this.closest(\'.invoice-line\').remove(); updateQuoteTotal()"><i class="fas fa-times"></i></button>';
+  c.appendChild(d);
+};
+window.quoteLineChanged = (sel) => {
+  const line = sel.closest('.invoice-line');
+  const price = sel.options[sel.selectedIndex]?.dataset.price || 0;
+  line.querySelector('.rate').value = price;
+  quoteLineCalc(line.querySelector('.qty'));
+};
+window.quoteLineCalc = (el) => {
+  const line = el.closest('.invoice-line');
+  const q = parseFloat(line.querySelector('.qty').value)||0;
+  const r = parseFloat(line.querySelector('.rate').value)||0;
+  line.querySelector('.amt').value = (q*r).toFixed(2);
+  updateQuoteTotal();
+};
+window.updateQuoteTotal = () => {
+  let sub = 0, vat = 0;
+  const vatExempt = settings.isSmallCompany && !settings.isProfessionalServices;
+  document.querySelectorAll('#quoLines .invoice-line').forEach(l => {
+    const lineAmt = parseFloat(l.querySelector('.amt')?.value) || 0;
+    const vatChk = l.querySelector('.vat-check');
+    const applyVat = !vatExempt && (vatChk ? vatChk.checked : true);
+    sub += lineAmt;
+    if (applyVat) vat += lineAmt * ((settings.defaultVatRate||7.5) / 100);
+  });
+  document.getElementById('quoSubtotal').textContent = fmt(sub);
+  const vatEl = document.getElementById('quoVat');
+  if (vatEl) vatEl.textContent = fmt(vat);
+  document.getElementById('quoTotal').textContent = fmt(sub + vat);
+};
+
+window.saveQuote = async function() {
+  const custId = document.getElementById('quoCustomer').value;
+  const date = document.getElementById('quoDate').value;
+  const expiryDate = document.getElementById('quoExpiry').value;
+  const vatExempt = settings.isSmallCompany && !settings.isProfessionalServices;
+  const lines = []; let subtotal = 0, vatAmt = 0;
+  document.querySelectorAll('#quoLines .invoice-line').forEach(l => {
+    const sel = l.querySelector('.prod-sel');
+    const prodId = sel.value || null;
+    const desc = sel.options[sel.selectedIndex]?.text || 'Item';
+    const q = parseFloat(l.querySelector('.qty').value) || 0;
+    const r = parseFloat(l.querySelector('.rate').value) || 0;
+    const a = q * r;
+    const vatChk = l.querySelector('.vat-check');
+    const vatApplicable = !vatExempt && (vatChk ? vatChk.checked : true);
+    const lineVat = parseFloat((a * (vatApplicable ? (settings.defaultVatRate||7.5)/100 : 0)).toFixed(2));
+    lines.push({ productId: prodId, description: desc, quantity: q, rate: r, amount: a, vatApplicable, lineVat });
+    subtotal += a; vatAmt += lineVat;
+  });
+  if (subtotal <= 0) return alert('Quote total must be > 0.');
+  const quoteData = { customerId: custId, date, expiryDate, lines, notes: document.getElementById('quoNotes')?.value || '' };
+  try {
+    await apiFetch('/quotes', { method:'POST', body: JSON.stringify(quoteData) });
+    closeTopModal();
+    await loadAllData();
+    renderQuotesView();
+    showToast('Quote saved.', 'success');
+  } catch (err) { showToast(err.message || 'Save failed.', 'danger'); }
+};
+
+window.sendQuoteAction = async (id) => {
+  try {
+    await apiFetch(`/quotes/${id}/send`, { method:'PUT' });
+    await loadAllData();
+    renderQuotesView();
+    showToast('Quote marked as sent.', 'success');
+  } catch (err) { showToast(err.message || 'Failed to update quote.', 'danger'); }
+};
+
+// There's no customer-facing portal yet, so acceptance/decline is logged
+// by staff based on how the customer actually responded (call, email,
+// signed copy) — the same manual-entry model used for bank transactions.
+window.recordQuoteResponse = async (id, response) => {
+  const label = response === 'accepted' ? 'accepted' : 'declined';
+  if (!confirm(`Record this quote as ${label} by the customer?`)) return;
+  try {
+    await apiFetch(`/quotes/${id}/response`, { method:'PUT', body: JSON.stringify({ response }) });
+    await loadAllData();
+    renderQuotesView();
+    showToast(`Quote marked ${label}.`, 'success');
+  } catch (err) { showToast(err.message || 'Failed to update quote.', 'danger'); }
+};
+
+window.convertQuoteToInvoice = async (id) => {
+  const q = quotes.find(x => (x._id||x.id) === id);
+  if (!q) return;
+  if (!confirm('Convert ' + q.number + ' to an Invoice? This posts revenue, VAT, and stock the same way creating an invoice directly would.')) return;
+  try {
+    await apiFetch(`/quotes/${id}/convert`, { method:'POST', body: JSON.stringify({}) });
+    await loadAllData();
+    renderQuotesView();
+    renderDashboard();
+    showToast('Invoice created from ' + q.number + '. Go to Invoices to collect payment.', 'success');
+  } catch (err) { showToast(err.message || 'Conversion failed.', 'danger'); }
+};
+
+window.deleteQuote = async (id) => {
+  if (!confirm('Delete this quote?')) return;
+  try {
+    await apiFetch(`/quotes/${id}`, { method:'DELETE' });
+    await loadAllData();
+    renderQuotesView();
+  } catch (err) { showToast(err.message || 'Failed to delete quote.', 'danger'); }
+};
+
 // ============================================
 // PERMANENT FIX: Add Customer button handler
 // ============================================

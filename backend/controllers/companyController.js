@@ -1,4 +1,5 @@
 const Company = require('../models/Company');
+const AppError = require('../utils/AppError');
 const Account = require('../models/Account');
 const JournalEntry = require('../models/JournalEntry');
 const mongoose = require('mongoose');
@@ -37,9 +38,15 @@ exports.getSettings = async (req, res) => {
       smallCompanyTurnoverThreshold:   company.taxStatus?.smallCompanyTurnoverThreshold   ?? 100000000,
       smallCompanyFixedAssetThreshold: company.taxStatus?.smallCompanyFixedAssetThreshold ?? 250000000,
       whtDeMinimisThreshold:           company.taxStatus?.whtDeMinimisThreshold           ?? 2000000,
+
+      // Bill maker-checker threshold — read by billController.create() to
+      // decide whether a non-admin's bill needs approval before posting.
+      approvalThreshold:               company.approvalThreshold ?? 500000,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -55,9 +62,24 @@ exports.updateSettings = async (req, res) => {
     if (req.body.companyPhone) company.phone = req.body.companyPhone;
     if (req.body.companyEmail) company.email = req.body.companyEmail;
     if (req.body.companyAddress) company.address = req.body.companyAddress;
+
+    // Bill maker-checker threshold. Gated to admins here as well as (if
+    // present) at the route level — this number controls whether a
+    // non-admin's bill posts immediately or waits for sign-off, so letting
+    // any authenticated user lower or raise it would defeat the workflow.
+    if (req.body.approvalThreshold !== undefined) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only admins can change the approval threshold' });
+      }
+      const parsed = Number(req.body.approvalThreshold);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return res.status(400).json({ error: 'Approval threshold must be a non-negative number' });
+      }
+      company.approvalThreshold = parsed;
+    }
     // Update settings sub-object
     const settingsFields = ['invoicePrefix','nextInvoiceNumber','defaultDueDays',
-      'defaultVatRate','defaultInvoiceNotes','invoiceTemplate','currency','darkMode'];
+      'defaultVatRate','defaultInvoiceNotes','invoiceTemplate','currency','darkMode','companyLogo'];
     settingsFields.forEach(f => { if (req.body[f] !== undefined) company.settings[f] = req.body[f]; });
     company.markModified('settings');
 
@@ -79,7 +101,9 @@ exports.updateSettings = async (req, res) => {
 
     res.json({ message: 'Settings saved successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -90,7 +114,9 @@ exports.getProfile = async (req, res) => {
     if (!company) return res.status(404).json({ error: 'Company not found' });
     res.json(company);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -154,7 +180,9 @@ exports.clearCompanyData = async (req, res) => {
     res.json({ message: 'All transactional data cleared. Chart of Accounts preserved.' });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -202,7 +230,9 @@ exports.reopenPeriod = async (req, res) => {
       lockedUntilDate: company.lockedUntilDate
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -215,13 +245,13 @@ exports.closeYear = async (req, res) => {
     const companyId = req.user.companyId;
 
     const company = await Company.findById(companyId).session(session);
-    if (!company) throw new Error('Company not found');
+    if (!company) throw new AppError('Company not found', 404);
 
     // Guard against closing the same year twice — without this, re-running
     // close-year would zero already-zeroed accounts and credit Retained
     // Earnings with the same net income a second time.
     if ((company.closedYears || []).includes(yearToClose)) {
-      throw new Error(`Year ${yearToClose} has already been closed.`);
+      throw new AppError(`Year ${yearToClose} has already been closed.`, 400);
     }
 
     // Check if any transactions exist in the new fiscal year — broadened
@@ -237,7 +267,7 @@ exports.closeYear = async (req, res) => {
       JournalEntry.findOne({ companyId, date: { $gte: nextYearStart } }).session(session)
     ]);
     if (existingInvoice || existingBill || existingJournal) {
-      throw new Error('Transactions already exist in the new fiscal year. Cannot close previous year.');
+      throw new AppError('Transactions already exist in the new fiscal year. Cannot close previous year.', 400);
     }
 
     // Get Revenue and Expense accounts. COGS accounts are stored as
@@ -307,7 +337,9 @@ exports.closeYear = async (req, res) => {
     res.json({ message: `Year ${yearToClose} closed successfully. Net income: ${netIncome.toFixed(2)} transferred to Retained Earnings.`, netIncome });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

@@ -1,4 +1,5 @@
 const Account = require('../models/Account');
+const AppError = require('../utils/AppError');
 const Invoice = require('../models/Invoice');
 const Bill = require('../models/Bill');
 
@@ -10,7 +11,9 @@ exports.getProfitLoss = async (req, res) => {
     const netIncome = revenue - expenses;
     res.json({ revenue, expenses, netIncome });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -22,7 +25,9 @@ exports.getBalanceSheet = async (req, res) => {
     const equity = accounts.filter(a => a.type === 'Equity').reduce((s, a) => s + a.balance, 0);
     res.json({ assets, liabilities, equity });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -39,7 +44,9 @@ exports.getTrialBalance = async (req, res) => {
     const totalCredit = trialBalance.reduce((s, a) => s + a.credit, 0);
     res.json({ trialBalance, totalDebit, totalCredit });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -52,7 +59,9 @@ exports.getVATSummary = async (req, res) => {
     const netVAT = outputVAT - inputVAT;
     res.json({ outputVAT, inputVAT, netVAT });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -73,6 +82,8 @@ exports.getCashFlow = async (req, res) => {
     const netCash = operatingCF + investingCF + financingCF;
     res.json({ operatingCF, investingCF, financingCF, netCash });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

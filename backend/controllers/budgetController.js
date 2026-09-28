@@ -1,12 +1,15 @@
 const Budget = require('../models/Budget');
 const { logAudit } = require('../utils/auditLog');
+const AppError = require('../utils/AppError');
 
 exports.getAll = async (req, res) => {
   try {
     const budgets = await Budget.find({ companyId: req.user.companyId, isActive: { $ne: false } });
     res.json(budgets);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -23,7 +26,9 @@ exports.create = async (req, res) => {
     }
     res.status(201).json(budget);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -38,6 +43,8 @@ exports.delete = async (req, res) => {
     await logAudit(req, 'BUDGET_DEACTIVATED', `Deactivated budget ${budget.name || budget._id}`);
     res.json({ message: 'Budget deactivated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

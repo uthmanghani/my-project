@@ -1,4 +1,5 @@
 const Employee = require('../models/Employee');
+const AppError = require('../utils/AppError');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
 const { calculatePAYE, calculateLevies } = require('../utils/taxCalculations');
@@ -10,7 +11,9 @@ exports.getAll = async (req, res) => {
     const employees = await Employee.find({ companyId: req.user.companyId, isActive: { $ne: false } }).sort({ name: 1 });
     res.json(employees);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -20,7 +23,9 @@ exports.create = async (req, res) => {
     await employee.save();
     res.status(201).json(employee);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -34,7 +39,9 @@ exports.update = async (req, res) => {
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
     res.json(employee);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -49,7 +56,9 @@ exports.delete = async (req, res) => {
     await logAudit(req, 'EMPLOYEE_DEACTIVATED', `Deactivated employee ${employee.firstName || ''} ${employee.lastName || ''}`.trim());
     res.json({ message: 'Employee deactivated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -60,7 +69,7 @@ exports.runPayroll = async (req, res) => {
     const { month, year } = req.body;
     const payDate = `${year}-${String(month).padStart(2, '0')}-28`;
     const employees = await Employee.find({ companyId: req.user.companyId }).session(session);
-    if (!employees.length) throw new Error('No employees found');
+    if (!employees.length) throw new AppError('No employees found', 400);
 
     let totalGross = 0, totalPAYE = 0, totalPension = 0, totalNet = 0, totalNHF = 0;
     let totalNSITF = 0, totalITF = 0;
@@ -155,7 +164,9 @@ exports.runPayroll = async (req, res) => {
     res.json({ message: 'Batch payroll processed', totalGross, totalNet, totalPAYE, totalPension, totalNHF, totalEmployerLevies });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

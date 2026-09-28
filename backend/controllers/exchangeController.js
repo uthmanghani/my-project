@@ -1,4 +1,5 @@
 const ExchangeRateCache = require('../models/ExchangeRateCache');
+const AppError = require('../utils/AppError');
 
 // open.er-api.com is free, requires no API key, and returns rates FROM the
 // base currency TO everything else. We fetch with NGN as the base, then
@@ -19,11 +20,11 @@ async function fetchFromProvider() {
   try {
     const response = await fetch(PROVIDER_URL, { signal: controller.signal });
     if (!response.ok) {
-      throw new Error(`Exchange rate provider responded with HTTP ${response.status}`);
+      throw new AppError(`Exchange rate provider responded with HTTP ${response.status}`, 502);
     }
     const json = await response.json();
     if (json.result !== 'success' || !json.rates) {
-      throw new Error('Exchange rate provider response did not include rates');
+      throw new AppError('Exchange rate provider response did not include rates', 502);
     }
 
     const rates = {};
@@ -35,7 +36,7 @@ async function fetchFromProvider() {
       }
     }
     if (Object.keys(rates).length === 0) {
-      throw new Error('None of the supported currencies were present in the provider response');
+      throw new AppError('None of the supported currencies were present in the provider response', 502);
     }
 
     return { rates, fetchedAt: new Date() };
@@ -107,6 +108,8 @@ exports.getRates = async (req, res) => {
       });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

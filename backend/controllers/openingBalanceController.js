@@ -1,4 +1,5 @@
 const Account = require('../models/Account');
+const AppError = require('../utils/AppError');
 const JournalEntry = require('../models/JournalEntry');
 const mongoose = require('mongoose');
 
@@ -11,7 +12,9 @@ exports.getOpeningBalances = async (req, res) => {
     });
     res.json(openingBalances);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -35,7 +38,9 @@ exports.setOpeningBalances = async (req, res) => {
     res.json({ message: 'Opening balances updated' });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

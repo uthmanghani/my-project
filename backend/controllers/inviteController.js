@@ -1,4 +1,5 @@
 const Invite = require('../models/Invite');
+const AppError = require('../utils/AppError');
 const crypto = require('crypto');
  
 // Generate a new invite token (super admin only)
@@ -12,7 +13,9 @@ exports.generateInvite = async (req, res) => {
     const link = `${process.env.FRONTEND_URL}?invite=${token}`;
     res.status(201).json({ token, link, expiresAt, message: 'Invite created successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -26,7 +29,9 @@ exports.validateInvite = async (req, res) => {
     if (invite.expiresAt < new Date()) return res.status(400).json({ valid: false, error: 'This invite link has expired' });
     res.json({ valid: true, email: invite.email, note: invite.note, expiresAt: invite.expiresAt });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -44,7 +49,9 @@ exports.consumeInvite = async (req, res) => {
     await invite.save();
     res.json({ message: 'Invite consumed successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -54,7 +61,9 @@ exports.listInvites = async (req, res) => {
     const invites = await Invite.find().sort({ createdAt: -1 }).limit(100);
     res.json(invites);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -64,6 +73,8 @@ exports.revokeInvite = async (req, res) => {
     await Invite.findByIdAndDelete(req.params.id);
     res.json({ message: 'Invite revoked' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };

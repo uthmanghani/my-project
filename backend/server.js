@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const { connectDB } = require('./config/db');
 const { runMigrations } = require('./utils/migrationRunner');
 
@@ -18,6 +19,8 @@ const vendorRoutes = require('./routes/vendorRoutes');
 const productRoutes = require('./routes/productRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const billRoutes = require('./routes/billRoutes');
+const purchaseOrderRoutes = require('./routes/purchaseOrderRoutes');
+const recurringBillingRoutes = require('./routes/recurringBillingRoutes');
 const journalRoutes = require('./routes/journalRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const assetRoutes = require('./routes/assetRoutes');
@@ -45,9 +48,16 @@ const app = express();
 connectDB().then(() => runMigrations());
 
 // ==================== MIDDLEWARE ====================
+// Security headers (CSP left to the frontend's own hosting config since
+// this API serves JSON, not pages)
+app.use(helmet());
+
 // Enable CORS for frontend development
+// 'file://' was removed â browsers actually send Origin: null for local
+// files, not the string 'file://', so it never matched anything and only
+// looked like it permitted local-file access.
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5500', 'https://accountrack.onrender.com', 'file://'],
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5500', 'https://accountrack.onrender.com'],
   credentials: true
 }));
 
@@ -73,6 +83,8 @@ app.use('/api/vendors', authenticateToken, vendorRoutes);
 app.use('/api/products', authenticateToken, productRoutes);
 app.use('/api/invoices', authenticateToken, invoiceRoutes);
 app.use('/api/bills', authenticateToken, billRoutes);
+app.use('/api/purchase-orders', authenticateToken, purchaseOrderRoutes);
+app.use('/api/recurring-billings', authenticateToken, recurringBillingRoutes);
 app.use('/api/journals', authenticateToken, journalRoutes);
 app.use('/api/employees', authenticateToken, employeeRoutes);
 app.use('/api/assets', authenticateToken, assetRoutes);
@@ -89,6 +101,7 @@ app.use('/api/import', authenticateToken, exportImportRoutes);
 app.use('/api/payroll', authenticateToken, payrollRoutes);
 app.use('/api/invites', inviteRoutes);
 app.use('/api/exchange-rates', authenticateToken, exchangeRateRoutes);
+app.use('/api/quotes', authenticateToken, require('./routes/quoteRoutes'));
 
 // ==================== HEALTH CHECK ====================
 app.get('/health', (req, res) => {
@@ -130,6 +143,8 @@ const server = app.listen(PORT, () => {
 const { closeDB } = require('./config/db');
 const { startRecurringJob } = require('./utils/recurringJob');
 startRecurringJob();
+const { startRecurringBillingJob } = require('./utils/recurringBillingJob');
+startRecurringBillingJob();
 
 process.on('SIGINT', async () => {
   console.log('🔴 Shutting down gracefully...');

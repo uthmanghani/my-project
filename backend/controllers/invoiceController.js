@@ -1,4 +1,5 @@
 const Invoice = require('../models/Invoice');
+const AppError = require('../utils/AppError');
 const JournalEntry = require('../models/JournalEntry');
 const Product = require('../models/Product');
 const Account = require('../models/Account');
@@ -18,7 +19,9 @@ exports.getAll = async (req, res) => {
       .sort({ date: -1 });
     res.json(invoices);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -31,7 +34,9 @@ exports.getOne = async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json(invoice);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -49,7 +54,9 @@ exports.create = async (req, res) => {
     res.status(201).json(invoice);
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -65,7 +72,9 @@ exports.update = async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json(invoice);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -74,9 +83,11 @@ exports.recordPayment = async (req, res) => {
   session.startTransaction();
   try {
     const { amount, date, bankCode } = req.body;
-    const invoice = await Invoice.findById(req.params.id).session(session);
-    if (!invoice) throw new Error('Invoice not found');
-    if (invoice.status === 'paid') throw new Error('Invoice already fully paid');
+    // SECURITY: was Invoice.findById with no companyId check â any user of
+    // ANY company could record a payment against another company's invoice.
+    const invoice = await Invoice.findOne({ _id: req.params.id, companyId: req.user.companyId }).session(session);
+    if (!invoice) throw new AppError('Invoice not found', 404);
+    if (invoice.status === 'paid') throw new AppError('Invoice already fully paid', 400);
 
     const remaining = invoice.total - invoice.amountPaid;
     const paidAmount = Math.min(amount, remaining);
@@ -89,7 +100,7 @@ exports.recordPayment = async (req, res) => {
 
     const cashAccount = await Account.findOne({ companyId: req.user.companyId, code: bankCode || '1000' }).session(session);
     const arAccount = await Account.findOne({ companyId: req.user.companyId, code: '1100' }).session(session);
-    if (!cashAccount || !arAccount) throw new Error('Required accounts not found');
+    if (!cashAccount || !arAccount) throw new AppError('Required accounts not found', 400);
 
     const journal = new JournalEntry({
       companyId: req.user.companyId,
@@ -145,7 +156,9 @@ exports.recordPayment = async (req, res) => {
     res.json(invoice);
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -171,7 +184,9 @@ exports.sendEmail = async (req, res) => {
     });
     res.json({ message: 'Invoice emailed successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
  
@@ -180,13 +195,15 @@ exports.issueCreditNote = async (req, res) => {
   session.startTransaction();
   try {
     const { amount, reason } = req.body;
-    const invoice = await Invoice.findById(req.params.id).session(session);
-    if (!invoice) throw new Error('Invoice not found');
-    if (amount > invoice.total) throw new Error('Credit cannot exceed invoice total');
+    // SECURITY: was Invoice.findById with no companyId check â any user of
+    // ANY company could issue a credit note against another company's invoice.
+    const invoice = await Invoice.findOne({ _id: req.params.id, companyId: req.user.companyId }).session(session);
+    if (!invoice) throw new AppError('Invoice not found', 404);
+    if (amount > invoice.total) throw new AppError('Credit cannot exceed invoice total', 400);
  
     const arAccount = await Account.findOne({ companyId: req.user.companyId, code: '1100' }).session(session);
     const revenueAccount = await Account.findOne({ companyId: req.user.companyId, code: '4000' }).session(session);
-    if (!arAccount || !revenueAccount) throw new Error('Required accounts not found');
+    if (!arAccount || !revenueAccount) throw new AppError('Required accounts not found', 400);
  
     const journal = new JournalEntry({
       companyId: req.user.companyId,
@@ -215,7 +232,9 @@ exports.issueCreditNote = async (req, res) => {
     res.json({ message: 'Credit note issued', creditNoteAmount: invoice.creditNoteAmount });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -275,7 +294,9 @@ exports.delete = async (req, res) => {
     res.json({ message: 'Invoice voided. Journal entries reversed and stock restored.' });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }

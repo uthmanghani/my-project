@@ -1,5 +1,25 @@
 const mongoose = require('mongoose');
 
+const AttachmentSchema = new mongoose.Schema({
+  name: { type: String, default: '' },
+  type: { type: String, default: '' },
+  // Must be an embedded data: URI, e.g. "data:image/png;base64,....". This is
+  // the ONLY field validated here, but it's the one that matters: without
+  // this check, anything (including a javascript: URI) could be stored and
+  // later handed straight to a real <a href> click or <img src> by the
+  // frontend's viewAttachment() -- a stored-XSS vector that happened not to
+  // fire only because this field was silently dropped (not in either
+  // schema) before now, so nothing was ever actually persisted to trigger it.
+  data: {
+    type: String,
+    default: '',
+    validate: {
+      validator: v => !v || /^data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/.test(v),
+      message: 'attachment.data must be a base64 data: URI'
+    }
+  }
+}, { _id: false });
+
 const BillPaymentSchema = new mongoose.Schema({
   date: Date,
   amount: Number,
@@ -46,12 +66,13 @@ const BillSchema = new mongoose.Schema({
   balance: { type: Number, default: 0 },
   expenseAccount: String,
   isInventoryPurchase: { type: Boolean, default: false },
+  attachment: { type: AttachmentSchema, default: undefined },
   // Maker-checker approval workflow — this field was referenced by
   // billController.js but never actually existed in this schema, meaning
   // it was silently stripped on every save. Adding it for real.
   approvalStatus: {
     type: String,
-    enum: ['approved', 'pending_approval'],
+    enum: ['approved', 'pending_approval', 'rejected'],
     default: 'approved'
   },
   // A posted bill is never deleted — voiding reverses its journal entries

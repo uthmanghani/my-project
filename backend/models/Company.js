@@ -23,7 +23,25 @@ const CompanySchema = new mongoose.Schema({
     defaultInvoiceNotes: { type: String, default: 'Thank you for your business.' },
     invoiceTemplate: { type: String, enum: ['classic', 'modern', 'minimal'], default: 'classic' },
     darkMode: { type: Boolean, default: false },
-    currency: { type: String, default: '₦' }
+    currency: { type: String, default: '₦' },
+    // Was collected client-side (uploadCompanyLogo) and written to
+    // localStorage, but never sent to the server at all -- saveSettings()
+    // didn't include it in its request body, and even if it had, this
+    // field didn't exist here for Mongoose to save. It looked like it
+    // worked (an instant local preview), but never persisted: a different
+    // device, browser, or a cleared cache always showed no logo, and every
+    // printed invoice generated anywhere but that one browser was affected.
+    // Same data: URI validation as Bill/Invoice attachments, for the same
+    // reason -- an <img src> is a real render sink.
+    companyLogo: {
+      type: String,
+      default: '',
+      maxlength: [3000000, 'Logo file is too large'],
+      validate: {
+        validator: v => !v || /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/.test(v),
+        message: 'companyLogo must be an image encoded as a base64 data: URI'
+      }
+    }
   },
   createdAt: {
     type: Date,

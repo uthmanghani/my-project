@@ -1,5 +1,25 @@
 const mongoose = require('mongoose');
 
+const AttachmentSchema = new mongoose.Schema({
+  name: { type: String, default: '' },
+  type: { type: String, default: '' },
+  // Must be an embedded data: URI, e.g. "data:image/png;base64,....". This is
+  // the ONLY field validated here, but it's the one that matters: without
+  // this check, anything (including a javascript: URI) could be stored and
+  // later handed straight to a real <a href> click or <img src> by the
+  // frontend's viewAttachment() -- a stored-XSS vector that happened not to
+  // fire only because this field was silently dropped (not in either
+  // schema) before now, so nothing was ever actually persisted to trigger it.
+  data: {
+    type: String,
+    default: '',
+    validate: {
+      validator: v => !v || /^data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/.test(v),
+      message: 'attachment.data must be a base64 data: URI'
+    }
+  }
+}, { _id: false });
+
 const PaymentSchema = new mongoose.Schema({
   date: Date,
   amount: Number,
@@ -53,6 +73,7 @@ const InvoiceSchema = new mongoose.Schema({
   amountPaid: { type: Number, default: 0 },
   balance: { type: Number, default: 0 },
   notes: String,
+  attachment: { type: AttachmentSchema, default: undefined },
   isRecurring: { type: Boolean, default: false },
   recurringFreq: { type: String, enum: ['monthly', 'weekly', 'quarterly', 'annually'] },
   recurringNextDate: Date,

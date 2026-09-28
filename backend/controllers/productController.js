@@ -1,4 +1,5 @@
 const Product = require('../models/Product');
+const AppError = require('../utils/AppError');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
 const mongoose = require('mongoose');
@@ -9,7 +10,9 @@ exports.getAll = async (req, res) => {
     const products = await Product.find({ companyId: req.user.companyId, isActive: { $ne: false } }).sort({ name: 1 });
     res.json(products);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -22,7 +25,9 @@ exports.getOne = async (req, res) => {
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -70,7 +75,9 @@ exports.create = async (req, res) => {
     res.status(201).json(product);
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
@@ -89,7 +96,9 @@ exports.update = async (req, res) => {
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -104,7 +113,9 @@ exports.delete = async (req, res) => {
     await logAudit(req, 'PRODUCT_DEACTIVATED', `Deactivated product ${product.name}`);
     res.json({ message: 'Product deactivated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 };
 
@@ -113,16 +124,18 @@ exports.adjustStock = async (req, res) => {
   session.startTransaction();
   try {
     const { productId, quantity, type, reference } = req.body;
-    const product = await Product.findById(productId).session(session);
-    if (!product) throw new Error('Product not found');
-    if (type === 'out' && product.stock < quantity) throw new Error('Insufficient stock');
+    // SECURITY: was Product.findById with no companyId check â any user of
+    // ANY company could adjust another company's stock and inventory balance.
+    const product = await Product.findOne({ _id: productId, companyId: req.user.companyId }).session(session);
+    if (!product) throw new AppError('Product not found', 404);
+    if (type === 'out' && product.stock < quantity) throw new AppError('Insufficient stock', 400);
 
     product.stock += (type === 'in' ? quantity : -quantity);
     await product.save({ session });
 
     const adjValue = quantity * product.cost;
     const inventoryAccount = await Account.findOne({ companyId: req.user.companyId, code: product.inventoryAccountCode || '1200' }).session(session);
-    if (!inventoryAccount) throw new Error('Inventory account not found for this product');
+    if (!inventoryAccount) throw new AppError('Inventory account not found for this product', 400);
     let adjAccount = await Account.findOne({ companyId: req.user.companyId, code: '6500' }).session(session);
     if (!adjAccount) {
       adjAccount = new Account({
@@ -163,7 +176,9 @@ exports.adjustStock = async (req, res) => {
     res.json({ message: 'Stock adjusted', newStock: product.stock });
   } catch (err) {
     await session.abortTransaction();
-    res.status(500).json({ error: err.message });
+    if (err instanceof AppError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   } finally {
     session.endSession();
   }
