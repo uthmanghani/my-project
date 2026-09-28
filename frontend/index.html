@@ -8532,10 +8532,10 @@ window.importData = function(input) {
 
 window.clearData = async function() {
   if (!confirm('⚠️ This will permanently delete all invoices, bills, customers, vendors, products, employees, assets, budgets, payments, bank transactions and audit history. Your Chart of Accounts will be kept (balances reset to zero). Continue?')) return;
-  if (!confirm('Last warning: this cannot be undone. Your Chart of Accounts stays intact — everything else is wiped. Proceed?')) return;
+  if (!confirm('Last warning: this cannot be undone. Your Chart of Accounts stays intact, except ledger accounts linked to bank accounts, which are removed with them. Proceed?')) return;
   try {
     await apiFetch('/company/clear', { method:'DELETE' });
-    showToast('Company data cleared. Chart of Accounts preserved.', 'success');
+    showToast('Company data cleared, including bank accounts and their ledger accounts.', 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (err) { showToast(err.message || 'Clear failed.', 'danger'); }
 };

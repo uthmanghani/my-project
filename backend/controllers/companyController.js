@@ -127,18 +127,20 @@ exports.clearCompanyData = async (req, res) => {
   try {
     const companyId = req.user.companyId;
 
-    // Deactivate (not delete) every bank account's linked ledger account
-    // BEFORE wiping the BankAccount documents themselves — without this,
-    // every reset leaves the old GL codes (1010, 1020, etc.) sitting
-    // active forever with a zeroed balance, cluttering the Chart of
-    // Accounts and never being reclaimed for new bank accounts.
+    // Remove every bank account's linked ledger account along with the bank
+    // accounts themselves. (Deactivating them instead — the old behavior —
+    // left the stale 15xx/10xx codes in the Chart of Accounts, useless
+    // once their bank account was gone.) Deleting is safe here, unlike a
+    // single-bank-account delete: every journal entry is wiped in this same
+    // transaction, so nothing is left referencing these codes. '1000' is
+    // never removed — it's the default Cash account seeded with the
+    // company, which a legacy bank account may also point at.
     const BankAccount = require('../models/BankAccount');
     const staleBankAccounts = await BankAccount.find({ companyId }).session(session);
-    const staleCodes = staleBankAccounts.map(b => b.code).filter(Boolean);
+    const staleCodes = staleBankAccounts.map(b => b.code).filter(c => c && c !== '1000');
     if (staleCodes.length) {
-      await require('../models/Account').updateMany(
-        { companyId, code: { $in: staleCodes } },
-        { $set: { isActive: false } }
+      await require('../models/Account').deleteMany(
+        { companyId, code: { $in: staleCodes } }
       ).session(session);
     }
 
