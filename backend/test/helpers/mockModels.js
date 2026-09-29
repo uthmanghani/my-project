@@ -123,6 +123,16 @@ function createDB() {
     payments: [], bankAccounts: [], bankTransactions: [], employees: [],
     auditLogs: [], customers: [], vendors: [], budgets: [],
   };
+  // The one company every test runs as. Tests can change fields on it
+  // (e.g. db.company.industry = 'fintech') before loading a controller.
+  db.company = {
+    _id: 'company-1',
+    industry: 'trading',
+    taxStatus: {},
+    approvalThreshold: 500000,
+    settings: { nextInvoiceNumber: 1, invoicePrefix: 'INV-', defaultDueDays: 30 },
+    save: async () => {}
+  };
   db.models = {
     '../models/Account': makeModel(db.accounts),
     '../models/Product': makeModel(db.products),
@@ -143,13 +153,7 @@ function createDB() {
     // Company is looked up a lot but never asserted on in these tests --
     // a fixed, reasonable default is enough.
     '../models/Company': {
-      findById: () => queryOf(() => ({
-        _id: 'company-1',
-        taxStatus: {},
-        approvalThreshold: 500000,
-        settings: { nextInvoiceNumber: 1, invoicePrefix: 'INV-', defaultDueDays: 30 },
-        save: async () => {}
-      }))
+      findById: () => queryOf(() => db.company)
     },
   };
   return db;

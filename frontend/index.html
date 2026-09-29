@@ -5039,13 +5039,21 @@ window.confirmAndRunPayroll = function() {
 // ════════════════════════════════════════════
 function renderAccountingView() {
   const types = ['Asset','Liability','Equity','Revenue','Expense'];
+  // The trash icon DEACTIVATES an account (it stays available to historical
+  // reports such as the Trial Balance and General Ledger, which read the full
+  // `accounts` list). This screen is for managing the chart, so hide the
+  // deactivated ones here only -- previously they kept showing exactly like
+  // live accounts, which made the trash icon look like it did nothing.
+  const visibleAccounts = accounts.filter(a => a.isActive !== false);
+  const hiddenCount = accounts.length - visibleAccounts.length;
   let html = `<div class="page-header">
-    <div class="page-title"><h2>Chart of Accounts</h2><p>${accounts.length} accounts</p></div>
+    <div class="page-title"><h2>Chart of Accounts</h2><p>${visibleAccounts.length} accounts${hiddenCount ? ` \u00b7 ${hiddenCount} deactivated (hidden here, kept for historical reports)` : ''}</p></div>
+
     <div class="page-actions">
 <button class="btn btn-primary" onclick="openAddAccountModal()"><i class="fas fa-plus"></i> Add Account</button>    </div>
   </div>`;
   types.forEach(type => {
-    const accs = accounts.filter(a=>a.type===type);
+   const accs = visibleAccounts.filter(a=>a.type===type);
     if (!accs.length) return;
     html += `<div class="section-label" style="margin-top:20px;">${type} Accounts</div>
     <div class="table-wrap" style="margin-bottom:12px;">

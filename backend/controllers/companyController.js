@@ -8,7 +8,7 @@ const INDUSTRIES = require('../utils/industryData');
 
 // Version fingerprint -- reported by GET /health so a deploy of this fix can
 // be verified from a browser, the same way bankController/billController are.
-exports.__VERSION__ = 'company-controller-2026-clear-removes-orphan-bank-ledger-accounts';
+exports.__VERSION__ = 'company-controller-2026-clear-removes-deactivated-non-template-assets';
 
 // Get company settings
 exports.getSettings = async (req, res) => {
@@ -141,36 +141,48 @@ exports.clearCompanyData = async (req, res) => {
     //     not. (Deleting a bank account in the Banking module only
     //     DEACTIVATES it, so these are still linked.)
     //  2. ORPHANS: ledger accounts whose BankAccount record is already
-    //     gone -- left behind by an earlier clear, which used to delete the
-    //     BankAccount rows but only deactivate their ledger accounts. With
-    //     no BankAccount to point at them, group 1 can never find these, so
-    //     they piled up in the Chart of Accounts forever. They are
-    //     recognised by what the Banking module leaves behind: an INACTIVE
-    //     Asset account inside the code ranges it allocates from (legacy
-    //     1010-1090, current 1500-1990). Codes any industry template seeds
-    //     (e.g. 1500 Land & Building, 1050 Central Bank Reserve) are never
-    //     treated as orphans, whatever their state.
+    //     gone. Nothing links them to a bank any more, so group 1 can
+    //     never find them -- and they were showing up in the Chart of
+    //     Accounts forever, including after "Clear company data". What
+    //     they DO have in common is that they were already retired:
+    //     removing a bank account (or an earlier clear, or the trash icon
+    //     on the Chart of Accounts screen) only ever DEACTIVATES the ledger
+    //     account. So: any deactivated Asset account that is not part of
+    //     this company's own industry template is dead weight.
+    //
+    //     An earlier version of this fix guessed orphans by CODE RANGE
+    //     (1010-1090 / 1500-1990) and refused to touch any code an industry
+    //     template uses anywhere. That missed real data: a bank ledger
+    //     account on 1095 (not a multiple of 10), and accounts on 1050 and
+    //     1500, which are template codes only in OTHER industries' charts
+    //     (e.g. 1050 Central Bank Reserve, 1500 Land & Building) -- not this
+    //     company's. Scoping the protection to the company's OWN template
+    //     fixes both.
     //
     // Deleting is safe: every journal entry is wiped in this same
-    // transaction, so nothing is left referencing these codes. '1000' is
-    // never removed -- it's the default Cash account seeded with the
-    // company, which a legacy bank account may also point at.
+    // transaction, so nothing is left referencing these codes -- which is
+    // also the only reason deactivated accounts were being kept. '1000' is
+    // never removed: it's the default Cash account seeded with the company,
+    // which a legacy bank account may also point at.
     const BankAccount = require('../models/BankAccount');
     const AccountModel = require('../models/Account');
-    const linkedBankAccounts = await BankAccount.find({ companyId }).session(session);
-    const linkedCodes = linkedBankAccounts.map(b => b.code).filter(c => c && c !== '1000');
 
-    const templateCodes = new Set();
-    for (const industry of INDUSTRIES) {
-      for (const acc of industry.accounts) templateCodes.add(acc.code);
-    }
-    const BANK_LEDGER_CODE = /^(10[1-9]0|1[5-9]\d0)$/;
-    const inactiveAssets = await AccountModel.find(
+    const company = await Company.findById(companyId).session(session);
+    const ownTemplate = INDUSTRIES.find(i => i.id === (company && company.industry));
+    // If the industry can't be identified, protect every template's codes:
+    // the conservative choice, since it can only ever remove LESS.
+    const protectedCodes = new Set(
+      (ownTemplate ? ownTemplate.accounts : INDUSTRIES.flatMap(i => i.accounts)).map(a => a.code)
+    );
+    protectedCodes.add('1000');
+
+    const linkedBankAccounts = await BankAccount.find({ companyId }).session(session);
+    const linkedCodes = linkedBankAccounts.map(b => b.code).filter(c => c && !protectedCodes.has(c));
+
+    const deactivatedAssets = await AccountModel.find(
       { companyId, type: 'Asset', isActive: false }
     ).session(session);
-    const orphanCodes = inactiveAssets
-      .map(a => a.code)
-      .filter(c => BANK_LEDGER_CODE.test(c) && !templateCodes.has(c));
+    const orphanCodes = deactivatedAssets.map(a => a.code).filter(c => !protectedCodes.has(c));
 
     const staleCodes = [...new Set([...linkedCodes, ...orphanCodes])];
     if (staleCodes.length) {

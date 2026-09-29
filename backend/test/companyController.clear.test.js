@@ -1,121 +1,124 @@
 'use strict';
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('path');
 const { createDB, seedAccount, loadController, mockReqRes } = require('./helpers/mockModels');
+const INDUSTRIES = require(path.join(__dirname, '..', 'utils', 'industryData.js'));
 
-// Builds a company whose Chart of Accounts holds every kind of account the
+// A company on a real industry template, plus every kind of leftover the
 // "Clear company data" action has to make a decision about.
-function setup() {
+function setup(industry = 'trading') {
   const db = createDB();
+  db.company.industry = industry;
   const BankAccount = db.models['../models/BankAccount'];
 
-  // Seeded by the industry template -- must survive a clear.
-  seedAccount(db, { code: '1000', name: 'Cash & Bank', type: 'Asset', balance: 500 });
-  seedAccount(db, { code: '1050', name: 'Central Bank Reserve', type: 'Asset', balance: 100 });
-  seedAccount(db, { code: '2000', name: 'Accounts Payable', type: 'Liability', balance: 50 });
-  // A custom account the user deactivated by hand -- not a bank account, must survive.
-  const custom = seedAccount(db, { code: '6900', name: 'Old Expense', type: 'Expense', balance: 0 });
-  custom.isActive = false;
+  // The company's own chart of accounts, straight from its template.
+  const template = INDUSTRIES.find(i => i.id === industry);
+  for (const a of template.accounts) seedAccount(db, { code: a.code, name: a.name, type: a.type, balance: 100 });
 
-  // 1. An ordinary, live bank account and its ledger account.
-  seedAccount(db, { code: '1500', name: 'GTBank - Main', type: 'Asset', balance: 1000 });
-  db.bankAccounts.push(new BankAccount({ companyId: 'co1', name: 'Main', bank: 'GTBank', code: '1500', isActive: true }));
+  // The four accounts from the bug report: bank ledger accounts still in the
+  // Chart of Accounts after a clear. Deactivated (removed from the chart),
+  // no BankAccount record left, and none of these codes is in the trading
+  // template. 1050 and 1500 ARE template codes -- but only in other
+  // industries -- and 1095 is not a multiple of 10.
+  const orphans = [
+    ['1020', 'Zenith Bank Savings Account - Uthman Ghani'],
+    ['1050', 'First Bank Current - First-BanK Acct'],
+    ['1095', 'OPAY Account'],
+    ['1500', 'Moniepoint - Moniepoint Wallet'],
+  ];
+  for (const [code, name] of orphans) seedAccount(db, { code, name, type: 'Asset' }).isActive = false;
 
-  // 2. A bank account deleted through the Banking module (which only
-  //    DEACTIVATES both the BankAccount and its ledger account).
-  const deactivatedLedger = seedAccount(db, { code: '1510', name: 'Zenith - Payroll', type: 'Asset', balance: 0 });
-  deactivatedLedger.isActive = false;
-  db.bankAccounts.push(new BankAccount({ companyId: 'co1', name: 'Payroll', bank: 'Zenith', code: '1510', isActive: false }));
+  // A live bank account, and one deleted through the Banking module (which
+  // only deactivates) -- both still have a BankAccount record pointing at them.
+  seedAccount(db, { code: '1510', name: 'GTBank - Main', type: 'Asset', balance: 1000 });
+  db.bankAccounts.push(new BankAccount({ companyId: 'co1', name: 'Main', bank: 'GTBank', code: '1510', isActive: true }));
+  seedAccount(db, { code: '1520', name: 'Zenith - Payroll', type: 'Asset' }).isActive = false;
+  db.bankAccounts.push(new BankAccount({ companyId: 'co1', name: 'Payroll', bank: 'Zenith', code: '1520', isActive: false }));
 
-  // 3. ORPHANS: ledger accounts whose BankAccount record no longer exists
-  //    (left behind by an earlier clear that deleted the BankAccount rows
-  //    but only deactivated the ledger accounts). Nothing links them to a
-  //    bank account any more, so they can only be recognised by what they
-  //    are: inactive Asset accounts in the bank code ranges.
-  const orphanNew = seedAccount(db, { code: '1520', name: 'Access - Old', type: 'Asset', balance: 0 });
-  orphanNew.isActive = false;
-  const orphanLegacy = seedAccount(db, { code: '1020', name: 'UBA - Savings', type: 'Asset', balance: 0 });
-  orphanLegacy.isActive = false;
-
-  return db;
+  return { db, template, orphanCodes: orphans.map(o => o[0]) };
 }
 
-const codesLeft = (db) => db.accounts.map(a => a.code).sort();
+async function clear(db) {
+  const ctl = loadController('controllers/companyController.js', db);
+  const { req, res } = mockReqRes();
+  await ctl.clearCompanyData(req, res);
+  return res;
+}
+const codesLeft = (db) => db.accounts.map(a => a.code);
 
 describe('companyController.clearCompanyData — bank ledger accounts', () => {
-  test('removes the ledger account of every live bank account', async () => {
-    const db = setup();
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
+  test('THE REPORTED BUG: the four leftover bank accounts from the screenshot are removed', async () => {
+    const { db, orphanCodes } = setup();
+    const res = await clear(db);
     assert.equal(res.statusCode, 200);
-    assert.ok(!codesLeft(db).includes('1500'), 'live bank ledger account 1500 must be removed');
+    for (const code of orphanCodes) assert.ok(!codesLeft(db).includes(code), `${code} must be removed`);
   });
 
-  test('removes the ledger account of a bank account deleted earlier through the Banking module', async () => {
-    const db = setup();
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    assert.ok(!codesLeft(db).includes('1510'), 'deactivated bank ledger account 1510 must be removed');
+  test('removes the ledger account of every bank account that still has a record, live or deactivated', async () => {
+    const { db } = setup();
+    await clear(db);
+    assert.ok(!codesLeft(db).includes('1510'), 'live bank ledger account must be removed');
+    assert.ok(!codesLeft(db).includes('1520'), 'deactivated bank ledger account must be removed');
   });
 
-  test('THE REPORTED BUG: removes orphaned bank ledger accounts that no BankAccount record points at any more', async () => {
-    const db = setup();
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    const left = codesLeft(db);
-    assert.ok(!left.includes('1520'), 'orphan 1520 must be removed');
-    assert.ok(!left.includes('1020'), 'legacy-range orphan 1020 must be removed');
-  });
-
-  test('keeps every account that is not a bank ledger account, and zeroes their balances', async () => {
-    const db = setup();
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    assert.deepEqual(codesLeft(db), ['1000', '1050', '2000', '6900']);
+  test("leaves exactly the company's own template chart behind, with balances zeroed", async () => {
+    const { db, template } = setup();
+    await clear(db);
+    assert.deepEqual(codesLeft(db).sort(), template.accounts.map(a => a.code).sort());
     assert.ok(db.accounts.every(a => a.balance === 0 && a.openingBalance === 0), 'balances must be reset');
   });
 
-  test('only ever touches the calling company', async () => {
-    const db = setup();
-    seedAccount(db, { code: '1500', name: 'Other Co Bank', type: 'Asset', companyId: 'OTHER' });
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    assert.ok(db.accounts.some(a => a.companyId === 'OTHER' && a.code === '1500'), 'another company\'s accounts must be untouched');
+  test("a code that is another industry's template account is NOT protected for this company", async () => {
+    // 1050 is Central Bank Reserve in the fintech template, but this is a trading company.
+    const { db } = setup('trading');
+    await clear(db);
+    assert.ok(!codesLeft(db).includes('1050'));
   });
 
-  test('never sweeps a template-seeded code, even if someone deactivated that account by hand', async () => {
-    // 1500 is "Land & Building" in several industry templates -- the same
-    // code the bank allocator tries first -- and 1050 is Central Bank Reserve.
+  test("but the company's OWN template accounts survive even if deactivated by hand", async () => {
+    // 1050 is Central Bank Reserve in the fintech template: for a fintech
+    // company it IS part of the chart, so a clear must keep it.
     const db = createDB();
-    seedAccount(db, { code: '1000', name: 'Cash & Bank', type: 'Asset' });
-    seedAccount(db, { code: '1050', name: 'Central Bank Reserve', type: 'Asset' }).isActive = false;
-    seedAccount(db, { code: '1500', name: 'Land & Building', type: 'Asset' }).isActive = false;
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    assert.ok(codesLeft(db).includes('1500'), 'template account 1500 must survive');
-    assert.ok(codesLeft(db).includes('1050'), 'template account 1050 must survive');
+    db.company.industry = 'fintech';
+    for (const a of INDUSTRIES.find(i => i.id === 'fintech').accounts) {
+      seedAccount(db, { code: a.code, name: a.name, type: a.type });
+    }
+    db.accounts.find(a => a.code === '1050').isActive = false;
+    await clear(db);
+    assert.ok(codesLeft(db).includes('1050'), 'own-template 1050 must survive');
   });
 
-  test('never sweeps an ACTIVE account in the bank code range that no bank account points at', async () => {
-    const db = setup();
-    seedAccount(db, { code: '1530', name: 'Custom Prepayments', type: 'Asset' }); // active, custom
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    assert.ok(codesLeft(db).includes('1530'), 'an active custom account must survive');
+  test('never removes an ACTIVE account, or a deactivated account that is not an Asset', async () => {
+    const { db } = setup();
+    seedAccount(db, { code: '1530', name: 'Custom Prepayments', type: 'Asset' }); // active custom
+    seedAccount(db, { code: '6999', name: 'Old Expense', type: 'Expense' }).isActive = false;
+    await clear(db);
+    assert.ok(codesLeft(db).includes('1530'), 'an active custom Asset account must survive');
+    assert.ok(codesLeft(db).includes('6999'), 'a deactivated non-Asset account is out of scope');
+  });
+
+  test('if the industry cannot be identified, it errs on the side of removing less', async () => {
+    const { db } = setup();
+    db.company.industry = 'something-unrecognised';
+    await clear(db);
+    const left = codesLeft(db);
+    // 1050 and 1500 are template codes somewhere, so they are kept...
+    assert.ok(left.includes('1050') && left.includes('1500'));
+    // ...but codes no template uses are still removed.
+    assert.ok(!left.includes('1020') && !left.includes('1095'));
+  });
+
+  test('only ever touches the calling company', async () => {
+    const { db } = setup();
+    seedAccount(db, { code: '1095', name: 'Other Co OPAY', type: 'Asset', companyId: 'OTHER' }).isActive = false;
+    await clear(db);
+    assert.ok(db.accounts.some(a => a.companyId === 'OTHER' && a.code === '1095'));
   });
 
   test('reports how many bank ledger accounts were removed', async () => {
-    const db = setup();
-    const ctl = loadController('controllers/companyController.js', db);
-    const { req, res } = mockReqRes();
-    await ctl.clearCompanyData(req, res);
-    assert.equal(res.body.bankLedgerAccountsRemoved, 4, '1500, 1510, 1520 and 1020');
+    const { db } = setup();
+    const res = await clear(db);
+    assert.equal(res.body.bankLedgerAccountsRemoved, 6, 'the 4 orphans plus 1510 and 1520');
   });
 });
