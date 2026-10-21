@@ -3424,7 +3424,7 @@ window.showCustomerStatement = function(customerId) {
     showToast('Customer not found', 'danger');
     return;
   }
-  // 🔥 FIX: Compare as strings – convert both invoice.customerId and the passed id
+  // 🔥 FIX: Compare as strings - convert both invoice.customerId and the passed id
   const custInvoices = [...invoices].filter(i => (i._customerName && String(i.customerId) === String(customerId)) || String(i.customerId?._id||i.customerId) === String(customerId))
     .sort((a,b) => (a.date > b.date) ? 1 : -1);
   const custPayments = custInvoices.reduce((s,i) => s + (i.amountPaid || 0), 0);
@@ -3446,7 +3446,7 @@ window.showCustomerStatement = function(customerId) {
     </tr>`;
   }).join('');
 
-  // (the rest of the statement window remains unchanged – copy it from your existing function)
+  // (the rest of the statement window remains unchanged - copy it from your existing function)
   const w = window.open('','_blank','width=800,height=700');
   w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${esc(cust.name)}</title>
   <style>body{font-family:Arial,sans-serif;max-width:760px;margin:32px auto;color:#1a1a1a;font-size:13px;}
@@ -4458,9 +4458,9 @@ window.openBillModal = (presetVendorId) => {
     a.type === 'Asset' && /inventory|stock|raw material|work[- ]?in[- ]?progress|finished goods/i.test(a.name)
   );
   const inventoryOpt = inventoryAccounts.map(a =>
-    `<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`
+    `<option value="${esc(a.code)}">${esc(a.code)} - ${esc(a.name)}</option>`
   ).join('');
-  const accOpts = inventoryOpt + accounts.filter(a => a.type === 'Expense').map(a => '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>').join('');
+  const accOpts = inventoryOpt + accounts.filter(a => a.type === 'Expense').map(a => '<option value="'+a.code+'">'+a.code+' - '+a.name+'</option>').join('');
   showModal('Enter Bill',`
     <div class="form-row cols-3">
       <div class="form-group"><label class="form-label required">Vendor</label><select class="form-control" id="bVendor">${vOpts}</select></div>
@@ -4779,12 +4779,12 @@ window.openPayslip = (id) => {
     <div class="payslip">
       <div class="payslip-row"><span class="pl">Monthly Gross Salary</span><span class="pv">${fmt(c.monthlyGross)}</span></div>
       <hr class="payslip-divider">
-      <div class="payslip-row"><span class="pl">Pension Deduction (8%)</span><span class="pv" style="color:var(--danger);">– ${fmt(c.monthlyPension)}</span></div>
-      <div class="payslip-row"><span class="pl">NHF Deduction (2.5%)</span><span class="pv" style="color:var(--danger);">– ${fmt(c.monthlyNHF)}</span></div>
-      <div class="payslip-row"><span class="pl">Rent Relief</span><span class="pv" style="color:var(--success);">– ${fmt(c.monthlyRentRelief)}</span></div>
+      <div class="payslip-row"><span class="pl">Pension Deduction (8%)</span><span class="pv" style="color:var(--danger);">- ${fmt(c.monthlyPension)}</span></div>
+      <div class="payslip-row"><span class="pl">NHF Deduction (2.5%)</span><span class="pv" style="color:var(--danger);">- ${fmt(c.monthlyNHF)}</span></div>
+      <div class="payslip-row"><span class="pl">Rent Relief</span><span class="pv" style="color:var(--success);">- ${fmt(c.monthlyRentRelief)}</span></div>
       <div class="payslip-row"><span class="pl">Taxable Income</span><span class="pv">${fmt(c.monthlyTaxable)}</span></div>
       <hr class="payslip-divider">
-      <div class="payslip-row"><span class="pl">PAYE Tax</span><span class="pv" style="color:var(--danger);">– ${fmt(c.monthlyPAYE)}</span></div>
+      <div class="payslip-row"><span class="pl">PAYE Tax</span><span class="pv" style="color:var(--danger);">- ${fmt(c.monthlyPAYE)}</span></div>
       <hr class="payslip-divider thick">
       <div class="payslip-row total"><span class="pl">NET PAY</span><span class="pv">${fmt(c.monthlyNet)}</span></div>
     </div>
@@ -4844,10 +4844,10 @@ window.printPayslipFull = function(empId) {
     <div class="row"><span class="label">Monthly Gross Salary</span><span class="value">${fmt(c.monthlyGross)}</span></div>
 
     <div class="section-title">Deductions</div>
-    <div class="row deduction"><span class="label">Pension Contribution (8%)</span><span class="value">– ${fmt(c.monthlyPension)}</span></div>
-    <div class="row deduction"><span class="label">NHF Contribution (2.5%)</span><span class="value">– ${fmt(c.monthlyNHF)}</span></div>
-    <div class="row deduction"><span class="label">PAYE Tax (NTA 2025)</span><span class="value">– ${fmt(c.monthlyPAYE)}</span></div>
-    <div class="row"><span class="label" style="color:#888;">Rent Relief Applied</span><span class="value" style="color:#16a34a;">– ${fmt(c.monthlyRentRelief)}</span></div>
+    <div class="row deduction"><span class="label">Pension Contribution (8%)</span><span class="value">- ${fmt(c.monthlyPension)}</span></div>
+    <div class="row deduction"><span class="label">NHF Contribution (2.5%)</span><span class="value">- ${fmt(c.monthlyNHF)}</span></div>
+    <div class="row deduction"><span class="label">PAYE Tax (NTA 2025)</span><span class="value">- ${fmt(c.monthlyPAYE)}</span></div>
+    <div class="row"><span class="label" style="color:#888;">Rent Relief Applied</span><span class="value" style="color:#16a34a;">- ${fmt(c.monthlyRentRelief)}</span></div>
 
     <div class="section-title">Statutory Levies (Employer-Paid — do not affect net pay)</div>
     <div class="row"><span class="label">NSITF (1%)</span><span class="value">${fmt(levies.nsitf)}</span></div>
@@ -4880,7 +4880,7 @@ window.recordPayroll = () => {
   if (!payeAcc) { payeAcc={code:'2200',name:'PAYE Payable',type:'Liability',balance:0}; accounts.push(payeAcc); }
   let pensAcc  = accounts.find(a=>a.code==='2300');
   if (!pensAcc) { pensAcc={code:'2300',name:'Pension Payable',type:'Liability',balance:0}; accounts.push(pensAcc); }
-  journalEntries.push({ id:genId(), date:pDate, description:`Salary – ${esc(emp.name)}`, type:'payroll', lines:[
+  journalEntries.push({ id:genId(), date:pDate, description:`Salary - ${esc(emp.name)}`, type:'payroll', lines:[
     { accountCode:salAcc.code, amount:c.monthlyGross, type:'debit' },
     { accountCode:cashAcc.code, amount:c.monthlyNet, type:'credit' },
     { accountCode:payeAcc.code, amount:c.monthlyPAYE, type:'credit' },
@@ -5186,7 +5186,7 @@ window.deleteAccount = (code) => {
   saveAllData(); renderAccountingView();
 };
 window.openJournalModal = () => {
-  const accOpts = accounts.map(a=>`<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`).join('');
+  const accOpts = accounts.map(a=>`<option value="${esc(a.code)}">${esc(a.code)} - ${esc(a.name)}</option>`).join('');
   showModal('New Journal Entry',`
     <div class="form-row cols-2">
       <div class="form-group"><label class="form-label">Date</label><input type="date" class="form-control" id="jeDate" value="${today()}"></div>
@@ -5205,7 +5205,7 @@ window.openJournalModal = () => {
 };
 window.addJeLine = () => {
   const c = document.getElementById('jeLines'); if(!c) return;
-  const accOpts = accounts.map(a=>`<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`).join('');
+  const accOpts = accounts.map(a=>`<option value="${esc(a.code)}">${esc(a.code)} - ${esc(a.name)}</option>`).join('');
   const d = document.createElement('div'); d.className = 'journal-line';
   d.style.gridTemplateColumns = '1fr 90px 120px 40px';
   d.innerHTML = `
@@ -6042,7 +6042,7 @@ window.showRpt = (type, btn) => {
     var glAccFilter = (document.getElementById('glAccFilter') ? document.getElementById('glAccFilter').value : 'all');
     var glDateFrom  = (document.getElementById('glDateFrom')  ? document.getElementById('glDateFrom').value  : '');
     var glDateTo    = (document.getElementById('glDateTo')    ? document.getElementById('glDateTo').value    : '');
-    var accOpts = '<option value="all">All Accounts</option>' + accounts.map(a => '<option value="'+a.code+'">'+a.code+' – '+a.name+'</option>').join('');
+    var accOpts = '<option value="all">All Accounts</option>' + accounts.map(a => '<option value="'+a.code+'">'+a.code+' - '+a.name+'</option>').join('');
     var glSections = accounts.filter(a => {
       if (glAccFilter !== 'all' && a.code !== glAccFilter) return false;
       var hasTx = journalEntries.some(je => je.lines.some(l => l.accountCode === a.code));
@@ -6190,15 +6190,15 @@ window.showRpt = (type, btn) => {
     cont.innerHTML = `<div style="font-size:1rem;font-weight:700;color:var(--text-1);margin-bottom:12px;">Accounts ${isAP?'Payable':'Receivable'} Aging Report<span style="float:right;font-size:0.78rem;font-weight:400;color:var(--text-3);">As at: ${today()}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
         ${summaryChip('Current', buckets.current, 'var(--success)')}
-        ${summaryChip('1–30 Days', buckets.d1_30, 'var(--warning)')}
-        ${summaryChip('31–60 Days', buckets.d31_60, '#f97316')}
-        ${summaryChip('61–90 Days', buckets.d61_90, 'var(--danger)')}
+        ${summaryChip('1-30 Days', buckets.d1_30, 'var(--warning)')}
+        ${summaryChip('31-60 Days', buckets.d31_60, '#f97316')}
+        ${summaryChip('61-90 Days', buckets.d61_90, 'var(--danger)')}
         ${summaryChip('90+ Days', buckets.d90plus, '#7f1d1d')}
       </div>
       ${bucket('Current (Not Yet Due)', buckets.current, 'var(--success)')}
-      ${bucket('1 – 30 Days Overdue', buckets.d1_30, 'var(--warning)')}
-      ${bucket('31 – 60 Days Overdue', buckets.d31_60, '#f97316')}
-      ${bucket('61 – 90 Days Overdue', buckets.d61_90, 'var(--danger)')}
+      ${bucket('1 - 30 Days Overdue', buckets.d1_30, 'var(--warning)')}
+      ${bucket('31 - 60 Days Overdue', buckets.d31_60, '#f97316')}
+      ${bucket('61 - 90 Days Overdue', buckets.d61_90, 'var(--danger)')}
       ${bucket('Over 90 Days Overdue', buckets.d90plus, '#7f1d1d')}
       ${grand===0?`<div class="empty-state" style="padding:32px"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No outstanding ${isAP?'payables':'receivables'}.</p></div>`: `<div class="report-row total" style="font-size:0.95rem;margin-top:16px;"><span>Total Outstanding ${isAP?'Payables':'Receivables'}</span><span>${fmt(grand)}</span></div>`}`;
     return;
@@ -6881,7 +6881,7 @@ function renderSettingsView() {
     lastCard.insertAdjacentElement('afterend', closingCard);
   }
 }
-// Legacy export removed – use the async version below
+// Legacy export removed - use the async version below
 window.exportData = async () => { await apiFetch('/export').catch(() => showToast('Export failed', 'danger')); };
 // Year-End Closing Wizard
 window.openYearEndWizard = async function() {
@@ -7042,7 +7042,7 @@ function renderHelpView() {
 
   const walkthroughSteps = [
     { icon:'fa-building', title:'Register your company', desc:'Set up your workspace by entering your RC Number, TIN, address and selecting your industry. Your Chart of Accounts is seeded automatically.', tips:['Enter RC Number and TIN exactly as registered with CAC','Choose your industry carefully — it configures your accounts','Your admin email is your login — keep it accessible'] },
-    { icon:'fa-calculator', title:'Review your Chart of Accounts', desc:'Your accounts are pre-configured for your industry. Add custom accounts if needed and set opening balances if migrating from another system.', tips:['Codes 1xxx = Assets, 2xxx = Liabilities, 3xxx = Equity, 4xxx = Revenue, 5–6xxx = Expenses','Add custom accounts via Chart of Accounts → Add Account','Do not delete system accounts used by invoices and payroll'] },
+    { icon:'fa-calculator', title:'Review your Chart of Accounts', desc:'Your accounts are pre-configured for your industry. Add custom accounts if needed and set opening balances if migrating from another system.', tips:['Codes 1xxx = Assets, 2xxx = Liabilities, 3xxx = Equity, 4xxx = Revenue, 5-6xxx = Expenses','Add custom accounts via Chart of Accounts → Add Account','Do not delete system accounts used by invoices and payroll'] },
     { icon:'fa-balance-scale', title:'Enter opening balances', desc:'If migrating from another system, enter your closing balances so reports start accurately from day one.', tips:['Go to Finance → Opening Balances','Enter balances from your previous accounting software','Leave at zero if starting fresh'] },
     { icon:'fa-users', title:'Add customers and vendors', desc:'Add the businesses you sell to (Customers) and buy from (Vendors) before creating invoices or bills.', tips:['Go to Customers → Add Customer','Enter their TIN if VAT registered — required for compliance','Repeat the same for Vendors under Purchasing'] },
     { icon:'fa-file-invoice-dollar', title:'Create your first invoice', desc:'Issue invoices to customers. AccounTrack posts journal entries and updates your receivables automatically.', tips:['Go to Invoices → New Invoice','Select a customer, add line items and set due date','VAT is calculated at 7.5% — toggle per line item'] },
@@ -7100,7 +7100,7 @@ function renderHelpView() {
         <div class="card" style="margin-bottom:16px;">
           <div class="card-header"><span class="card-title">Tax Reference</span></div>
           <div class="card-body">
-            ${[['VAT Rate','7.5% (Finance Act)'],['Pension Rate','8% employee + 10% employer'],['CIT Rate (SME)','20% (₦25M–₦100M turnover)'],['CIT Rate (Large)','30% (above ₦100M turnover)'],['Withholding Tax','5–10% depending on transaction']].map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:0.78rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">${k}</span><span style="font-weight:600;color:var(--text-1);">${v}</span></div>`).join('')}
+            ${[['VAT Rate','7.5% (Finance Act)'],['Pension Rate','8% employee + 10% employer'],['CIT Rate (SME)','20% (₦25M-₦100M turnover)'],['CIT Rate (Large)','30% (above ₦100M turnover)'],['Withholding Tax','5-10% depending on transaction']].map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:0.78rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-3);">${k}</span><span style="font-weight:600;color:var(--text-1);">${v}</span></div>`).join('')}
           </div>
         </div>
         <div class="card">
@@ -7108,7 +7108,7 @@ function renderHelpView() {
           <div class="card-body" style="font-size:0.8rem;">
             <div style="margin-bottom:10px;"><div style="font-weight:600;margin-bottom:4px;"><i class="fas fa-envelope" style="color:var(--brand);margin-right:6px;"></i>Email</div><div style="color:var(--text-3);">odunlamiuthman1@gmail.com</div></div>
             <div style="margin-bottom:10px;"><div style="font-weight:600;margin-bottom:4px;"><i class="fab fa-whatsapp" style="color:#25D366;margin-right:6px;"></i>WhatsApp</div><div style="color:var(--text-3);">+234 907 842 9701</div></div>
-            <div><div style="font-weight:600;margin-bottom:4px;"><i class="fas fa-clock" style="color:var(--brand);margin-right:6px;"></i>Support Hours</div><div style="color:var(--text-3);">Mon–Fri, 8am–6pm WAT</div></div>
+            <div><div style="font-weight:600;margin-bottom:4px;"><i class="fas fa-clock" style="color:var(--brand);margin-right:6px;"></i>Support Hours</div><div style="color:var(--text-3);">Mon-Fri, 8am-6pm WAT</div></div>
           </div>
         </div>
       </div>
@@ -7307,7 +7307,7 @@ window.toggleDark = () => {
 
 // ─── GLOBAL SEARCH ───
 // ════════════════════════════════════════════
-// globalSearch is defined later – this duplicate removed
+// globalSearch is defined later - this duplicate removed
 // ════════════════════════════════════════════
 // ─── NAVIGATION ───
 // ════════════════════════════════════════════
@@ -7898,7 +7898,7 @@ window.openReturnModal = function(kind, docId) {
   const invAcc  = accounts.find(isInventoryAccount);
   const cogsAcc = accounts.find(a => /cost of goods|cogs/i.test(a.name)) || accounts.find(a => a.code === '5000');
   const expAcc  = kind === 'purchase' ? accounts.find(a => a.code === doc.expenseAccount) : null;
-  const acctOpts = list => accounts.map(a => `<option value="${esc(a.code)}" ${list && a.code===list.code?'selected':''}>${esc(a.code)} – ${esc(a.name)}</option>`).join('');
+  const acctOpts = list => accounts.map(a => `<option value="${esc(a.code)}" ${list && a.code===list.code?'selected':''}>${esc(a.code)} - ${esc(a.name)}</option>`).join('');
  
   const rows = doc.lines.map((l, idx) => {
     const already = 0; // future: track prior returns per line
@@ -9246,7 +9246,7 @@ function renderPurchaseOrdersView() {
 window.openPOModal = () => {
   if (!vendors.length) return alert('Add a vendor first.');
   const vOpts=vendors.map(v=>`<option value="${v._id||v.id}">${esc(v.name)}</option>`).join('');
-  const accOpts=accounts.filter(a=>a.type==='Expense').map(a=>`<option value="${esc(a.code)}">${esc(a.code)} – ${esc(a.name)}</option>`).join('');
+  const accOpts=accounts.filter(a=>a.type==='Expense').map(a=>`<option value="${esc(a.code)}">${esc(a.code)} - ${esc(a.name)}</option>`).join('');
   showModal('New Purchase Order',`
     <div class="form-row cols-3">
       <div class="form-group"><label class="form-label required">Vendor</label><select class="form-control" id="poVendor">${vOpts}</select></div>
