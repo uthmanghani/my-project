@@ -26,12 +26,13 @@ exports.setOpeningBalances = async (req, res) => {
     for (const [code, balance] of Object.entries(newBalances)) {
       const account = await Account.findOne({ companyId: req.user.companyId, code }).session(session);
       if (account) {
-        account.openingBalance = balance;
-        // Adjust current balance: new balance - old balance (difference)
-        const diff = balance - (account.balance || 0);
-        account.balance = balance;
+        const newOB = Number(balance);
+        if (!Number.isFinite(newOB)) throw new AppError(`Opening balance for ${code} must be a number`, 400);
+        // Shift the running balance by the change in opening balance; overwriting it
+        // would erase every journal movement already posted to this account.
+        account.balance = (account.balance || 0) + (newOB - (account.openingBalance || 0));
+        account.openingBalance = newOB;
         await account.save({ session });
-        // Optionally post a journal entry to adjust retained earnings? Not needed if we just set balance directly.
       }
     }
     await session.commitTransaction();

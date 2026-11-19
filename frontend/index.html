@@ -1274,6 +1274,485 @@
 <!-- MOBILE SIDEBAR OVERLAY -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
 
+<script id="ifrs18-engine">
+/*
+ * IFRS 18 "Presentation and Disclosure in Financial Statements" reporting engine.
+ *
+ * Pure functions, no I/O, no framework: the same file runs in Node (tests, API)
+ * and in the browser (inlined into index.html), so the numbers on screen are the
+ * numbers the tests proved.
+ *
+ * What it produces
+ *   statementOfProfitOrLoss()  operating / investing / financing / income-tax /
+ *                              discontinued categories with the IFRS 18 subtotals
+ *                              (operating profit; profit before financing and
+ *                              income taxes; profit for the period), expenses by
+ *                              function OR by nature, the by-nature note, and an
+ *                              MPM (management-defined performance measure) note.
+ *   statementOfCashFlows()     indirect method STARTING FROM OPERATING PROFIT, with
+ *                              interest paid in financing and interest/dividends
+ *                              received in investing, tied to the ledger cash.
+ *   statementOfFinancialPosition()  current / non-current split (IAS 1 retained).
+ *   integrityChecks()          ledger audit: unbalanced journals, unknown account
+ *                              codes, stored-vs-recomputed balance drift.
+ *
+ * Sign convention: every amount is in its NATURAL sign (revenue positive when it
+ * earns, expense positive when it costs, assets positive when debit). Contra items
+ * therefore come out negative.
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.IFRS18 = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const CATEGORIES = ['operating', 'investing', 'financing', 'income_tax', 'discontinued'];
+  const FUNCTION_LINES = ['revenue', 'other_operating_income', 'cost_of_sales', 'selling_distribution', 'administrative', 'other_operating'];
+  const BS_CLASSES = ['current', 'non_current'];
+
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const sum = (arr, f) => r2(arr.reduce((s, x) => s + (f ? f(x) : x), 0));
+  const day = (d) => (d instanceof Date ? d.toISOString() : String(d || '')).slice(0, 10);
+  const nm = (a) => String((a && a.name) || '');
+
+  // ───────────────────────── classification ─────────────────────────
+
+  const isDrawings = (a) => /drawing/i.test(nm(a));
+  const isDebitNormal = (a) => a.type === 'Asset' || a.type === 'Expense' || isDrawings(a);
+
+  const RE_INCOME_TAX = /(income|company|companies|corporate|corporation|tertiary education|deferred) tax|\bcit\b|\btet\b|tax expense/i;
+  const RE_NOT_INCOME_TAX = /paye|vat|withholding|\bwht\b|payroll|property tax|levies? (&|and) tax|stamp|payable/i;
+  const RE_FIN_EXPENSE = /interest (expense|paid|charge|cost)|interest on (loan|borrowing|overdraft|lease|debenture|bond)|finance (cost|charge|expense)|loan interest|bank interest|unwinding|lease interest/i;
+  const RE_INV_INCOME = /interest (income|received|earned|revenue)|investment (income|gain)|dividend (income|received)|income from (investment|associate|joint)|fair value (gain|loss)|share of (profit|loss)|gain on (sale|disposal) of (investment|securit)|rental income (from|on) investment/i;
+  const RE_DISCONTINUED = /discontinued/i;
+
+  /** IFRS 18 category for a Revenue/Expense account. `opts.financialBusiness` = the
+   *  entity's MAIN business is lending/investing (banks, microfinance): interest and
+   *  investment income/expense then sit in the OPERATING category. */
+  function classifyCategory(a, opts) {
+    opts = opts || {};
+    if (a.ifrs18Category && CATEGORIES.includes(a.ifrs18Category)) return { category: a.ifrs18Category, source: 'override' };
+    const n = nm(a);
+    if (RE_DISCONTINUED.test(n)) return { category: 'discontinued', source: 'auto' };
+    if (a.type === 'Expense' && RE_INCOME_TAX.test(n) && !RE_NOT_INCOME_TAX.test(n)) return { category: 'income_tax', source: 'auto' };
+    if (!opts.financialBusiness) {
+      if (a.type === 'Expense' && RE_FIN_EXPENSE.test(n)) return { category: 'financing', source: 'auto' };
+      if (a.type === 'Revenue' && RE_INV_INCOME.test(n)) return { category: 'investing', source: 'auto' };
+      if (a.type === 'Expense' && /investment (loss|impairment)|loss on (sale|disposal) of (investment|securit)/i.test(n)) return { category: 'investing', source: 'auto' };
+    }
+    return { category: 'operating', source: 'auto' };
+  }
+
+  /** Function-of-expense line inside the operating category. */
+  function classifyFunction(a) {
+    const incomeLines = ['revenue', 'other_operating_income'];
+    if (a.ifrs18Line && FUNCTION_LINES.includes(a.ifrs18Line) &&
+        (a.type === 'Revenue') === incomeLines.includes(a.ifrs18Line)) return a.ifrs18Line; // an income line for revenue accounts, an expense line for expenses
+    const n = nm(a), code = String(a.code || '');
+    if (a.type === 'Revenue') {
+      return /other income|grant|donation|subsid|gain on (sale|disposal)|sundry|misc/i.test(n) ? 'other_operating_income' : 'revenue';
+    }
+    if (/exploration|dry hole|loss on (sale|disposal)|foreign exchange|exchange (loss|difference)|\bfx\b|penalt|fines?\b/i.test(n)) return 'other_operating';
+    if (/^5\d{3}$/.test(code) ||
+        /cost of (goods|sales|services|food|parts|properties|pharma|software)|\bcogs\b|direct (materials|labou?r)|materials consumed|inventory write.?down|lifting|subcontract|seeds|fertili[sz]er|harvesting|royalt|technician labou?r|medical supplies/i.test(n)) return 'cost_of_sales';
+    if (/marketing|advertis|promotion|packaging|shipping|distribution|transport|logistics|delivery|commission|customer acquisition|fuel/i.test(n)) return 'selling_distribution';
+    return 'administrative';
+  }
+
+  /** Nature-of-expense bucket (drives the mandatory by-nature note). */
+  function classifyNature(a) {
+    const n = nm(a);
+    if (/deprecia|amortis|amortiz|depletion/i.test(n)) return 'depreciation_amortisation';
+    if (/impairment|write.?down|loan loss|bad debt|doubtful|expected credit/i.test(n)) return 'impairment_writedown';
+    if (/salar|wage|labou?r|staff|payroll|pension|nsitf|\bitf\b|\bnhf\b|employee|bonus|allowance|benefit/i.test(n)) return 'employee_benefits';
+    if (classifyFunction(a) === 'cost_of_sales') return 'materials_goods';
+    return 'other';
+  }
+
+  const NATURE_LABELS = {
+    materials_goods: 'Cost of goods, materials and direct services',
+    employee_benefits: 'Employee benefits expense',
+    depreciation_amortisation: 'Depreciation, amortisation and depletion',
+    impairment_writedown: 'Impairment and write-downs',
+    other: 'Other operating expenses'
+  };
+  const FUNCTION_LABELS = {
+    revenue: 'Revenue', other_operating_income: 'Other operating income', cost_of_sales: 'Cost of sales',
+    selling_distribution: 'Selling and distribution expenses', administrative: 'Administrative expenses', other_operating: 'Other operating expenses'
+  };
+
+  // balance-sheet side
+  const RE_CASH = /\bcash\b|petty cash|bank(?!\s*loan)|moniepoint|opay|palmpay|kuda|wema|zenith|gtb|\buba\b|fidelity|stanbic|fcmb|polaris|sterling|union bank|first bank|access bank|\bpos\b|mobile money/i;
+  const RE_ACCUM = /accumulated (deprec|amortis|amortiz|impair)/i;
+  const RE_NONCURRENT_ASSET = /equipment|plant|machinery|vehicle|motor|furniture|fixture|building|\bland\b|propert(y|ies)|intangible|goodwill|software|computer|leasehold|biological|exploration|pipeline|improvement|capital work|\bcwip\b|tools|livestock|orchard|long.?term|right.of.use|investment(?!.*short)|accumulated/i;
+  const RE_NONCURRENT_LIAB = /\bloans?\b|borrowing|debenture|mortgage|\bbond|lease liab|long.?term|deferred tax|deferred income|gratuity|retirement benefit|restoration/i;
+  const RE_FINANCING_LIAB = /\bloans?\b|borrowing|debenture|mortgage|\bbond|lease liab|overdraft|long.?term|note payable|notes payable/i;
+  const RE_STATUTORY = /vat|paye|pension|nsitf|\bitf\b|\bnhf\b|withholding|\bwht\b|tax payable|levy|levies/i;
+
+  function bsClass(a, opts) {
+    if (a.type === 'Equity') return 'equity';
+    if (a.bsClass && BS_CLASSES.includes(a.bsClass)) return a.bsClass;
+    const n = nm(a), code = parseInt(a.code, 10) || 0;
+    if (a.type === 'Asset') {
+      if (isCash(a, opts)) return 'current';
+      if (/receivable|debtor|inventory|stock|prepa|advance|work.?in.?progress|finished goods|raw material/i.test(n) && !/long.?term/i.test(n)) return 'current';
+      if (RE_NONCURRENT_ASSET.test(n)) return 'non_current';
+      return code >= 1400 ? 'non_current' : 'current';
+    }
+    if (a.type === 'Liability') {
+      if (/overdraft/i.test(n)) return 'current';
+      return RE_NONCURRENT_LIAB.test(n) ? 'non_current' : 'current';
+    }
+    return null;
+  }
+
+  function isCash(a, opts) {
+    if (a.type !== 'Asset') return false;
+    const codes = (opts && opts.bankCodes) || [];
+    if (codes.includes(String(a.code))) return true;
+    return RE_CASH.test(nm(a)) && !/receivable|reserve requirement/i.test(nm(a));
+  }
+
+  /** Cash-flow bucket for a balance-sheet account. */
+  function cashFlowRole(a, opts) {
+    opts = opts || {};
+    const n = nm(a);
+    if (a.type === 'Asset') {
+      if (isCash(a, opts)) return { role: 'cash' };
+      if (RE_ACCUM.test(n)) return { role: 'noncash_adjustment', label: 'Depreciation, amortisation and impairment (non-cash)' };
+      if (/(interest|dividend) receivable/i.test(n)) return { role: 'investing_income_accrual' };
+      if (/loans? receivable/i.test(n)) return opts.financialBusiness ? { role: 'operating', label: 'Loans and advances to customers' } : { role: 'investing', label: n };
+      if (/receivable|debtor|retention|advance/i.test(n)) return { role: 'operating', label: 'Trade and other receivables' };
+      if (/inventory|stock|work.?in.?progress|finished goods|raw material/i.test(n)) return { role: 'operating', label: 'Inventories' };
+      if (/prepa/i.test(n)) return { role: 'operating', label: 'Prepayments and other current assets' };
+      if (bsClass(a, opts) === 'non_current') return { role: 'investing', label: n };
+      return { role: 'operating', label: 'Prepayments and other current assets' };
+    }
+    if (a.type === 'Liability') {
+      if (/interest payable|accrued interest/i.test(n)) return { role: 'interest_accrual' };
+      if (RE_INCOME_TAX.test(n) && /payable|provision|liab/i.test(n)) return { role: 'income_tax_accrual' };
+      if (RE_FINANCING_LIAB.test(n) && !/payable to (supplier|vendor)/i.test(n)) return { role: 'financing', label: n };
+      if (RE_STATUTORY.test(n)) return { role: 'operating', label: 'Taxes and statutory deductions payable (VAT, PAYE, pension, WHT)' };
+      return { role: 'operating', label: 'Trade and other payables' };
+    }
+    if (a.type === 'Equity') {
+      return { role: 'financing', label: isDrawings(a) ? 'Drawings / distributions to owners' : (/retained|reserve/i.test(n) ? 'Other movements in retained earnings and reserves' : 'Proceeds from owners’ capital contributions') };
+    }
+    return { role: 'operating', label: n };
+  }
+
+  // ───────────────────────── ledger arithmetic ─────────────────────────
+
+  /** Movement of one account over [from, to] (inclusive; either bound may be null),
+   *  in the account's natural sign. `closing` entries are ignored: they only move
+   *  profit between P&L accounts and Retained Earnings and would double-count. */
+  function buildMovementIndex(entries) {
+    const idx = {};
+    (entries || []).forEach((je) => {
+      if (!je || je.type === 'closing') return;
+      const d = day(je.date);
+      (je.lines || []).forEach((l) => {
+        const k = String(l.accountCode);
+        (idx[k] = idx[k] || []).push({ d, dr: l.type === 'debit' ? Number(l.amount) || 0 : 0, cr: l.type === 'credit' ? Number(l.amount) || 0 : 0 });
+      });
+    });
+    return idx;
+  }
+
+  function movement(a, idx, from, to) {
+    const rows = idx[String(a.code)] || [];
+    let dr = 0, cr = 0;
+    rows.forEach((r) => {
+      if (from && r.d < from) return;
+      if (to && r.d > to) return;
+      dr += r.dr; cr += r.cr;
+    });
+    return r2(isDebitNormal(a) ? dr - cr : cr - dr);
+  }
+
+  /** Balance of a Balance-Sheet account as at `asOf` (inclusive): opening + movements. */
+  function balanceAt(a, idx, openingBalances, asOf) {
+    const ob = Number((openingBalances || {})[a.code]) || 0;
+    return r2(ob + movement(a, idx, null, asOf));
+  }
+
+  function dayBefore(iso) {
+    const d = new Date(iso + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // ───────────────────────── statement of profit or loss ─────────────────────────
+
+  function statementOfProfitOrLoss(accounts, entries, period, opts) {
+    opts = opts || {};
+    const idx = opts._idx || buildMovementIndex(entries);
+    const from = period.from || null, to = period.to || null;
+    const pl = (accounts || []).filter((a) => a.type === 'Revenue' || a.type === 'Expense');
+    const rows = pl.map((a) => {
+      const amount = movement(a, idx, from, to);
+      const c = classifyCategory(a, opts);
+      return { code: a.code, name: a.name, type: a.type, amount, category: c.category, source: c.source,
+               line: classifyFunction(a), nature: a.type === 'Expense' ? classifyNature(a) : null };
+    }).filter((r) => Math.abs(r.amount) >= 0.005);
+
+    const inCat = (cat) => rows.filter((r) => r.category === cat);
+    const op = inCat('operating'), inv = inCat('investing'), fin = inCat('financing'), tax = inCat('income_tax'), disc = inCat('discontinued');
+    const signed = (r) => (r.type === 'Revenue' ? r.amount : -r.amount); // effect on profit
+    const net = (list) => sum(list, signed);
+    const byLine = (l) => op.filter((r) => r.line === l);
+
+    const revenue = byLine('revenue'), otherInc = byLine('other_operating_income');
+    const cos = byLine('cost_of_sales'), sd = byLine('selling_distribution'), adm = byLine('administrative'), oth = byLine('other_operating');
+    const totalRevenue = sum(revenue, (r) => r.amount);
+    const totalCos = sum(cos, (r) => r.amount);
+    const operatingProfit = net(op);
+    const investingNet = net(inv);
+    const profitBeforeFinancingAndTax = r2(operatingProfit + investingNet);
+    const financingNet = net(fin);
+    const profitBeforeTax = r2(profitBeforeFinancingAndTax + financingNet);
+    const taxExpense = sum(tax, (r) => r.amount);
+    const profitContinuing = r2(profitBeforeTax - taxExpense);
+    const discontinuedNet = net(disc);
+    const profitForPeriod = r2(profitContinuing + discontinuedNet);
+
+    // by-nature note (mandatory when presenting by function): ALL operating expenses
+    const natureTotals = { materials_goods: 0, employee_benefits: 0, depreciation_amortisation: 0, impairment_writedown: 0, other: 0 };
+    const natureLines = {};
+    op.filter((r) => r.type === 'Expense').forEach((r) => {
+      natureTotals[r.nature] = r2(natureTotals[r.nature] + r.amount);
+      (natureLines[r.nature] = natureLines[r.nature] || []).push({ code: r.code, name: r.name, amount: r.amount });
+    });
+    const totalOperatingExpenses = sum(Object.values(natureTotals));
+
+    // MPM note: EBITDA as the worked example of a management-defined performance measure
+    const da = natureTotals.depreciation_amortisation;
+    const taxRate = Number(opts.mpmTaxRate) || 0;
+    const mpms = [{
+      name: 'EBITDA (Earnings before interest, tax, depreciation and amortisation)',
+      definition: 'Operating profit plus depreciation, amortisation and depletion.',
+      comparable: 'Operating profit',
+      comparableAmount: operatingProfit,
+      reconciliation: [{ label: 'Depreciation, amortisation and depletion', amount: da, taxEffect: r2(-da * taxRate), nciEffect: 0 }],
+      amount: r2(operatingProfit + da),
+      taxRateAssumed: taxRate,
+      usefulness: 'Shows operating performance before the effect of capital intensity and asset ages.'
+    }];
+
+    const warnings = [];
+    rows.filter((r) => r.source === 'auto' && r.category !== 'operating').forEach((r) => {
+      warnings.push(`"${r.name}" was classified into the ${r.category.replace('_', ' ')} category from its name. Confirm or change it under Classification.`);
+    });
+    if (!rows.some((r) => r.category === 'income_tax') && profitBeforeTax > 0) {
+      warnings.push('No income tax expense account has activity in this period. If tax is payable on this profit, post it to an "Income Tax Expense" account so it appears in the Income taxes category.');
+    }
+
+    return {
+      period: { from, to },
+      rows,
+      revenue: { lines: revenue, total: totalRevenue },
+      costOfSales: { lines: cos, total: totalCos },
+      grossProfit: r2(totalRevenue - totalCos),
+      otherOperatingIncome: { lines: otherInc, total: sum(otherInc, (r) => r.amount) },
+      sellingDistribution: { lines: sd, total: sum(sd, (r) => r.amount) },
+      administrative: { lines: adm, total: sum(adm, (r) => r.amount) },
+      otherOperating: { lines: oth, total: sum(oth, (r) => r.amount) },
+      operatingProfit,
+      investing: { lines: inv, net: investingNet },
+      profitBeforeFinancingAndTax,
+      financing: { lines: fin, net: financingNet },
+      profitBeforeTax,
+      incomeTax: { lines: tax, total: taxExpense },
+      profitFromContinuingOperations: profitContinuing,
+      discontinued: { lines: disc, net: discontinuedNet },
+      profitForPeriod,
+      byNature: { totals: natureTotals, lines: natureLines, total: totalOperatingExpenses, labels: NATURE_LABELS },
+      functionLabels: FUNCTION_LABELS,
+      mpms,
+      warnings
+    };
+  }
+
+  // ───────────────────────── statement of cash flows ─────────────────────────
+
+  function statementOfCashFlows(accounts, entries, period, opts) {
+    opts = opts || {};
+    const idx = buildMovementIndex(entries);
+    const from = period.from, to = period.to;
+    const openDate = from ? dayBefore(from) : null;
+    const ob = opts.openingBalances || {};
+    const pl = statementOfProfitOrLoss(accounts, entries, period, Object.assign({}, opts, { _idx: idx }));
+
+    const bs = (accounts || []).filter((a) => a.type === 'Asset' || a.type === 'Liability' || a.type === 'Equity');
+    const open = (a) => (openDate ? balanceAt(a, idx, ob, openDate) : (Number(ob[a.code]) || 0));
+    const close = (a) => balanceAt(a, idx, ob, to);
+
+    // cash effect of an account's change: assets (and drawings) absorb cash when they grow
+    const effect = (a) => {
+      const d = r2(close(a) - open(a));
+      return isDebitNormal(a) ? -d : d;
+    };
+
+    const groups = {}; // key -> {label, amount}
+    const add = (bucket, label, amt) => {
+      if (Math.abs(amt) < 0.005) return;
+      const k = bucket + '|' + label;
+      groups[k] = groups[k] || { bucket, label, amount: 0 };
+      groups[k].amount = r2(groups[k].amount + amt);
+    };
+
+    let cashOpen = 0, cashClose = 0, interestAccrual = 0, taxAccrual = 0, invIncomeAccrual = 0;
+    bs.forEach((a) => {
+      const role = cashFlowRole(a, opts);
+      if (role.role === 'cash') { cashOpen += open(a); cashClose += close(a); return; }
+      const e = effect(a);
+      if (role.role === 'interest_accrual') interestAccrual += e;
+      else if (role.role === 'income_tax_accrual') taxAccrual += e;
+      else if (role.role === 'investing_income_accrual') invIncomeAccrual += e;
+      else if (role.role === 'noncash_adjustment') add('adjustment', role.label, e);
+      else if (role.role === 'operating') add('working_capital', role.label, e);
+      else if (role.role === 'investing') add('investing', role.label, e);
+      else if (role.role === 'financing') add('financing', role.label, e);
+    });
+    cashOpen = r2(cashOpen); cashClose = r2(cashClose);
+
+    const pick = (bucket) => Object.values(groups).filter((g) => g.bucket === bucket);
+    const adjustments = pick('adjustment');
+    const workingCapital = pick('working_capital');
+    const operatingProfit = pl.operatingProfit;
+    const cashGeneratedFromOperations = r2(operatingProfit + sum(adjustments, (g) => g.amount) + sum(workingCapital, (g) => g.amount));
+
+    // income taxes paid: expense adjusted for the movement in income-tax payable (operating)
+    const incomeTaxPaid = r2(-pl.incomeTax.total + taxAccrual);
+    // discontinued operations: shown after tax as one line inside operating
+    const discontinued = pl.discontinued.net;
+    const netOperating = r2(cashGeneratedFromOperations + incomeTaxPaid + discontinued);
+
+    // investing: capex/investments + interest and dividends received (IFRS 18 amendment to IAS 7)
+    const investingItems = pick('investing');
+    const investingReceived = r2(pl.investing.net + invIncomeAccrual);
+    const netInvesting = r2(sum(investingItems, (g) => g.amount) + investingReceived);
+
+    // financing: borrowings, owners’ capital/drawings, interest paid (IFRS 18 amendment to IAS 7)
+    const financingItems = pick('financing');
+    const interestPaid = r2(pl.financing.net + interestAccrual); // pl.financing.net is already negative for a cost
+    const netFinancing = r2(sum(financingItems, (g) => g.amount) + interestPaid);
+
+    const netChange = r2(netOperating + netInvesting + netFinancing);
+    const computedClose = r2(cashOpen + netChange);
+    const difference = r2(cashClose - computedClose);
+
+    return {
+      period, openingCash: cashOpen, closingCash: cashClose,
+      operatingProfit, adjustments, workingCapital, cashGeneratedFromOperations,
+      incomeTaxPaid, discontinued, netOperating,
+      investingItems, interestAndDividendsReceived: investingReceived, netInvesting,
+      financingItems, interestPaid, netFinancing,
+      netChange, computedClosingCash: computedClose, unreconciledDifference: difference,
+      reconciled: Math.abs(difference) < 0.01
+    };
+  }
+
+  // ───────────────────────── statement of financial position ─────────────────────────
+
+  function statementOfFinancialPosition(accounts, entries, asOf, opts) {
+    opts = opts || {};
+    // include closing entries here: they only move profit into retained earnings
+    const idx = {};
+    (entries || []).forEach((je) => {
+      const d = day(je.date);
+      (je.lines || []).forEach((l) => {
+        const k = String(l.accountCode);
+        (idx[k] = idx[k] || []).push({ d, dr: l.type === 'debit' ? Number(l.amount) || 0 : 0, cr: l.type === 'credit' ? Number(l.amount) || 0 : 0 });
+      });
+    });
+    const ob = opts.openingBalances || {};
+    const bal = (a) => balanceAt(a, idx, ob, asOf);
+    const line = (a) => ({ code: a.code, name: a.name, amount: bal(a) });
+    const nonZero = (l) => Math.abs(l.amount) >= 0.005;
+
+    const assets = (accounts || []).filter((a) => a.type === 'Asset');
+    const liabs = (accounts || []).filter((a) => a.type === 'Liability');
+    const equity = (accounts || []).filter((a) => a.type === 'Equity');
+
+    const curA = assets.filter((a) => bsClass(a, opts) === 'current').map(line).filter(nonZero);
+    const ncA = assets.filter((a) => bsClass(a, opts) === 'non_current').map(line).filter(nonZero);
+    const curL = liabs.filter((a) => bsClass(a, opts) === 'current').map(line).filter(nonZero);
+    const ncL = liabs.filter((a) => bsClass(a, opts) === 'non_current').map(line).filter(nonZero);
+
+    // profit not yet closed into retained earnings
+    let unclosed = 0;
+    (accounts || []).filter((a) => a.type === 'Revenue' || a.type === 'Expense').forEach((a) => {
+      const m = movement(a, idx, null, asOf);
+      unclosed += a.type === 'Revenue' ? m : -m;
+    });
+    const eqLines = equity.map((a) => {
+      const l = line(a);
+      return isDrawings(a) ? { code: a.code, name: a.name + ' (contra)', amount: -l.amount } : l;
+    }).filter(nonZero);
+    const retainedCurrent = r2(unclosed);
+
+    const totalCA = sum(curA, (l) => l.amount), totalNCA = sum(ncA, (l) => l.amount);
+    const totalCL = sum(curL, (l) => l.amount), totalNCL = sum(ncL, (l) => l.amount);
+    const totalEquity = r2(sum(eqLines, (l) => l.amount) + retainedCurrent);
+    const totalAssets = r2(totalCA + totalNCA);
+    const totalLiabilities = r2(totalCL + totalNCL);
+
+    return {
+      asOf,
+      currentAssets: { lines: curA, total: totalCA },
+      nonCurrentAssets: { lines: ncA, total: totalNCA },
+      totalAssets,
+      currentLiabilities: { lines: curL, total: totalCL },
+      nonCurrentLiabilities: { lines: ncL, total: totalNCL },
+      totalLiabilities,
+      equity: { lines: eqLines, profitNotYetClosed: retainedCurrent, total: totalEquity },
+      totalEquityAndLiabilities: r2(totalLiabilities + totalEquity),
+      balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+      difference: r2(totalAssets - (totalLiabilities + totalEquity))
+    };
+  }
+
+  // ───────────────────────── ledger integrity audit ─────────────────────────
+
+  function integrityChecks(accounts, entries, openingBalances, asOf) {
+    const findings = [];
+    const codes = new Set((accounts || []).map((a) => String(a.code)));
+    (entries || []).forEach((je) => {
+      const lines = je.lines || [];
+      const dr = sum(lines.filter((l) => l.type === 'debit'), (l) => Number(l.amount) || 0);
+      const cr = sum(lines.filter((l) => l.type === 'credit'), (l) => Number(l.amount) || 0);
+      if (Math.abs(dr - cr) >= 0.01) findings.push({ severity: 'high', check: 'unbalanced_journal', detail: `Journal "${je.description || je.id || je._id}" (${day(je.date)}) debits ${dr} ≠ credits ${cr}.` });
+      lines.forEach((l) => { if (!codes.has(String(l.accountCode))) findings.push({ severity: 'high', check: 'unknown_account', detail: `Journal "${je.description || je.id || je._id}" posts to account ${l.accountCode}, which is not in the Chart of Accounts.` }); });
+      if (lines.some((l) => !(Number(l.amount) >= 0))) findings.push({ severity: 'medium', check: 'negative_amount', detail: `Journal "${je.description || je.id || je._id}" has a negative or non-numeric line amount.` });
+    });
+    const idx = {};
+    (entries || []).forEach((je) => {
+      const d = day(je.date);
+      (je.lines || []).forEach((l) => {
+        const k = String(l.accountCode);
+        (idx[k] = idx[k] || []).push({ d, dr: l.type === 'debit' ? Number(l.amount) || 0 : 0, cr: l.type === 'credit' ? Number(l.amount) || 0 : 0 });
+      });
+    });
+    (accounts || []).forEach((a) => {
+      const recomputed = balanceAt(a, idx, openingBalances, asOf || '9999-12-31');
+      const stored = r2(a.balance);
+      if (Math.abs(recomputed - stored) >= 0.01) {
+        findings.push({ severity: 'high', check: 'balance_drift', detail: `${a.code} ${a.name}: stored balance ${stored} but opening balance + journals = ${recomputed} (difference ${r2(stored - recomputed)}).` });
+      }
+    });
+    return findings;
+  }
+
+  return {
+    CATEGORIES, FUNCTION_LINES, FUNCTION_LABELS, NATURE_LABELS,
+    classifyCategory, classifyFunction, classifyNature, bsClass, cashFlowRole, isCash, isDrawings, isDebitNormal,
+    buildMovementIndex, movement, balanceAt,
+    statementOfProfitOrLoss, statementOfCashFlows, statementOfFinancialPosition, integrityChecks
+  };
+});
+
+</script>
 <script>
 
 // ==================== FULL-STACK API INTEGRATION ====================
@@ -5975,6 +6454,276 @@ function runPayroll(periodLabel) {
 }
 
 // ════════════════════════════════════════════
+// ─── IFRS 18 FINANCIAL STATEMENTS ───
+// Engine: window.IFRS18 (see <script id="ifrs18-engine">). Statements are computed
+// from the journal for a chosen period, with the prior year as the comparative.
+// ════════════════════════════════════════════
+window._rptPeriod = window._rptPeriod || { from: new Date().getFullYear() + '-01-01', to: new Date().toISOString().split('T')[0] };
+window._rptView = window._rptView || 'function';
+window._mpmRate = (typeof window._mpmRate === 'number') ? window._mpmRate : null;
+
+function ifrsOpts(extra) {
+  return Object.assign({
+    openingBalances: openingBalances || {},
+    bankCodes: (bankAccounts || []).map(b => String(b.code || '')).filter(Boolean),
+    financialBusiness: /fintech|bank|micro.?fin|lend/i.test(settings.industry || ''),
+    mpmTaxRate: 0
+  }, extra || {});
+}
+function ifrsShiftYear(iso, n) { return (Number(iso.slice(0, 4)) + n) + iso.slice(4); }
+function ifrsPrev(p) { return { from: ifrsShiftYear(p.from, -1), to: ifrsShiftYear(p.to, -1) }; }
+function ifrsDefaultTaxRate(rev) { return rev > 100000000 ? 0.30 : rev > 25000000 ? 0.20 : 0; }
+function fmtP(n) { n = Number(n) || 0; return n < 0 ? '(' + fmt(-n) + ')' : fmt(n); }
+
+function ifrsRow(label, cur, cmp, kind, indent) {
+  const st = { head: 'font-weight:800;background:var(--surface2);', sub: 'font-weight:700;border-top:1px solid var(--border);', total: 'font-weight:800;background:var(--brand);color:#fff;', line: '', note: 'font-style:italic;color:var(--text-3);' }[kind || 'line'];
+  const cell = v => (v === null || v === undefined) ? '<td></td>' : '<td style="text-align:right;white-space:nowrap;padding:6px 12px;">' + fmtP(v) + '</td>';
+  return '<tr style="' + st + '"><td style="padding:6px 12px 6px ' + (12 + (indent || 0) * 18) + 'px;">' + label + '</td>' + cell(cur) + cell(cmp) + '</tr>';
+}
+function ifrsMergeLines(curL, cmpL, sign) {
+  const map = {};
+  (curL || []).forEach(l => { map[l.code] = { name: l.name, cur: l.amount, cmp: 0 }; });
+  (cmpL || []).forEach(l => { map[l.code] = map[l.code] || { name: l.name, cur: 0, cmp: 0 }; map[l.code].cmp = l.amount; });
+  return Object.keys(map).sort().map(c => ({ code: c, name: map[c].name, cur: sign * map[c].cur, cmp: sign * map[c].cmp }));
+}
+function ifrsSigned(list) { return (list || []).map(l => Object.assign({}, l, { amount: l.type === 'Expense' ? -l.amount : l.amount })); } // effect on profit: income +, expense −
+function ifrsLineRows(curL, cmpL, sign, indent) {
+  return ifrsMergeLines(curL, cmpL, sign).map(l => ifrsRow(esc(l.name), l.cur, l.cmp, 'line', indent == null ? 1 : indent)).join('');
+}
+function ifrsMergeGroups(curG, cmpG) {
+  const map = {};
+  (curG || []).forEach(g => { map[g.label] = { cur: g.amount, cmp: 0 }; });
+  (cmpG || []).forEach(g => { map[g.label] = map[g.label] || { cur: 0, cmp: 0 }; map[g.label].cmp = g.amount; });
+  return Object.keys(map).map(k => ifrsRow(esc(k), map[k].cur, map[k].cmp, 'line', 1)).join('');
+}
+function ifrsTable(rows, c, p, dateLabel) {
+  return '<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:0.84rem;"><thead><tr><th style="text-align:left;padding:8px 12px;"></th>'
+    + '<th style="text-align:right;padding:8px 12px;">' + esc(dateLabel(c)) + '</th><th style="text-align:right;padding:8px 12px;color:var(--text-3);">' + esc(dateLabel(p)) + '<br><span style="font-weight:400;font-size:0.68rem;">Comparative</span></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+function ifrsHeader(title, sub) {
+  return '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid var(--brand);flex-wrap:wrap;gap:8px;">'
+    + '<div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">' + esc(settings.companyName || 'My Company') + '</div>'
+    + '<div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">' + title + '</div></div>'
+    + '<div style="text-align:right;font-size:0.75rem;color:var(--text-3);">' + sub + '</div></div>';
+}
+function ifrsControls(type) {
+  const p = window._rptPeriod;
+  const inp = 'border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 9px;font-size:0.8rem;background:var(--surface);color:var(--text-1);';
+  const dates = type === 'bs'
+    ? '<label style="font-size:0.75rem;color:var(--text-3);">As at</label><input type="date" id="rptTo" value="' + p.to + '" onchange="ifrsSetPeriod(\'' + type + '\')" style="' + inp + '">'
+    : '<label style="font-size:0.75rem;color:var(--text-3);">From</label><input type="date" id="rptFrom" value="' + p.from + '" onchange="ifrsSetPeriod(\'' + type + '\')" style="' + inp + '">'
+    + '<label style="font-size:0.75rem;color:var(--text-3);">To</label><input type="date" id="rptTo" value="' + p.to + '" onchange="ifrsSetPeriod(\'' + type + '\')" style="' + inp + '">';
+  const view = type === 'pl'
+    ? '<select onchange="window._rptView=this.value;showRpt(\'pl\')" style="' + inp + '"><option value="function"' + (window._rptView === 'function' ? ' selected' : '') + '>Expenses by function</option><option value="nature"' + (window._rptView === 'nature' ? ' selected' : '') + '>Expenses by nature</option></select>' : '';
+  return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">' + dates
+    + '<button class="btn btn-secondary btn-sm" onclick="ifrsPreset(\'' + type + '\',0)">This year</button><button class="btn btn-secondary btn-sm" onclick="ifrsPreset(\'' + type + '\',-1)">Last year</button>' + view + '</div>';
+}
+window.ifrsSetPeriod = function (type) {
+  const f = document.getElementById('rptFrom'), t = document.getElementById('rptTo');
+  const from = f ? f.value : window._rptPeriod.from, to = t ? t.value : window._rptPeriod.to;
+  if (!to || (f && !from)) return showToast('Choose valid dates.', 'danger');
+  if (from > to) return showToast('"From" cannot be after "To".', 'danger');
+  window._rptPeriod = { from: from, to: to };
+  showRpt(type);
+};
+window.ifrsPreset = function (type, offset) {
+  const y = new Date().getFullYear() + offset;
+  window._rptPeriod = { from: y + '-01-01', to: offset === 0 ? new Date().toISOString().split('T')[0] : y + '-12-31' };
+  showRpt(type);
+};
+const ifrsPeriodLabel = (p) => p.from.slice(0, 4) === p.to.slice(0, 4) && p.from.endsWith('-01-01') && p.to.endsWith('-12-31') ? 'FY ' + p.from.slice(0, 4) : p.from + ' to ' + p.to;
+
+function ifrsRenderPL(cont) {
+  const p = window._rptPeriod, c = ifrsPrev(p);
+  const first = IFRS18.statementOfProfitOrLoss(accounts, journalEntries, p, ifrsOpts());
+  const rate = window._mpmRate != null ? window._mpmRate : ifrsDefaultTaxRate(first.revenue.total);
+  const o = ifrsOpts({ mpmTaxRate: rate });
+  const s = IFRS18.statementOfProfitOrLoss(accounts, journalEntries, p, o);
+  const q = IFRS18.statementOfProfitOrLoss(accounts, journalEntries, c, o);
+  const R = ifrsRow;
+  let rows = R('Revenue', s.revenue.total, q.revenue.total, 'line');
+  if (window._rptView === 'function') {
+    rows += R('Cost of sales', -s.costOfSales.total, -q.costOfSales.total, 'line');
+    rows += R('Gross profit', s.grossProfit, q.grossProfit, 'sub');
+    rows += R('Other operating income', s.otherOperatingIncome.total, q.otherOperatingIncome.total, 'line');
+    rows += R('Selling and distribution expenses', -s.sellingDistribution.total, -q.sellingDistribution.total, 'line');
+    rows += R('Administrative expenses', -s.administrative.total, -q.administrative.total, 'line');
+    rows += R('Other operating expenses', -s.otherOperating.total, -q.otherOperating.total, 'line');
+  } else {
+    rows += R('Other operating income', s.otherOperatingIncome.total, q.otherOperatingIncome.total, 'line');
+    Object.keys(IFRS18.NATURE_LABELS).forEach(k => {
+      const a = s.byNature.totals[k] || 0, b = q.byNature.totals[k] || 0;
+      if (Math.abs(a) > 0.004 || Math.abs(b) > 0.004) rows += R(esc(IFRS18.NATURE_LABELS[k]), -a, -b, 'line');
+    });
+  }
+  rows += R('Operating profit', s.operatingProfit, q.operatingProfit, 'sub');
+  rows += R('Investing category', null, null, 'head');
+  rows += ifrsLineRows(ifrsSigned(s.investing.lines), ifrsSigned(q.investing.lines), 1, 1) || R('No investing income or expenses', 0, 0, 'note', 1);
+  rows += R('Profit before financing and income taxes', s.profitBeforeFinancingAndTax, q.profitBeforeFinancingAndTax, 'sub');
+  rows += R('Financing category', null, null, 'head');
+  rows += ifrsLineRows(ifrsSigned(s.financing.lines), ifrsSigned(q.financing.lines), 1, 1) || R('No financing income or expenses', 0, 0, 'note', 1);
+  rows += R('Profit before income taxes', s.profitBeforeTax, q.profitBeforeTax, 'sub');
+  rows += R('Income taxes', -s.incomeTax.total, -q.incomeTax.total, 'line');
+  rows += R('Profit from continuing operations', s.profitFromContinuingOperations, q.profitFromContinuingOperations, 'sub');
+  if (s.discontinued.lines.length || q.discontinued.lines.length) rows += R('Discontinued operations (after tax)', s.discontinued.net, q.discontinued.net, 'line');
+  rows += R(s.profitForPeriod >= 0 ? 'PROFIT FOR THE PERIOD' : 'LOSS FOR THE PERIOD', s.profitForPeriod, q.profitForPeriod, 'total');
+
+  // Note 1 — analysis by account within the operating category
+  const detail = ['revenue', 'other_operating_income', 'cost_of_sales', 'selling_distribution', 'administrative', 'other_operating'].map(k => {
+    const sec = k === 'revenue' ? [s.revenue, q.revenue] : k === 'other_operating_income' ? [s.otherOperatingIncome, q.otherOperatingIncome] : k === 'cost_of_sales' ? [s.costOfSales, q.costOfSales]
+      : k === 'selling_distribution' ? [s.sellingDistribution, q.sellingDistribution] : k === 'administrative' ? [s.administrative, q.administrative] : [s.otherOperating, q.otherOperating];
+    const l = ifrsLineRows(sec[0].lines, sec[1].lines, 1, 1);
+    return l ? ifrsRow(esc(IFRS18.FUNCTION_LABELS[k]), null, null, 'head') + l : '';
+  }).join('');
+  // Note 2 — expenses by nature (mandatory disclosure when expenses are presented by function)
+  const natRows = Object.keys(IFRS18.NATURE_LABELS).map(k => ifrsRow(esc(IFRS18.NATURE_LABELS[k]), s.byNature.totals[k] || 0, q.byNature.totals[k] || 0, 'line')).join('')
+    + ifrsRow('Total operating expenses', s.byNature.total, q.byNature.total, 'sub');
+  // Note 3 — management-defined performance measures
+  const m = s.mpms[0], mq = q.mpms[0];
+  const mpm = '<table style="width:100%;border-collapse:collapse;font-size:0.84rem;"><tbody>'
+    + ifrsRow('Operating profit (most directly comparable IFRS subtotal)', m.comparableAmount, mq.comparableAmount, 'line')
+    + m.reconciliation.map(r => ifrsRow('Add: ' + esc(r.label), r.amount, mq.reconciliation[0].amount, 'line', 1)).join('')
+    + ifrsRow('Income tax effect of the adjustment', m.reconciliation[0].taxEffect, mq.reconciliation[0].taxEffect, 'line', 1)
+    + ifrsRow('Effect on non-controlling interests', 0, 0, 'line', 1)
+    + ifrsRow('EBITDA (management-defined)', m.amount, mq.amount, 'sub')
+    + '</tbody></table>'
+    + '<div style="font-size:0.74rem;color:var(--text-3);margin-top:8px;line-height:1.5;"><strong>Definition:</strong> ' + esc(m.definition) + ' <strong>Why management uses it:</strong> ' + esc(m.usefulness)
+    + ' Under IFRS 18 a measure like this is an MPM only if you communicate it outside the financial statements (press release, lender pack, investor deck); if so it must be disclosed here with this reconciliation.'
+    + '<br>Assumed tax rate on the adjustment: <input type="number" min="0" max="100" step="1" value="' + Math.round(rate * 100) + '" style="width:64px;border:1px solid var(--border);border-radius:4px;padding:2px 6px;" onchange="window._mpmRate=Math.min(Math.max(parseFloat(this.value)||0,0),100)/100;showRpt(\'pl\')">% (edit to your effective rate).</div>';
+
+  const warn = s.warnings.length ? '<div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:#fffbeb;border:1px solid #fcd34d;font-size:0.78rem;color:#92400e;"><strong>Review needed</strong><ul style="margin:6px 0 0 18px;">' + s.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '';
+  const cap = d => d;
+  cont.innerHTML = ifrsControls('pl')
+    + ifrsHeader('Statement of Profit or Loss <span style="font-size:0.72rem;font-weight:600;background:var(--accent-lt);padding:2px 8px;border-radius:10px;">IFRS 18</span>', 'For the period<br><strong style="color:var(--text-2);">' + esc(p.from) + ' to ' + esc(p.to) + '</strong>')
+    + ifrsTable(rows, p, c, ifrsPeriodLabel)
+    + warn
+    + '<div class="report-section" style="margin-top:20px;"><h4>Note 1 — Operating income and expenses by account</h4>' + ifrsTable(detail, p, c, ifrsPeriodLabel) + '</div>'
+    + '<div class="report-section" style="margin-top:20px;"><h4>Note 2 — Operating expenses by nature</h4>' + ifrsTable(natRows, p, c, ifrsPeriodLabel) + '</div>'
+    + '<div class="report-section" style="margin-top:20px;"><h4>Note 3 — Management-defined performance measures (MPMs)</h4>' + mpm + '</div>'
+    + '<div style="margin-top:16px;font-size:0.72rem;color:var(--text-3);line-height:1.5;">IFRS 18 replaces IAS 1 for the statement of profit or loss and applies to periods beginning on or after 1 January 2027 (comparatives restated). Operating is the residual category; investing covers returns on cash and investments; financing covers interest on borrowings; income taxes and discontinued operations are shown separately. Confirm the local adoption timetable with the Financial Reporting Council of Nigeria.</div>';
+}
+
+function ifrsRenderCF(cont) {
+  const p = window._rptPeriod, c = ifrsPrev(p), o = ifrsOpts();
+  const s = IFRS18.statementOfCashFlows(accounts, journalEntries, p, o);
+  const q = IFRS18.statementOfCashFlows(accounts, journalEntries, c, o);
+  const R = ifrsRow;
+  let rows = R('Cash flows from operating activities', null, null, 'head');
+  rows += R('Operating profit', s.operatingProfit, q.operatingProfit, 'line');
+  if (s.adjustments.length || q.adjustments.length) rows += R('Adjustments for non-cash items', null, null, 'note', 1) + ifrsMergeGroups(s.adjustments, q.adjustments);
+  if (s.workingCapital.length || q.workingCapital.length) rows += R('Changes in working capital', null, null, 'note', 1) + ifrsMergeGroups(s.workingCapital, q.workingCapital);
+  rows += R('Cash generated from operations', s.cashGeneratedFromOperations, q.cashGeneratedFromOperations, 'sub');
+  rows += R('Income taxes paid', s.incomeTaxPaid, q.incomeTaxPaid, 'line');
+  if (s.discontinued || q.discontinued) rows += R('Discontinued operations (after tax)', s.discontinued, q.discontinued, 'line');
+  rows += R('Net cash from operating activities', s.netOperating, q.netOperating, 'sub');
+  rows += R('Cash flows from investing activities', null, null, 'head') + ifrsMergeGroups(s.investingItems, q.investingItems);
+  rows += R('Interest and dividends received', s.interestAndDividendsReceived, q.interestAndDividendsReceived, 'line', 1);
+  rows += R('Net cash from investing activities', s.netInvesting, q.netInvesting, 'sub');
+  rows += R('Cash flows from financing activities', null, null, 'head') + ifrsMergeGroups(s.financingItems, q.financingItems);
+  rows += R('Interest paid', s.interestPaid, q.interestPaid, 'line', 1);
+  rows += R('Net cash from financing activities', s.netFinancing, q.netFinancing, 'sub');
+  rows += R('Net increase / (decrease) in cash', s.netChange, q.netChange, 'sub');
+  rows += R('Cash at beginning of period', s.openingCash, q.openingCash, 'line');
+  rows += R('CASH AT END OF PERIOD', s.closingCash, q.closingCash, 'total');
+  const ok = s.reconciled;
+  cont.innerHTML = ifrsControls('cf')
+    + ifrsHeader('Statement of Cash Flows <span style="font-size:0.72rem;font-weight:600;background:var(--accent-lt);padding:2px 8px;border-radius:10px;">Indirect · starts at operating profit</span>', 'For the period<br><strong style="color:var(--text-2);">' + esc(p.from) + ' to ' + esc(p.to) + '</strong>')
+    + ifrsTable(rows, p, c, ifrsPeriodLabel)
+    + '<div style="margin-top:12px;padding:8px 14px;border-radius:8px;font-size:0.78rem;font-weight:600;' + (ok ? 'background:#f0fdf4;color:#16a34a;border:1px solid #86efac;' : 'background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;') + '">'
+    + (ok ? '✓ Closing cash agrees to the ledger cash and bank accounts.' : '✗ Cash flow does not agree to the ledger by ' + fmt(s.unreconciledDifference) + '. Check the Ledger Audit tab and the account classifications.') + '</div>'
+    + '<div style="margin-top:12px;font-size:0.72rem;color:var(--text-3);line-height:1.5;">As amended by IFRS 18, the indirect method starts from operating profit (not profit before tax). Interest paid is a financing cash flow; interest and dividends received are investing cash flows; income taxes paid are operating unless specifically identified with investing or financing. Capital expenditure is taken from the movement in fixed-asset cost accounts, so disposal proceeds appear net.</div>';
+}
+
+function ifrsRenderBS(cont) {
+  const p = window._rptPeriod, asAt = p.to, o = ifrsOpts();
+  const s = IFRS18.statementOfFinancialPosition(accounts, journalEntries, asAt, o);
+  const q = IFRS18.statementOfFinancialPosition(accounts, journalEntries, ifrsShiftYear(asAt, -1), o);
+  const R = ifrsRow;
+  const lbl = (pp) => pp.to;
+  let rows = R('ASSETS', null, null, 'head') + R('Non-current assets', null, null, 'note', 0) + ifrsLineRows(s.nonCurrentAssets.lines, q.nonCurrentAssets.lines, 1, 1)
+    + R('Total non-current assets', s.nonCurrentAssets.total, q.nonCurrentAssets.total, 'sub')
+    + R('Current assets', null, null, 'note', 0) + ifrsLineRows(s.currentAssets.lines, q.currentAssets.lines, 1, 1)
+    + R('Total current assets', s.currentAssets.total, q.currentAssets.total, 'sub')
+    + R('TOTAL ASSETS', s.totalAssets, q.totalAssets, 'total')
+    + R('EQUITY', null, null, 'head') + ifrsLineRows(s.equity.lines, q.equity.lines, 1, 1)
+    + R('Profit for the period not yet closed to retained earnings', s.equity.profitNotYetClosed, q.equity.profitNotYetClosed, 'line', 1)
+    + R('Total equity', s.equity.total, q.equity.total, 'sub')
+    + R('LIABILITIES', null, null, 'head') + R('Non-current liabilities', null, null, 'note', 0) + ifrsLineRows(s.nonCurrentLiabilities.lines, q.nonCurrentLiabilities.lines, 1, 1)
+    + R('Total non-current liabilities', s.nonCurrentLiabilities.total, q.nonCurrentLiabilities.total, 'sub')
+    + R('Current liabilities', null, null, 'note', 0) + ifrsLineRows(s.currentLiabilities.lines, q.currentLiabilities.lines, 1, 1)
+    + R('Total current liabilities', s.currentLiabilities.total, q.currentLiabilities.total, 'sub')
+    + R('TOTAL EQUITY AND LIABILITIES', s.totalEquityAndLiabilities, q.totalEquityAndLiabilities, 'total');
+  cont.innerHTML = ifrsControls('bs')
+    + ifrsHeader('Statement of Financial Position', 'As at<br><strong style="color:var(--text-2);">' + esc(asAt) + '</strong>')
+    + ifrsTable(rows, { to: asAt, from: asAt }, { to: ifrsShiftYear(asAt, -1), from: ifrsShiftYear(asAt, -1) }, (pp) => pp.to)
+    + (s.balanced ? '' : '<div style="margin-top:10px;font-size:0.78rem;color:var(--danger);">⚠ Does not balance by ' + fmt(s.difference) + ' — see the Ledger Audit tab.</div>')
+    + '<div style="margin-top:12px;font-size:0.72rem;color:var(--text-3);line-height:1.5;">Assets and liabilities are split current / non-current from the account name (loans are treated as non-current). Override any account under the Classification tab.</div>';
+}
+
+const IFRS_CAT_OPTS = [['', 'Auto'], ['operating', 'Operating'], ['investing', 'Investing'], ['financing', 'Financing'], ['income_tax', 'Income taxes'], ['discontinued', 'Discontinued ops']];
+function ifrsRenderClass(cont) {
+  const o = ifrsOpts();
+  const sel = (id, field, cur, opts) => '<select onchange="ifrsSaveClass(\'' + esc(String(id)) + '\',\'' + field + '\',this.value)" style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:0.76rem;background:var(--surface);color:var(--text-1);">'
+    + opts.map(x => '<option value="' + x[0] + '"' + ((cur || '') === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>';
+  const plRows = accounts.filter(a => a.isActive !== false && (a.type === 'Revenue' || a.type === 'Expense')).map(a => {
+    const auto = IFRS18.classifyCategory(Object.assign({}, a, { ifrs18Category: null }), o).category;
+    const fn = a.type === 'Expense' ? IFRS18.FUNCTION_LINES.filter(l => l !== 'revenue' && l !== 'other_operating_income') : ['revenue', 'other_operating_income'];
+    return '<tr><td class="td-mono">' + esc(a.code) + '</td><td>' + esc(a.name) + '</td><td>' + esc(a.type) + '</td><td style="color:var(--text-3);">' + esc(auto.replace('_', ' ')) + '</td><td>' + sel(a.id, 'ifrs18Category', a.ifrs18Category, IFRS_CAT_OPTS) + '</td>'
+      + '<td>' + sel(a.id, 'ifrs18Line', a.ifrs18Line, [['', 'Auto']].concat(fn.map(l => [l, IFRS18.FUNCTION_LABELS[l]]))) + '</td></tr>';
+  }).join('');
+  const bsRows = accounts.filter(a => a.isActive !== false && (a.type === 'Asset' || a.type === 'Liability')).map(a => {
+    const auto = IFRS18.bsClass(Object.assign({}, a, { bsClass: null }), o);
+    return '<tr><td class="td-mono">' + esc(a.code) + '</td><td>' + esc(a.name) + '</td><td>' + esc(a.type) + '</td><td style="color:var(--text-3);">' + esc(String(auto).replace('_', '-')) + '</td><td>' + sel(a.id, 'bsClass', a.bsClass, [['', 'Auto'], ['current', 'Current'], ['non_current', 'Non-current']]) + '</td></tr>';
+  }).join('');
+  cont.innerHTML = '<div style="font-size:1rem;font-weight:700;margin-bottom:6px;">IFRS 18 &amp; Financial Position Classification</div>'
+    + '<div style="font-size:0.78rem;color:var(--text-3);margin-bottom:14px;line-height:1.5;">Every income and expense account is placed in an IFRS 18 category and an operating line. We classify from the account name; where our guess is wrong, override it here. Changes apply to every statement immediately and are written to the audit trail.</div>'
+    + '<div class="table-wrap"><div class="section-label">Profit or loss accounts</div><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Auto category</th><th>Category</th><th>Operating line</th></tr></thead><tbody>' + plRows + '</tbody></table></div>'
+    + '<div class="table-wrap" style="margin-top:18px;"><div class="section-label">Statement of financial position accounts</div><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Auto class</th><th>Presentation</th></tr></thead><tbody>' + bsRows + '</tbody></table></div>';
+}
+window.ifrsSaveClass = async function (id, field, value) {
+  try {
+    const body = {}; body[field] = value === '' ? null : value;
+    const updated = await apiFetch('/accounts/' + id + '/classification', { method: 'PUT', body: JSON.stringify(body) });
+    const a = accounts.find(x => String(x.id) === String(id));
+    if (a) { a.ifrs18Category = updated.ifrs18Category || null; a.ifrs18Line = updated.ifrs18Line || null; a.bsClass = updated.bsClass || null; }
+    showToast('Classification saved', 'success');
+  } catch (err) { showToast(err.message || 'Could not save classification', 'danger'); showRpt('class'); }
+};
+
+function ifrsRenderAudit(cont) {
+  const p = window._rptPeriod, o = ifrsOpts();
+  const findings = IFRS18.integrityChecks(accounts, journalEntries, openingBalances || {}, p.to);
+  const bs = IFRS18.statementOfFinancialPosition(accounts, journalEntries, p.to, o);
+  const cf = IFRS18.statementOfCashFlows(accounts, journalEntries, p, o);
+  const checks = [
+    ['Statement of financial position balances', bs.balanced, bs.balanced ? '' : 'Difference ' + fmt(bs.difference)],
+    ['Cash flow closing cash agrees to ledger cash', cf.reconciled, cf.reconciled ? '' : 'Difference ' + fmt(cf.unreconciledDifference)],
+    ['Every journal entry balances (debits = credits)', !findings.some(f => f.check === 'unbalanced_journal'), ''],
+    ['Every journal line posts to an existing account', !findings.some(f => f.check === 'unknown_account'), ''],
+    ['Stored account balances equal opening balance + journals', !findings.some(f => f.check === 'balance_drift'), '']
+  ];
+  cont.innerHTML = '<div style="font-size:1rem;font-weight:700;margin-bottom:12px;">Ledger Audit — as at ' + esc(p.to) + '</div>'
+    + '<div class="table-wrap"><table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody>'
+    + checks.map(c => '<tr><td>' + esc(c[0]) + '</td><td style="font-weight:700;color:' + (c[1] ? 'var(--success)' : 'var(--danger)') + ';">' + (c[1] ? '✓ Pass' : '✗ Fail') + '</td><td>' + esc(c[2]) + '</td></tr>').join('') + '</tbody></table></div>'
+    + (findings.length ? '<div class="table-wrap" style="margin-top:16px;"><div class="section-label">Findings (' + findings.length + ')</div><table><thead><tr><th>Severity</th><th>Check</th><th>Detail</th></tr></thead><tbody>'
+      + findings.slice(0, 200).map(f => '<tr><td>' + esc(f.severity) + '</td><td>' + esc(f.check.replace(/_/g, ' ')) + '</td><td>' + esc(f.detail) + '</td></tr>').join('') + '</tbody></table></div>'
+      : '<div class="empty-state" style="padding:28px;"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No ledger integrity problems found.</p></div>');
+}
+
+function renderIfrs18Report(type, cont) {
+  try {
+    if (type === 'pl') ifrsRenderPL(cont);
+    else if (type === 'cf') ifrsRenderCF(cont);
+    else if (type === 'bs') ifrsRenderBS(cont);
+    else if (type === 'class') ifrsRenderClass(cont);
+    else if (type === 'audit') ifrsRenderAudit(cont);
+  } catch (err) {
+    console.error(err);
+    cont.innerHTML = '<div class="empty-state" style="padding:32px;"><p>This report could not be built: ' + esc(err.message || 'unknown error') + '</p></div>';
+  }
+}
+
+// ════════════════════════════════════════════
 // ─── REPORTS ───
 // ════════════════════════════════════════════
 function renderReportsView() {
@@ -5987,16 +6736,18 @@ function renderReportsView() {
         <button class="btn btn-primary" onclick="exportNRSReturns()" style="background:#16a34a;border-color:#16a34a;"><i class="fas fa-file-export"></i> NRS Tax Returns</button>
       </div>
     </div>
-    <div class="report-tabs">      <button class="report-tab active" onclick="showRpt('pl',this)">Profit & Loss</button>
-      <button class="report-tab" onclick="showRpt('bs',this)">Balance Sheet</button>
+    <div class="report-tabs">      <button class="report-tab active" onclick="showRpt('pl',this)">Profit or Loss (IFRS 18)</button>
+      <button class="report-tab" onclick="showRpt('bs',this)">Financial Position</button>
+      <button class="report-tab" onclick="showRpt('cf',this)">Cash Flows</button>
       <button class="report-tab" onclick="showRpt('gl',this)">General Ledger</button>
       <button class="report-tab" onclick="showRpt('tb',this)">Trial Balance</button>
-      <button class="report-tab" onclick="showRpt('cf',this)">Cash Flow</button>
       <button class="report-tab" onclick="showRpt('vat',this)">VAT Summary</button>
       <button class="report-tab" onclick="showRpt('aging',this)">AR Aging</button>
       <button class="report-tab" onclick="showRpt('apaging',this)">AP Aging</button>
       <button class="report-tab" onclick="showRpt('dept',this)">By Department</button>
       <button class="report-tab" onclick="showRpt('health',this)">Financial Health</button>
+      <button class="report-tab" onclick="showRpt('class',this)">Classification</button>
+      <button class="report-tab" onclick="showRpt('audit',this)">Ledger Audit</button>
     </div>
     <div id="rptContent" class="report-panel"></div>`;
   showRpt('pl');
@@ -6014,30 +6765,7 @@ window.showRpt = (type, btn) => {
   const equity = equityCore - drawingsTotal + netIncome;
   const cont = document.getElementById('rptContent');
 
-  if (type === 'pl') {
-    cont.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid var(--brand);">
-        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${esc(settings.companyName||'My Company')}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Profit or Loss</div></div>
-        <div style="text-align:right;font-size:0.75rem;color:var(--text-3);">For the period ended<br><strong style="color:var(--text-2);">${today()}</strong></div>
-      </div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Revenue</h4>${accounts.filter(a=>a.type==='Revenue').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No revenue recorded</div>'}<div class="report-row total"><span>Total Revenue</span><span>${fmt(revenue)}</span></div></div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Expenses</h4>${accounts.filter(a=>a.type==='Expense').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')||'<div class="report-row" style="color:var(--text-4);">No expenses recorded</div>'}<div class="report-row total"><span>Total Expenses</span><span>${fmt(expenses)}</span></div></div>
-      <div style="display:flex;justify-content:space-between;padding:14px 16px;margin-top:16px;border-radius:8px;font-size:1rem;font-weight:800;background:${netIncome>=0?'var(--brand)':'var(--danger)'};color:white;"><span>${netIncome>=0?'Net Profit':'Net Loss'}</span><span>${fmt(Math.abs(netIncome))}</span></div>`;
-    return;
-  }
-  if (type === 'bs') {
-    cont.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid var(--brand);">
-        <div><div style="font-size:1.15rem;font-weight:800;color:var(--text-1);">${esc(settings.companyName||'My Company')}</div><div style="font-size:0.98rem;font-weight:700;color:var(--brand);margin-top:2px;">Statement of Financial Position</div></div>
-        <div style="text-align:right;font-size:0.75rem;color:var(--text-3);">As at<br><strong style="color:var(--text-2);">${today()}</strong></div>
-      </div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;"><h4>Assets</h4>${accounts.filter(a=>a.type==='Asset').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row total"><span>Total Assets</span><span>${fmt(assets)}</span></div></div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Liabilities</h4>${accounts.filter(a=>a.type==='Liability').map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(Math.abs(a.balance))}</span></div>`).join('')}<div class="report-row total"><span>Total Liabilities</span><span>${fmt(liabs)}</span></div></div>
-      <div class="report-section" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:14px;"><h4>Equity</h4>${accounts.filter(a=>a.type==='Equity' && !a.name.toLowerCase().includes('drawing')).map(a=>`<div class="report-row"><span>${esc(a.name)}</span><span>${fmt(a.balance)}</span></div>`).join('')}<div class="report-row"><span>Retained Earnings (Net Income)</span><span>${fmt(netIncome)}</span></div>${accounts.filter(a=>a.type==='Equity' && a.name.toLowerCase().includes('drawing') && a.balance!==0).map(a=>`<div class="report-row" style="color:var(--danger);"><span>${esc(a.name)} (Contra)</span><span>(${fmt(a.balance)})</span></div>`).join('')}<div class="report-row total"><span>Total Equity</span><span>${fmt(equity)}</span></div></div>
-      <div style="display:flex;justify-content:space-between;padding:14px 16px;margin-top:16px;border-radius:8px;font-size:1rem;font-weight:800;background:${Math.abs(assets-(liabs+equity))<0.01?'var(--brand)':'var(--danger)'};color:white;"><span>Total Liabilities + Equity</span><span>${fmt(liabs+equity)}</span></div>
-      ${Math.abs(assets-(liabs+equity))>=0.01?`<div style="margin-top:8px;font-size:0.75rem;color:var(--danger);text-align:right;">⚠ Balance sheet does not balance — check journal entries.</div>`:''}`;
-    return;
-  }
+  if (['pl','bs','cf','class','audit'].includes(type)) { renderIfrs18Report(type, cont); return; }
   if (type === 'gl') {
     var glAccFilter = (document.getElementById('glAccFilter') ? document.getElementById('glAccFilter').value : 'all');
     var glDateFrom  = (document.getElementById('glDateFrom')  ? document.getElementById('glDateFrom').value  : '');
@@ -6201,38 +6929,6 @@ window.showRpt = (type, btn) => {
       ${bucket('61 - 90 Days Overdue', buckets.d61_90, 'var(--danger)')}
       ${bucket('Over 90 Days Overdue', buckets.d90plus, '#7f1d1d')}
       ${grand===0?`<div class="empty-state" style="padding:32px"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No outstanding ${isAP?'payables':'receivables'}.</p></div>`: `<div class="report-row total" style="font-size:0.95rem;margin-top:16px;"><span>Total Outstanding ${isAP?'Payables':'Receivables'}</span><span>${fmt(grand)}</span></div>`}`;
-    return;
-  }
-  if (type === 'cf') {
-    const totalRevenue  = accounts.filter(a => a.type === 'Revenue').reduce((s,a) => s + a.balance, 0);
-    const totalExpense  = accounts.filter(a => a.type === 'Expense').reduce((s,a) => s + a.balance, 0);
-    const netIncomeCF   = totalRevenue - totalExpense;
-    const arChange      = -(accounts.find(a => a.code === '1100')?.balance || 0);
-    const apChange      =  (accounts.find(a => a.code === '2000')?.balance || 0);
-    const invChange     = -(accounts.filter(isInventoryAccount).reduce((s,a) => s + (a.balance||0), 0));
-    const operatingCF   = netIncomeCF + arChange + apChange + invChange;
-    const fixedAssets   = accounts.filter(a => a.type === 'Asset' && (a.code.startsWith('14') || a.code.startsWith('15'))).reduce((s,a) => s + a.balance, 0);
-    const investingCF   = -fixedAssets;
-    const equityCF      = accounts.filter(a => a.type === 'Equity').reduce((s,a) => s + a.balance, 0);
-    const financingCF   = equityCF;
-    const netCash       = operatingCF + investingCF + financingCF;
-    const cfRow = (label, amt, indent) => `<div style="display:flex;justify-content:space-between;padding:7px 12px 7px ${indent?'12px':'12px'};font-size:0.82rem;border-bottom:1px solid var(--border);"><span style="color:var(--text-2);${indent?'padding-left:16px;':''}">${label}</span><strong style="color:${amt>=0?'var(--success)':'var(--danger)'};min-width:110px;text-align:right;display:inline-block;">${fmt(amt)}</strong></div>`;
-    cont.innerHTML = `<div style="font-size:1rem;font-weight:700;margin-bottom:16px;color:var(--text-1);">Statement of Cash Flows — Indirect Method (IAS 7)</div>
-      <div class="report-panel" style="padding:0;">
-        <div style="padding:10px 12px;background:var(--brand);border-radius:var(--radius-md) var(--radius-md) 0 0;color:white;font-size:0.82rem;font-weight:700;">A. Operating Activities</div>
-        ${cfRow('Net Income', netIncomeCF, false)}
-        ${cfRow('Decrease / (Increase) in Accounts Receivable', arChange, true)}
-        ${cfRow('Increase / (Decrease) in Accounts Payable', apChange, true)}
-        ${cfRow('Decrease / (Increase) in Inventory', invChange, true)}
-        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid var(--brand);background:var(--surface2);"><span>Net Cash from Operating Activities</span><span style="color:${operatingCF>=0?'var(--success)':'var(--danger)'};">${fmt(operatingCF)}</span></div>
-        <div style="padding:10px 12px;background:var(--info);color:white;font-size:0.82rem;font-weight:700;">B. Investing Activities</div>
-        ${cfRow('Purchase of Fixed Assets / Capital Expenditure', investingCF, true)}
-        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid var(--info);background:var(--surface2);"><span>Net Cash from Investing Activities</span><span style="color:${investingCF>=0?'var(--success)':'var(--danger)'};">${fmt(investingCF)}</span></div>
-        <div style="padding:10px 12px;background:#7c3aed;color:white;font-size:0.82rem;font-weight:700;">C. Financing Activities</div>
-        ${cfRow('Net Equity / Owner Contributions', financingCF, true)}
-        <div style="display:flex;justify-content:space-between;padding:9px 12px;font-size:0.88rem;font-weight:700;border-bottom:2px solid #7c3aed;background:var(--surface2);"><span>Net Cash from Financing Activities</span><span style="color:${financingCF>=0?'var(--success)':'var(--danger)'};">${fmt(financingCF)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:12px 12px;font-size:1rem;font-weight:800;background:var(--brand);color:white;border-radius:0 0 var(--radius-md) var(--radius-md);"><span>NET CHANGE IN CASH POSITION</span><span>${fmt(netCash)}</span></div>
-      </div>`;
     return;
   }
   if (type === 'vat') {
@@ -7047,7 +7743,7 @@ function renderHelpView() {
     { icon:'fa-users', title:'Add customers and vendors', desc:'Add the businesses you sell to (Customers) and buy from (Vendors) before creating invoices or bills.', tips:['Go to Customers → Add Customer','Enter their TIN if VAT registered — required for compliance','Repeat the same for Vendors under Purchasing'] },
     { icon:'fa-file-invoice-dollar', title:'Create your first invoice', desc:'Issue invoices to customers. AccounTrack posts journal entries and updates your receivables automatically.', tips:['Go to Invoices → New Invoice','Select a customer, add line items and set due date','VAT is calculated at 7.5% — toggle per line item'] },
     { icon:'fa-user-tie', title:'Run payroll', desc:'Add employees and run monthly payroll. PAYE is calculated automatically under NTA 2025 rules.', tips:['Go to Payroll → Add Employee with annual salary','Use Run Batch Payroll to process all staff at once','PAYE and pension are posted to the correct liability accounts'] },
-    { icon:'fa-chart-bar', title:'Review your reports', desc:'Check your financial health in Reports — Profit & Loss, Balance Sheet, Trial Balance, VAT Summary and Cash Flow all update in real time.', tips:['Reports update as you create invoices and bills','Use the Audit Trail to see every action taken','Export data from Settings → Export Data as a JSON backup'] },
+    { icon:'fa-chart-bar', title:'Review your reports', desc:'Check your financial health in Reports — Profit or Loss (IFRS 18), Financial Position, Cash Flows, Trial Balance and VAT Summary all update in real time.', tips:['Reports update as you create invoices and bills','Use the Audit Trail to see every action taken','Export data from Settings → Export Data as a JSON backup'] },
   ];
 
   document.getElementById('helpView').innerHTML = `

@@ -43,7 +43,17 @@ const bankControllerCheck = require('./controllers/bankController');
 const billControllerCheck = require('./controllers/billController');
 const companyControllerCheck = require('./controllers/companyController');
 
+// A missing JWT secret breaks every login; a short one makes tokens guessable.
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set.');
+  process.exit(1);
+}
+if (process.env.JWT_SECRET.length < 32) console.warn('WARNING: JWT_SECRET is shorter than 32 characters. Rotate it to a long random value.');
+
 const app = express();
+// Render (and most hosts) sit behind one reverse proxy. Without this, every client
+// shares the proxy's IP, so the rate limiters throttle ALL users together.
+app.set('trust proxy', 1);
 
 // ==================== CONNECT TO DATABASE ====================
 connectDB().then(() => runMigrations());
